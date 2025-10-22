@@ -1,0 +1,6 @@
+env.fish
+feeds.xml
+out.json
+prompt.md
+__pycache__
+venv
