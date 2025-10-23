@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="1.0">
+    <head>
+        <title>Sample RSS Morning Feeds</title>
+    </head>
+    <body>
+        <outline text="Security &amp; Threat Intelligence" title="Security &amp; Threat Intelligence">
+            <outline text="The Hacker News" title="The Hacker News" type="rss"
+                     xmlUrl="https://feeds.feedburner.com/TheHackersNews"
+                     htmlUrl="https://thehackernews.com/"/>
+            <outline text="Krebs on Security" title="Krebs on Security" type="rss"
+                     xmlUrl="https://krebsonsecurity.com/feed/"
+                     htmlUrl="https://krebsonsecurity.com/"/>
+            <outline text="Cisco Talos Blog" title="Cisco Talos Blog" type="rss"
+                     xmlUrl="https://blog.talosintelligence.com/feed/"
+                     htmlUrl="https://blog.talosintelligence.com/"/>
+        </outline>
+        <outline text="Cloud &amp; Identity Security" title="Cloud &amp; Identity Security">
+            <outline text="AWS Security Blog" title="AWS Security Blog" type="rss"
+                     xmlUrl="https://aws.amazon.com/blogs/security/feed/"
+                     htmlUrl="https://aws.amazon.com/blogs/security/"/>
+            <outline text="Okta Security Blog" title="Okta Security Blog" type="rss"
+                     xmlUrl="https://sec.okta.com/rss.xml"
+                     htmlUrl="https://sec.okta.com/"/>
+        </outline>
+        <outline text="Mobile &amp; Application Security" title="Mobile &amp; Application Security">
+            <outline text="Android Developers Blog (Security)" title="Android Developers Blog (Security)" type="rss"
+                     xmlUrl="https://android-developers.googleblog.com/feeds/posts/default/-/Security"
+                     htmlUrl="https://android-developers.googleblog.com/search/label/Security"/>
+            <outline text="NowSecure Blog" title="NowSecure Blog" type="rss"
+                     xmlUrl="https://www.nowsecure.com/blog/feed/"
+                     htmlUrl="https://www.nowsecure.com/blog/"/>
+        </outline>
+    </body>
+</opml>
