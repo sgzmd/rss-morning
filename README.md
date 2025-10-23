@@ -141,4 +141,8 @@ The tests focus on parsing, rendering, and summarisation helpers. Consider addin
 - **Gemini failures:** Check `GOOGLE_API_KEY` and rate limits. The app falls back to raw article JSON if summarisation fails.
 - **Email not sent:** Verify that `resend` is installed, your API key is set, and `RESEND_FROM_EMAIL` or `--email-from` points to a verified sender.
 
+## License
+
+RSS Morning is distributed under the Apache License 2.0. See `LICENSE` for the full text.
+
 Happy briefing!
