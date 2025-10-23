@@ -51,22 +51,43 @@ def _collect_entries(config: RunConfig) -> List[dict]:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=config.max_age_hours)
         logger.info("Applying article cutoff: newer than %s", cutoff)
 
-    feed_entries = []
+    selected_entries = []
+    any_entries_fetched = False
     for feed in feeds:
         try:
             entries = fetch_feed_entries(feed)
-            feed_entries.extend(entries)
         except Exception:
             logger.exception("Failed to process feed %s", feed.url)
+            continue
 
-    if not feed_entries:
+        if not entries:
+            logger.info("No entries retrieved for feed %s", feed.url)
+            continue
+
+        any_entries_fetched = True
+        per_feed_entries = select_recent_entries(entries, config.limit, cutoff)
+        logger.info("Selected %d entries for feed %s", len(per_feed_entries), feed.url)
+        selected_entries.extend(per_feed_entries)
+
+    if not any_entries_fetched:
         raise RuntimeError("No entries were retrieved from the configured feeds.")
 
-    selected_entries = select_recent_entries(feed_entries, config.limit, cutoff)
-    logger.info("Fetching article text for %d selected entries", len(selected_entries))
+    # Ensure consistent ordering and deduplicate across feeds by URL.
+    sorted_entries = sorted(
+        selected_entries, key=lambda item: item.published, reverse=True
+    )
+    unique_entries = []
+    seen_links = set()
+    for entry in sorted_entries:
+        if entry.link in seen_links:
+            continue
+        unique_entries.append(entry)
+        seen_links.add(entry.link)
+
+    logger.info("Fetching article text for %d selected entries", len(unique_entries))
 
     output = []
-    for entry in selected_entries:
+    for entry in unique_entries:
         text = fetch_article_text(entry.link)
         payload = {
             "url": entry.link,

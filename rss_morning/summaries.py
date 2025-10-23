@@ -6,14 +6,14 @@ import json
 import logging
 from typing import Optional, Tuple
 
-logger = logging.getLogger(__name__)
-
-try:  # pragma: no cover - dependency optional unless summaries requested
+try:
     from google import genai
     from google.genai import types as genai_types
-except ImportError:  # pragma: no cover
+except Exception:  # pragma: no cover - optional dependency
     genai = None
     genai_types = None
+
+logger = logging.getLogger(__name__)
 
 
 def load_system_prompt(path: str) -> str:
@@ -44,22 +44,30 @@ def build_summary_input(articles: list[dict]) -> str:
         )
     payload = json.dumps(prepared, ensure_ascii=False, indent=2)
     logger.debug("Prepared %d articles for summarisation", len(prepared))
+    logger.debug("Summary input payload: \n%s", payload)
     return payload
 
 
 def call_gemini(system_prompt: str, payload: str) -> str:
     """Call the Gemini API and return the raw response text."""
-    if genai is None:
+    if genai is None or genai_types is None:
         raise RuntimeError(
             "google-genai package is required for --summary but is not installed."
         )
 
     client = genai.Client()
     logger.info("Requesting summary from Gemini API (model gemini-2.5-flash)")
+
+    thinking_config = genai_types.ThinkingConfig(
+        thinking_budget=-1, include_thoughts=True
+    )
+
     response = client.models.generate_content(
         model="gemini-flash-lite-latest",
         contents=payload,
-        config=genai_types.GenerateContentConfig(system_instruction=system_prompt),
+        config=genai_types.GenerateContentConfig(
+            system_instruction=system_prompt, thinking_config=thinking_config
+        ),
     )
     if not hasattr(response, "text") or response.text is None:
         raise RuntimeError("Gemini API returned no text response.")

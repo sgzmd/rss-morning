@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from .runner import RunConfig, execute
@@ -61,10 +62,27 @@ def configure_logging(level_name: str) -> None:
     if not isinstance(log_level, int):
         raise ValueError(f"Unsupported log level: {level_name}")
 
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    safe_timestamp = timestamp.replace(":", "-")
+    log_filename = f"rss-morning-{safe_timestamp}.log"
+
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+        handler.close()
+
+    root_logger.setLevel(log_level)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    root_logger.addHandler(stream_handler)
+
+    file_handler = logging.FileHandler(log_filename, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+
     logger.debug("Logger initialised with level %s", level_name.upper())
 
 

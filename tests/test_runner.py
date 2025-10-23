@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import pytest
 
@@ -88,6 +88,88 @@ def test_execute_summary_flow(monkeypatch):
     assert json.loads(result.output_text)["summaries"]
     assert result.is_summary
     assert calls[0]["is_summary"] is True
+
+
+def test_execute_limit_applies_per_feed(monkeypatch):
+    now = datetime(2024, 1, 2, tzinfo=timezone.utc)
+    feeds = [
+        FeedConfig("Cat1", "Feed 1", "feed-1"),
+        FeedConfig("Cat2", "Feed 2", "feed-2"),
+    ]
+    monkeypatch.setattr(runner, "parse_feeds_config", lambda path: feeds)
+
+    feed_entries = {
+        "feed-1": [
+            FeedEntry(
+                link="https://example.com/feed1-new",
+                category="Cat1",
+                title="Latest 1",
+                published=now,
+                summary="Summary 1",
+            ),
+            FeedEntry(
+                link="https://example.com/feed1-old",
+                category="Cat1",
+                title="Older 1",
+                published=now - timedelta(days=1),
+                summary="Summary 1 old",
+            ),
+        ],
+        "feed-2": [
+            FeedEntry(
+                link="https://example.com/feed2-new",
+                category="Cat2",
+                title="Latest 2",
+                published=now - timedelta(hours=1),
+                summary="Summary 2",
+            ),
+            FeedEntry(
+                link="https://example.com/feed2-old",
+                category="Cat2",
+                title="Older 2",
+                published=now - timedelta(days=3),
+                summary="Summary 2 old",
+            ),
+        ],
+    }
+
+    def fake_fetch(feed):
+        return list(feed_entries[feed.url])
+
+    monkeypatch.setattr(runner, "fetch_feed_entries", fake_fetch)
+    monkeypatch.setattr(runner, "fetch_article_text", lambda url: None)
+    monkeypatch.setattr(runner, "truncate_text", lambda text: text)
+    monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
+
+    calls = []
+    original_select = runner.select_recent_entries
+
+    def recording_select(entries, limit, cutoff):
+        calls.append({"links": [entry.link for entry in entries], "limit": limit})
+        return original_select(entries, limit, cutoff)
+
+    monkeypatch.setattr(runner, "select_recent_entries", recording_select)
+
+    config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=1,
+        max_age_hours=None,
+        summary=False,
+        email_to=None,
+        email_from=None,
+        email_subject=None,
+    )
+
+    result = execute(config)
+    payload = json.loads(result.output_text)
+
+    assert len(payload) == 2
+    assert {item["url"] for item in payload} == {
+        "https://example.com/feed1-new",
+        "https://example.com/feed2-new",
+    }
+    assert len(calls) == 2
+    assert all(call["limit"] == 1 for call in calls)
 
 
 def test_execute_validates_max_age(monkeypatch):

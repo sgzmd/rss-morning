@@ -6,3 +6,4 @@ __pycache__
 venv
 docker-compose-private.yml
 docker-compose.override.yml
+rss-morning-*.log
