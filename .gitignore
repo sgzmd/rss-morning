@@ -4,3 +4,5 @@ out.json
 prompt.md
 __pycache__
 venv
+docker-compose-private.yml
+docker-compose.override.yml

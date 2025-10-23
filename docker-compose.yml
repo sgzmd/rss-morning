@@ -1,0 +1,7 @@
+version: "3.9"
+
+services:
+  rss-morning:
+    build: .
+    image: rss-morning:local
+    restart: "no"
