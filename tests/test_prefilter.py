@@ -27,8 +27,7 @@ class FakeClient:
 
 
 def reset_cache():
-    EmbeddingArticleFilter._cached_query_key = None
-    EmbeddingArticleFilter._cached_query_embeddings = None
+    EmbeddingArticleFilter._cached_query_embeddings = {}
 
 
 def test_embedding_filter_retains_above_threshold(monkeypatch):
@@ -39,7 +38,6 @@ def test_embedding_filter_retains_above_threshold(monkeypatch):
         "Miss Title\nMiss Body": [0.3, 0.9539392014169457],
     }
 
-    monkeypatch.setattr(EmbeddingArticleFilter, "QUERIES", ("QueryA", "QueryB"))
     monkeypatch.setattr(
         EmbeddingArticleFilter,
         "CONFIG",
@@ -47,7 +45,9 @@ def test_embedding_filter_retains_above_threshold(monkeypatch):
     )
     reset_cache()
 
-    filter_layer = EmbeddingArticleFilter(client=FakeClient(vector_map))
+    filter_layer = EmbeddingArticleFilter(
+        client=FakeClient(vector_map), queries=("QueryA", "QueryB")
+    )
 
     articles = [
         {"title": "Match Title", "summary": "Match Summary", "text": "Match Body"},
@@ -70,7 +70,9 @@ def test_embedding_filter_retains_above_threshold(monkeypatch):
 
 
 def test_embedding_filter_returns_original_on_error(monkeypatch):
-    filter_layer = EmbeddingArticleFilter(client=FakeClient({"noop": [1.0]}))
+    filter_layer = EmbeddingArticleFilter(
+        client=FakeClient({"noop": [1.0]}), queries=("Only",)
+    )
 
     def boom(*args, **kwargs):
         raise RuntimeError("no embeddings for you")
@@ -84,7 +86,6 @@ def test_embedding_filter_returns_original_on_error(monkeypatch):
 
 
 def test_embedding_filter_uses_precomputed_queries(tmp_path, monkeypatch):
-    monkeypatch.setattr(EmbeddingArticleFilter, "QUERIES", ("QueryA", "QueryB"))
     reset_cache()
     cache_file = tmp_path / "queries.json"
     cache_file.write_text(
@@ -105,7 +106,9 @@ def test_embedding_filter_uses_precomputed_queries(tmp_path, monkeypatch):
     client = FakeClient(vector_map)
 
     filter_layer = EmbeddingArticleFilter(
-        client=client, query_embeddings_path=str(cache_file)
+        client=client,
+        query_embeddings_path=str(cache_file),
+        queries=("QueryA", "QueryB"),
     )
 
     articles = [{"title": "Title", "summary": "", "text": "Body"}]
@@ -116,7 +119,6 @@ def test_embedding_filter_uses_precomputed_queries(tmp_path, monkeypatch):
 
 
 def test_export_security_query_embeddings(tmp_path, monkeypatch):
-    monkeypatch.setattr(EmbeddingArticleFilter, "QUERIES", ("Alpha", "Beta"))
     config = _EmbeddingConfig(model="fake", batch_size=2, threshold=0.5)
     reset_cache()
 
@@ -127,7 +129,12 @@ def test_export_security_query_embeddings(tmp_path, monkeypatch):
     client = FakeClient(vector_map)
 
     destination = tmp_path / "export.json"
-    export_security_query_embeddings(str(destination), config=config, client=client)
+    export_security_query_embeddings(
+        str(destination),
+        config=config,
+        client=client,
+        queries=("Alpha", "Beta"),
+    )
 
     payload = json.loads(destination.read_text())
     assert payload["model"] == "fake"

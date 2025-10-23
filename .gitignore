@@ -9,3 +9,5 @@ docker-compose.override.yml
 rss-morning-*.log
 playground/
 prefiltered.json
+query_embeddings.json
+queries.txt

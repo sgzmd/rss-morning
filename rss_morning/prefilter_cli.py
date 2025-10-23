@@ -10,6 +10,7 @@ from .prefilter import (
     EmbeddingArticleFilter,
     _EmbeddingConfig,
     export_security_query_embeddings,
+    load_queries,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=EmbeddingArticleFilter.CONFIG.threshold,
         help="Filter threshold to store alongside the embeddings metadata.",
     )
+    parser.add_argument(
+        "--queries-file",
+        help="Path to the queries file to embed (defaults to queries.txt or queries.example.txt).",
+    )
     return parser
 
 
@@ -61,15 +66,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         model=args.model, batch_size=args.batch_size, threshold=args.threshold
     )
 
+    queries = load_queries(args.queries_file)
+
     try:
-        export_security_query_embeddings(args.output, config=config)
+        export_security_query_embeddings(args.output, config=config, queries=queries)
     except Exception:  # noqa: BLE001
         logger.exception("Failed to export query embeddings.")
         return 1
 
-    print(
-        f"Wrote {len(EmbeddingArticleFilter.QUERIES)} query embeddings to {args.output}"
-    )
+    print(f"Wrote {len(queries)} query embeddings to {args.output}")
     return 0
 
 

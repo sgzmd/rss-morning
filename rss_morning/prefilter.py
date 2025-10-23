@@ -16,6 +16,7 @@ from typing import (
     Sequence,
     Tuple,
     Any,
+    Dict,
 )
 
 from openai import OpenAI
@@ -26,40 +27,36 @@ Article = Mapping[str, object]
 MutableArticle = MutableMapping[str, object]
 
 
-SECURITY_QUERIES: Tuple[str, ...] = (
-    # Mobile & App Security
-    "Android malware, trojans, infostealers targeting consumers",
-    "iOS vulnerabilities, jailbreak exploits, sideloading threats",
-    "Malicious SDKs or libraries embedded in mobile apps",
-    "Credential theft or token hijacking from Android or iOS apps",
-    "Reverse engineering, tampering, or repackaging of APKs",
-    "Abuse of Android accessibility services or screen readers to steal OTPs",
-    "Supply chain compromise via mobile ad networks or analytics SDKs",
-    "Mobile app data leakage, insecure local storage or logs",
-    "App transport security and certificate pinning bypass",
-    "Malicious apps or fake app campaigns in Play Store or App Store",
-    "Threats to push notification integrity or FCM hijacking",
-    # Authentication, Identity & Account Protection
-    "MFA and passkey adoption, FIDO2, WebAuthn",
-    "Credential stuffing, password spraying, account takeover",
-    "Account takeover via social engineering or credential leaks",
-    "OAuth, OpenID Connect, or SSO misconfiguration vulnerabilities",
-    "Password strength enforcement and breached password reuse",
-    # E-Commerce & Payment Security
-    "Payment fraud in e-commerce and online marketplaces",
-    "Card-not-present fraud or refund scam automation",
-    "Compromised merchant or seller accounts",
-    # Logistics, Driver, and Gig-Economy Security
-    "Delivery driver app exploits, GPS spoofing, gig economy security",
-    # Seller / Supplier Portal Security
-    "Supplier or merchant portal breaches and credential leaks",
-    # Platform & Infrastructure
-    "API authentication or authorization flaws",
-    "Data breaches involving consumer or merchant PII",
-    # Regional & Policy Context
-    "Korean privacy or data protection enforcement cases",
-    "European data protection / privacy regulations impacting consumers",
-)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_QUERIES_FILE = PROJECT_ROOT / "queries.txt"
+EXAMPLE_QUERIES_FILE = PROJECT_ROOT / "queries.example.txt"
+
+
+def _load_queries_from_path(path: Path) -> Tuple[str, ...]:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    return tuple(lines)
+
+
+def load_queries(queries_path: Optional[str] = None) -> Tuple[str, ...]:
+    """Load security queries from a file, falling back to the example file."""
+    if queries_path:
+        return _load_queries_from_path(Path(queries_path))
+
+    for candidate in (DEFAULT_QUERIES_FILE, EXAMPLE_QUERIES_FILE):
+        try:
+            return _load_queries_from_path(candidate)
+        except FileNotFoundError:
+            continue
+
+    raise RuntimeError(
+        "No queries file found. Provide queries.txt or queries.example.txt."
+    )
 
 
 @dataclass(frozen=True)
@@ -75,24 +72,40 @@ class EmbeddingArticleFilter:
     """Embedding-powered article filter that keeps security-relevant content."""
 
     CONFIG = _EmbeddingConfig()
-    QUERIES: Tuple[str, ...] = SECURITY_QUERIES
-    _cached_query_key: Optional[Tuple[Tuple[str, ...], str]] = None
-    _cached_query_embeddings: Optional[List[List[float]]] = None
+    DEFAULT_QUERIES: Tuple[str, ...] = load_queries()
+    _cached_query_embeddings: Dict[Tuple[Tuple[str, ...], str], List[List[float]]] = {}
 
     def __init__(
         self,
         client: Optional[OpenAI] = None,
         *,
         query_embeddings_path: Optional[str] = None,
+        queries_file: Optional[str] = None,
+        queries: Optional[Sequence[str]] = None,
         config: Optional[_EmbeddingConfig] = None,
     ):
         self._client = client or OpenAI()
         self._config = config or self.CONFIG
         self._query_embeddings_override: Optional[List[List[float]]] = None
+        if queries is not None and queries_file is not None:
+            raise ValueError("Provide either queries or queries_file, not both.")
+
+        if queries is not None:
+            loaded_queries = tuple(queries)
+        elif queries_file is not None:
+            loaded_queries = load_queries(queries_file)
+        else:
+            loaded_queries = self.DEFAULT_QUERIES
+
+        self._queries: Tuple[str, ...] = loaded_queries
         if query_embeddings_path:
             self._query_embeddings_override = self._load_query_embeddings(
                 Path(query_embeddings_path)
             )
+
+    @property
+    def queries(self) -> Tuple[str, ...]:
+        return self._queries
 
     def filter(self, articles: Iterable[Article]) -> List[MutableArticle]:
         """Return the list of articles that pass the embedding filter."""
@@ -119,7 +132,7 @@ class EmbeddingArticleFilter:
                 )
                 return materialized
 
-            retained: List[MutableArticle] = []
+            scored_items: List[Tuple[float, MutableArticle]] = []
             threshold = self._config.threshold
             for original, vector in zip(materialized, article_vectors):
                 best_idx, best_score = self._score_against_queries(
@@ -129,15 +142,21 @@ class EmbeddingArticleFilter:
                     continue
 
                 original["prefilter_score"] = best_score
-                original["prefilter_match"] = self.QUERIES[best_idx]
-                retained.append(original)
+                original["prefilter_match"] = self._queries[best_idx]
+                scored_items.append((best_score, original))
+
+            if scored_items:
+                scored_items.sort(key=lambda item: item[0], reverse=True)
+                retained = [article for _, article in scored_items]
+            else:
+                retained = []
 
             logger.info(
                 "Embedding pre-filter retained %d of %d articles",
                 len(retained),
                 len(materialized),
             )
-            return retained or materialized
+            return retained
         except Exception:  # noqa: BLE001
             logger.exception(
                 "Embedding pre-filter encountered an error; returning original articles."
@@ -149,16 +168,13 @@ class EmbeddingArticleFilter:
         if self._query_embeddings_override is not None:
             return self._query_embeddings_override
 
-        key = (self.QUERIES, self._config.model)
-        if (
-            self.__class__._cached_query_key == key
-            and self.__class__._cached_query_embeddings
-        ):
-            return self.__class__._cached_query_embeddings or []
+        key = (self._queries, self._config.model)
+        cached = self.__class__._cached_query_embeddings.get(key)
+        if cached is not None:
+            return cached
 
-        embeddings = self._embed_texts(list(key[0]))
-        self.__class__._cached_query_embeddings = embeddings
-        self.__class__._cached_query_key = key
+        embeddings = self._embed_texts(list(self._queries))
+        self.__class__._cached_query_embeddings[key] = embeddings
         return embeddings
 
     def _embed_texts(self, texts: Sequence[str]) -> List[List[float]]:
@@ -199,7 +215,7 @@ class EmbeddingArticleFilter:
         model = payload.get("model")
         stored_threshold = payload.get("threshold")
 
-        if queries != self.QUERIES:
+        if queries != self._queries:
             logger.warning(
                 "Precomputed embeddings at %s use a different query set; embedding live.",
                 path,
@@ -268,16 +284,24 @@ def export_security_query_embeddings(
     *,
     config: Optional[_EmbeddingConfig] = None,
     client: Optional[OpenAI] = None,
+    queries_file: Optional[str] = None,
+    queries: Optional[Sequence[str]] = None,
 ) -> Path:
     """Persist embeddings for the security queries to disk."""
     export_config = config or EmbeddingArticleFilter.CONFIG
-    filter_layer = EmbeddingArticleFilter(client=client, config=export_config)
-    embeddings = filter_layer._embed_texts(list(filter_layer.QUERIES))
+    filter_layer = EmbeddingArticleFilter(
+        client=client,
+        config=export_config,
+        queries_file=queries_file,
+        queries=queries,
+    )
+    query_list = list(filter_layer.queries)
+    embeddings = filter_layer._embed_texts(query_list)
 
     payload = {
         "model": export_config.model,
         "threshold": export_config.threshold,
-        "queries": list(filter_layer.QUERIES),
+        "queries": query_list,
         "embeddings": embeddings,
     }
 
