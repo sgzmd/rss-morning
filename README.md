@@ -8,6 +8,7 @@ RSS Morning collects the latest items from your curated RSS feeds, optionally su
 - Pip for installing dependencies from `requirements.txt`
 - Docker and Docker Compose (optional, for containerised runs)
 - Google Gemini API key (optional, required for the `--summary` mode)
+- OpenAI API key (optional, required for embedding-based pre-filtering)
 - Resend API key (optional, required for sending email)
 
 ## Quick Start
@@ -23,6 +24,7 @@ RSS Morning collects the latest items from your curated RSS feeds, optionally su
    cp feeds.example.xml feeds.xml
    cp prompt-example.md prompt.md
    cp docker-compose.example.override.yml docker-compose.override.yml
+   cp queries.example.txt queries.txt
    ```
 3. Edit the new files so they reflect your desired feeds, persona, and runtime options.
 4. Export the required secrets (see below).
@@ -41,12 +43,15 @@ RSS Morning collects the latest items from your curated RSS feeds, optionally su
 
 - **Docker Compose override**  
   `docker-compose.example.override.yml` shows how to override the container command and inject secrets via environment variables. Copy it to `docker-compose.override.yml` and update the values (`RESEND_API_KEY`, `GOOGLE_API_KEY`, email addresses, etc.) for your deployment.
+- **Queries (`queries.txt`)**  
+  Embedding topics used by the pre-filter. Copy `queries.example.txt`, customise the entries to the domains you care about, and keep the file beside your configuration. Lines beginning with `#` are treated as comments. If `queries.txt` is missing the application falls back to the example file, but providing your own list ensures the embeddings match your interests.
 
 ### Environment Variables
 
 Set these variables in your shell, `.env` file, or Compose override:
 
 - `GOOGLE_API_KEY` – required when using `--summary` (Google Gemini).
+- `OPENAI_API_KEY` – required when using the embedding pre-filter or the embedding export CLI.
 - `RESEND_API_KEY` – required when emailing results.
 - `RESEND_FROM_EMAIL` – default sender address when emailing (can be overridden with `--email-from`).
 
@@ -67,7 +72,29 @@ python main.py \
 CLI highlights:
 - Without `--summary`, the command prints raw article JSON.
 - With `--summary`, Gemini is called using `prompt.md` and the response is printed and reused for email payloads.
+- Add `--pre-filter` to screen articles with the embedding layer. Provide a path (e.g. `--pre-filter query_embeddings.json`) to reuse cached vectors, or supply the flag without an argument to embed the active queries file on the fly.
 - Email delivery requires both `--email-to` and a valid Resend configuration.
+
+## Embedding Pre-filter Workflow
+
+The optional embedding pre-filter keeps only articles that are similar to your curated query list.
+
+1. **Curate queries**  
+   Copy `queries.example.txt` to `queries.txt` and replace the sample topics with the themes you want to monitor. Blank lines and comments (`# ...`) are ignored.
+2. **Pre-compute embeddings (optional but recommended for Docker builds or cold starts)**  
+   ```bash
+   OPENAI_API_KEY=... python -m rss_morning.prefilter_cli \
+     --output query_embeddings.json \
+     --queries-file queries.txt
+   ```
+   This writes `query_embeddings.json` containing the queries, model metadata, and vectors.
+3. **Run with the pre-filter**  
+   ```bash
+   python main.py --feeds-file feeds.xml --pre-filter query_embeddings.json
+   ```
+   If you omit the path (`--pre-filter` on its own) the application embeds the queries at runtime using `OPENAI_API_KEY`.
+
+The exporter (`python -m rss_morning.prefilter_cli`) shares the same configuration as the main program, so you can change the model, batch size, or threshold with flags such as `--model` or `--threshold`.
 
 ## Running with Docker Compose
 
@@ -82,6 +109,18 @@ To run the container on demand:
 ```bash
 docker compose run --rm rss-morning -n 5 --feeds-file feeds.xml
 ```
+
+### Embedding build artefacts
+
+The Dockerfile precomputes query embeddings during the build. Supply the required build arguments so the export step succeeds:
+
+```bash
+docker compose build rss-morning \
+  --build-arg OPENAI_API_KEY=$OPENAI_API_KEY \
+  --build-arg QUERIES_FILE=queries.txt
+```
+
+If `QUERIES_FILE` is omitted the build falls back to `queries.example.txt`. At runtime you can continue to pass `--pre-filter query_embeddings.json` (bundled in the image) or rebuild whenever the query list changes.
 
 ## Email Delivery
 

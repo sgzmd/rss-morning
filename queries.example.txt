@@ -1,0 +1,9 @@
+# Sample queries for rss_morning pre-filtering.
+# Copy this file to queries.txt and customise it for your own topics.
+
+Emerging cybersecurity threats impacting small businesses
+Regulatory changes affecting consumer data privacy
+Innovations in renewable energy storage technology
+Breakthroughs in medical AI diagnostics and patient care
+Supply chain resilience strategies for global manufacturers
+Financial fraud trends targeting online marketplaces

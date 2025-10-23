@@ -12,6 +12,7 @@ from .articles import fetch_article_text, truncate_text
 from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
+from .prefilter import EmbeddingArticleFilter
 from .summaries import generate_summary
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,11 @@ class RunConfig:
     limit: int
     max_age_hours: Optional[float]
     summary: bool
-    email_to: Optional[str]
-    email_from: Optional[str]
-    email_subject: Optional[str]
+    pre_filter: bool = False
+    pre_filter_embeddings_path: Optional[str] = None
+    email_to: Optional[str] = None
+    email_from: Optional[str] = None
+    email_subject: Optional[str] = None
 
 
 @dataclass
@@ -111,6 +114,24 @@ def _collect_entries(config: RunConfig) -> List[dict]:
 def execute(config: RunConfig) -> RunResult:
     """Run the application logic and return the result payload."""
     articles = _collect_entries(config)
+    if config.pre_filter:
+        logger.info("Applying embedding pre-filter to %d articles", len(articles))
+        filter_layer = EmbeddingArticleFilter(
+            query_embeddings_path=config.pre_filter_embeddings_path
+        )
+        filtered_articles = filter_layer.filter(list(articles))
+        if filtered_articles is None:
+            logger.warning(
+                "Embedding pre-filter returned no articles; keeping original set."
+            )
+        else:
+            logger.info(
+                "Embedding pre-filter retained %d of %d articles",
+                len(filtered_articles),
+                len(articles),
+            )
+            articles = filtered_articles
+
     email_payload: Any = articles
     is_summary_payload = False
 

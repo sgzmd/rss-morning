@@ -42,6 +42,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="When set, generate an executive summary using the Gemini API instead of raw article data.",
     )
     parser.add_argument(
+        "--pre-filter",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="EMBED_PATH",
+        help="Apply an embedding-based pre-filter to articles after download. Optionally provide a path to precomputed query embeddings.",
+    )
+    parser.add_argument(
         "--email-to",
         help="If provided, send the results to this email address via Resend.",
     )
@@ -101,6 +109,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         limit=args.limit,
         max_age_hours=args.max_age_hours,
         summary=args.summary,
+        pre_filter=bool(args.pre_filter),
+        pre_filter_embeddings_path=(
+            args.pre_filter if isinstance(args.pre_filter, str) else None
+        ),
         email_to=args.email_to,
         email_from=args.email_from,
         email_subject=args.email_subject,
