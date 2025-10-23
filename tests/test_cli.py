@@ -1,5 +1,7 @@
 import logging
+from types import SimpleNamespace
 
+from rss_morning import cli
 from rss_morning.cli import configure_logging
 
 
@@ -25,3 +27,44 @@ def test_configure_logging_creates_file_and_console_handlers(monkeypatch, tmp_pa
             handler.close()
         for handler in original_handlers:
             logging.getLogger().addHandler(handler)
+
+
+def test_cli_parser_accepts_pre_filter_path():
+    parser = cli.build_parser()
+    args = parser.parse_args(["--pre-filter", "cache.json"])
+    assert args.pre_filter == "cache.json"
+
+
+def test_main_passes_pre_filter_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "configure_logging", lambda level: None)
+
+    captured = {}
+
+    def fake_execute(config):
+        captured["config"] = config
+        return SimpleNamespace(output_text="{}", email_payload=None, is_summary=False)
+
+    monkeypatch.setattr(cli, "execute", fake_execute)
+
+    cache_path = tmp_path / "queries.json"
+
+    exit_code = cli.main(["--pre-filter", str(cache_path)])
+
+    assert exit_code == 0
+    config = captured["config"]
+    assert config.pre_filter is True
+    assert config.pre_filter_embeddings_path == str(cache_path)
+
+
+def test_main_enables_pre_filter_without_path(monkeypatch):
+    monkeypatch.setattr(cli, "configure_logging", lambda level: None)
+
+    def fake_execute(config):
+        assert config.pre_filter is True
+        assert config.pre_filter_embeddings_path is None
+        return SimpleNamespace(output_text="{}", email_payload=None, is_summary=False)
+
+    monkeypatch.setattr(cli, "execute", fake_execute)
+
+    exit_code = cli.main(["--pre-filter"])
+    assert exit_code == 0

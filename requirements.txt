@@ -25,6 +25,7 @@ lxml==6.0.2
 lxml_html_clean==0.4.3
 MarkupSafe==3.0.3
 nodeenv==1.9.1
+openai==1.57.3
 packaging==25.0
 platformdirs==4.5.0
 pluggy==1.6.0

@@ -90,6 +90,93 @@ def test_execute_summary_flow(monkeypatch):
     assert calls[0]["is_summary"] is True
 
 
+def test_execute_pre_filter_applies_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
+    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
+    monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
+    monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
+
+    capture = {}
+
+    class FakeFilter:
+        def __init__(self, *args, **kwargs):
+            capture["instantiated"] = True
+            capture["query_path"] = kwargs.get("query_embeddings_path")
+
+        def filter(self, articles):
+            capture["articles"] = list(articles)
+            retained = [dict(articles[0])]
+            retained[0]["url"] = "https://filtered.example.com"
+            return retained
+
+    monkeypatch.setattr(runner, "EmbeddingArticleFilter", FakeFilter)
+
+    config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=5,
+        max_age_hours=None,
+        summary=False,
+        pre_filter=True,
+        email_to=None,
+        email_from=None,
+        email_subject=None,
+    )
+
+    result = execute(config)
+    payload = json.loads(result.output_text)
+
+    assert capture["instantiated"] is True
+    assert capture["query_path"] is None
+    assert capture["articles"][0]["url"] == "https://example.com"
+    assert len(payload) == 1
+    assert payload[0]["url"] == "https://filtered.example.com"
+
+
+def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
+    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
+    monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
+    monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
+
+    class FailingFilter:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("pre-filter should not be instantiated")
+
+    monkeypatch.setattr(runner, "EmbeddingArticleFilter", FailingFilter)
+
+    config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=5,
+        max_age_hours=None,
+        summary=False,
+        pre_filter=False,
+        email_to=None,
+        email_from=None,
+        email_subject=None,
+    )
+
+    result = execute(config)
+    payload = json.loads(result.output_text)
+
+    assert payload[0]["url"] == "https://example.com"
+
+
 def test_execute_limit_applies_per_feed(monkeypatch):
     now = datetime(2024, 1, 2, tzinfo=timezone.utc)
     feeds = [
