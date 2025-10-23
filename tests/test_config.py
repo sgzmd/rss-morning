@@ -30,9 +30,17 @@ def test_parse_feeds_config_parses_nested_categories(tmp_path):
     feeds = parse_feeds_config(str(opml))
 
     assert len(feeds) == 3
-    assert feeds[0] == FeedConfig(category="Engineering", title="Eng Blog", url="https://example.com/eng.xml")
-    assert feeds[1] == FeedConfig(category="Tech", title="Tech Blog", url="https://example.com/tech.xml")
-    assert feeds[2] == FeedConfig(category="Standalone", title="Standalone", url="https://example.com/standalone.xml")
+    assert feeds[0] == FeedConfig(
+        category="Engineering", title="Eng Blog", url="https://example.com/eng.xml"
+    )
+    assert feeds[1] == FeedConfig(
+        category="Tech", title="Tech Blog", url="https://example.com/tech.xml"
+    )
+    assert feeds[2] == FeedConfig(
+        category="Standalone",
+        title="Standalone",
+        url="https://example.com/standalone.xml",
+    )
 
 
 def test_parse_feeds_config_missing_body_raises(tmp_path):

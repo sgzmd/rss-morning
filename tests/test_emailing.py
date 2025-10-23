@@ -1,6 +1,5 @@
 import types
 
-import pytest
 
 from rss_morning import emailing
 
@@ -9,7 +8,9 @@ def test_send_email_report_without_resend_logs_error(caplog):
     caplog.set_level("ERROR")
     emailing.resend = None
 
-    emailing.send_email_report(payload=[], is_summary=False, to_address="user@example.com")
+    emailing.send_email_report(
+        payload=[], is_summary=False, to_address="user@example.com"
+    )
 
     assert "resend package is required" in caplog.text
 
@@ -27,7 +28,9 @@ def test_send_email_report_sends_when_configured(monkeypatch):
     monkeypatch.setattr(emailing, "resend", fake_resend)
     monkeypatch.setenv("RESEND_API_KEY", "key")
 
-    payload = [{"title": "Example", "summary": "", "text": "", "url": "https://example.com"}]
+    payload = [
+        {"title": "Example", "summary": "", "text": "", "url": "https://example.com"}
+    ]
 
     emailing.send_email_report(
         payload=payload,

@@ -33,7 +33,9 @@ def parse_feeds_config(path: str) -> List[FeedConfig]:
                     url=feed_url,
                 )
             )
-            logger.debug("Registered feed '%s' (category='%s')", feed_url, feeds[-1].category)
+            logger.debug(
+                "Registered feed '%s' (category='%s')", feed_url, feeds[-1].category
+            )
             return
 
         next_category = title if title else current_category

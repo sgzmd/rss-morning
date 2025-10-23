@@ -26,7 +26,9 @@ def test_fetch_feed_entries_extracts_basic_fields(monkeypatch):
     )
     feeds_module = _reload_feeds_with_stub(monkeypatch, [entry])
 
-    feed = FeedConfig(category="Cat", title="Feed Title", url="https://feed.example.com")
+    feed = FeedConfig(
+        category="Cat", title="Feed Title", url="https://feed.example.com"
+    )
     results = feeds_module.fetch_feed_entries(feed)
 
     assert len(results) == 1
@@ -49,7 +51,9 @@ def test_fetch_feed_entries_falls_back_to_content(monkeypatch):
     )
     feeds_module = _reload_feeds_with_stub(monkeypatch, [entry])
 
-    feed = FeedConfig(category="Cat", title="Feed Title", url="https://feed.example.com")
+    feed = FeedConfig(
+        category="Cat", title="Feed Title", url="https://feed.example.com"
+    )
     results = feeds_module.fetch_feed_entries(feed)
 
     assert results[0].summary == "content summary"
@@ -61,10 +65,17 @@ def test_select_recent_entries_deduplicates_and_applies_cutoff(monkeypatch):
     now = datetime.now(timezone.utc)
     entries = [
         FeedEntry(link="1", category="C", title="A", published=now),
-        FeedEntry(link="1", category="C", title="A older", published=now - timedelta(minutes=5)),
+        FeedEntry(
+            link="1",
+            category="C",
+            title="A older",
+            published=now - timedelta(minutes=5),
+        ),
         FeedEntry(link="2", category="C", title="B", published=now - timedelta(days=2)),
     ]
 
-    selected = feeds_module.select_recent_entries(entries, limit=5, cutoff=now - timedelta(days=1))
+    selected = feeds_module.select_recent_entries(
+        entries, limit=5, cutoff=now - timedelta(days=1)
+    )
 
     assert [entry.link for entry in selected] == ["1"]

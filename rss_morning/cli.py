@@ -16,9 +16,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Fetch recent articles from configured RSS feeds."
     )
-    parser.add_argument("-n", "--limit", type=int, default=10, help="Number of articles to fetch.")
     parser.add_argument(
-        "--feeds-file", default="feeds.xml", help="Path to the OPML file that defines the feeds."
+        "-n", "--limit", type=int, default=10, help="Number of articles to fetch."
+    )
+    parser.add_argument(
+        "--feeds-file",
+        default="feeds.xml",
+        help="Path to the OPML file that defines the feeds.",
     )
     parser.add_argument(
         "--log-level",

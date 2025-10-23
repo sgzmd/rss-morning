@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>RSS Morning Briefing</title>
+    <style>
+      body { font-family: Arial, sans-serif; background-color: #f5f5f5; color: #1a1a1a; margin: 0; padding: 24px; }
+      .container { max-width: 720px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+      header { background-color: #1f2937; color: #ffffff; padding: 24px; }
+      header h1 { margin: 0; font-size: 24px; }
+      .content { padding: 24px; }
+      .card { border-bottom: 1px solid #e5e7eb; padding: 16px 0; }
+      .card:last-child { border-bottom: none; }
+      .badge { display: inline-block; background-color: #2563eb; color: #ffffff; padding: 4px 8px; border-radius: 999px; font-size: 12px; margin-bottom: 12px; }
+      h2 { font-size: 20px; margin: 0 0 12px 0; }
+      p { margin: 8px 0; line-height: 1.6; }
+      a { color: #2563eb; text-decoration: none; }
+      footer { padding: 16px 24px; font-size: 12px; color: #6b7280; background-color: #f3f4f6; }
+      .section-label { font-weight: bold; color: #374151; text-transform: uppercase; font-size: 12px; letter-spacing: 0.08em; margin-bottom: 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>RSS Morning Briefing</h1>
+      </header>
+      <div class="content">
+        {% if fallback %}
+          <pre>{{ fallback }}</pre>
+        {% elif is_summary %}
+          {% set summaries = payload.get("summaries") or [] %}
+          {% if summaries %}
+            {% for item in summaries %}
+              {% set summary = item.get("summary") or {} %}
+              <div class="card">
+                <div class="badge">Insight {{ loop.index }}</div>
+                <h2>{{ summary.get("title") or "Update " ~ loop.index }}</h2>
+                <div class="section-label">What</div>
+                <p>{{ summary.get("what") | nl2br or "—" }}</p>
+                <div class="section-label">So What</div>
+                <p>{{ summary.get("so-what") | nl2br or "—" }}</p>
+                <div class="section-label">Now What</div>
+                <p>{{ summary.get("now-what") | nl2br or "—" }}</p>
+                {% if item.get("url") %}
+                  <p><a href="{{ item.get("url") }}" target="_blank" rel="noopener">View Article</a></p>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            <p>No relevant articles identified.</p>
+          {% endif %}
+        {% else %}
+          {% set articles = payload %}
+          {% if articles %}
+            {% for article in articles %}
+              <div class="card">
+                {% if article.get("category") %}
+                  <div class="badge">{{ article.get("category") }}</div>
+                {% endif %}
+                <h2>{{ article.get("title") or article.get("url") or "Untitled Article" }}</h2>
+                <div class="section-label">Summary</div>
+                <p>{{ article.get("summary") | nl2br or "—" }}</p>
+                {% if article.get("text") %}
+                  <div class="section-label">Excerpt</div>
+                  <p>{{ article.get("text") | nl2br }}</p>
+                {% endif %}
+                {% if article.get("url") %}
+                  <p><a href="{{ article.get("url") }}" target="_blank" rel="noopener">Read Full Article</a></p>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            <p>No articles retrieved.</p>
+          {% endif %}
+        {% endif %}
+      </div>
+      <footer>
+        Generated automatically by rss-morning.
+      </footer>
+    </div>
+  </body>
+</html>

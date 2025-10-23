@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,9 @@ def generate_summary(
 ) -> str | Tuple[str, Optional[dict]]:
     """Generate summary JSON for a list of articles."""
     if not articles:
-        logger.info("No articles available for summarisation; returning empty summary list.")
+        logger.info(
+            "No articles available for summarisation; returning empty summary list."
+        )
         empty = {"summaries": []}
         if return_dict:
             return json.dumps(empty, ensure_ascii=False), empty
@@ -99,7 +101,9 @@ def generate_summary(
         try:
             parsed = json.loads(cleaned)
         except json.JSONDecodeError:
-            logger.warning("Gemini response was not valid JSON; returning raw response text.")
+            logger.warning(
+                "Gemini response was not valid JSON; returning raw response text."
+            )
             if return_dict:
                 return raw_response, None
             return raw_response

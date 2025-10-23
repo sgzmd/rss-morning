@@ -77,7 +77,9 @@ def _collect_entries(config: RunConfig) -> List[dict]:
         if text:
             payload["text"] = truncate_text(text)
         else:
-            logger.info("Article text unavailable; including metadata only: %s", entry.link)
+            logger.info(
+                "Article text unavailable; including metadata only: %s", entry.link
+            )
 
         output.append(payload)
 
@@ -109,4 +111,8 @@ def execute(config: RunConfig) -> RunResult:
             subject=config.email_subject,
         )
 
-    return RunResult(output_text=output_text, email_payload=email_payload, is_summary=is_summary_payload)
+    return RunResult(
+        output_text=output_text,
+        email_payload=email_payload,
+        is_summary=is_summary_payload,
+    )

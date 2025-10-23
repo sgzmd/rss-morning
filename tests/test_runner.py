@@ -19,9 +19,15 @@ def _feed_entry(link: str) -> FeedEntry:
 
 
 def test_execute_standard_flow(monkeypatch):
-    monkeypatch.setattr(runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")])
-    monkeypatch.setattr(runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")])
-    monkeypatch.setattr(runner, "select_recent_entries", lambda entries, limit, cutoff: entries)
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
     monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
     monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
@@ -44,9 +50,15 @@ def test_execute_standard_flow(monkeypatch):
 
 
 def test_execute_summary_flow(monkeypatch):
-    monkeypatch.setattr(runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")])
-    monkeypatch.setattr(runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")])
-    monkeypatch.setattr(runner, "select_recent_entries", lambda entries, limit, cutoff: entries)
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
     monkeypatch.setattr(runner, "fetch_article_text", lambda url: None)
     monkeypatch.setattr(runner, "truncate_text", lambda text: text)
 
@@ -57,7 +69,9 @@ def test_execute_summary_flow(monkeypatch):
 
     monkeypatch.setattr(runner, "generate_summary", fake_generate)
     calls = []
-    monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(
+        runner, "send_email_report", lambda **kwargs: calls.append(kwargs)
+    )
 
     config = RunConfig(
         feeds_file="feeds.xml",
@@ -77,7 +91,9 @@ def test_execute_summary_flow(monkeypatch):
 
 
 def test_execute_validates_max_age(monkeypatch):
-    monkeypatch.setattr(runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")])
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
     config = RunConfig(
         feeds_file="feeds.xml",
         limit=5,
@@ -93,13 +109,17 @@ def test_execute_validates_max_age(monkeypatch):
 
 
 def test_execute_raises_when_no_entries(monkeypatch):
-    monkeypatch.setattr(runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")])
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
 
     def fake_fetch(feed):
         return []
 
     monkeypatch.setattr(runner, "fetch_feed_entries", fake_fetch)
-    monkeypatch.setattr(runner, "select_recent_entries", lambda entries, limit, cutoff: entries)
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
     monkeypatch.setattr(runner, "fetch_article_text", lambda url: "text")
     monkeypatch.setattr(runner, "truncate_text", lambda text: text)
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)

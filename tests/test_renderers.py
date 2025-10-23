@@ -6,7 +6,12 @@ def test_build_email_html_for_summary_payload():
         "summaries": [
             {
                 "url": "https://example.com/a",
-                "summary": {"title": "Title", "what": "Thing", "so-what": "Impact", "now-what": "Next"},
+                "summary": {
+                    "title": "Title",
+                    "what": "Thing",
+                    "so-what": "Impact",
+                    "now-what": "Next",
+                },
             }
         ]
     }
@@ -32,3 +37,10 @@ def test_build_email_text_for_articles_list():
 
     assert "Example" in text
     assert "Body" in text
+
+
+def test_build_email_html_handles_fallback():
+    html = renderers.build_email_html(
+        payload="raw text", is_summary=False, fallback="raw text"
+    )
+    assert "<pre>raw text</pre>" in html

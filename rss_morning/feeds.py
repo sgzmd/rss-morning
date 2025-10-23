@@ -96,5 +96,7 @@ def select_recent_entries(
         if len(unique_entries) >= limit:
             break
 
-    logger.info("Selected %d unique recent entries (requested %d)", len(unique_entries), limit)
+    logger.info(
+        "Selected %d unique recent entries (requested %d)", len(unique_entries), limit
+    )
     return unique_entries

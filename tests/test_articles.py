@@ -2,10 +2,10 @@ import importlib
 import sys
 import types
 
-import pytest
 
-
-def _install_article_dependencies(monkeypatch, response_text="<p>Article body</p>", text_content="Article body"):
+def _install_article_dependencies(
+    monkeypatch, response_text="<p>Article body</p>", text_content="Article body"
+):
     class FakeResponse:
         def __init__(self, text):
             self.text = text
@@ -82,7 +82,9 @@ def test_fetch_article_text_handles_request_errors(monkeypatch):
     fake_readability.Document = FakeDocument
 
     fake_html_module = types.ModuleType("html")
-    fake_html_module.fromstring = lambda html: types.SimpleNamespace(text_content=lambda: "")
+    fake_html_module.fromstring = lambda html: types.SimpleNamespace(
+        text_content=lambda: ""
+    )
 
     fake_lxml = types.ModuleType("lxml")
     fake_lxml.html = fake_html_module

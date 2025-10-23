@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -16,7 +15,13 @@ def test_load_system_prompt(tmp_path):
 def test_build_summary_input_structure():
     payload = summaries.build_summary_input(
         [
-            {"title": "Title", "url": "https://example.com", "summary": "Sum", "text": "Content", "category": "News"}
+            {
+                "title": "Title",
+                "url": "https://example.com",
+                "summary": "Sum",
+                "text": "Content",
+                "category": "News",
+            }
         ]
     )
 
@@ -43,7 +48,9 @@ def test_generate_summary_parses_json(monkeypatch):
 
 
 def test_generate_summary_returns_raw_text_when_json_invalid(monkeypatch):
-    monkeypatch.setattr(summaries, "call_gemini", lambda system_prompt, payload: "not-json")
+    monkeypatch.setattr(
+        summaries, "call_gemini", lambda system_prompt, payload: "not-json"
+    )
 
     rendered = summaries.generate_summary([{"title": "A"}], return_dict=False)
 
