@@ -96,6 +96,21 @@ The optional embedding pre-filter keeps only articles that are similar to your c
 
 The exporter (`python -m rss_morning.prefilter_cli`) shares the same configuration as the main program, so you can change the model, batch size, or threshold with flags such as `--model` or `--threshold`.
 
+### Clustering duplicates
+
+When the pre-filter is active the application further deduplicates near-identical articles using cosine similarity. Related stories are grouped, one “kernel” article survives, and the discarded URLs are surfaced alongside the kernel:
+
+```json
+{
+  "url": "https://example.com/kernel",
+  "other_urls": [
+    {"url": "https://example.com/duplicate", "distance": 0.0021}
+  ]
+}
+```
+
+Control the similarity cutoff with `--cluster-threshold` (default `0.84`). Higher values keep more articles, lower values collapse aggressively. Downstream renderers can use the `other_urls` field to show or hide extra context.
+
 ## Running with Docker Compose
 
 Build and run in one step:

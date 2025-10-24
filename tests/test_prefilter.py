@@ -1,146 +1,132 @@
-import json
-from types import SimpleNamespace
+import random
 
-import pytest
+import numpy as np
 
-from rss_morning.prefilter import (
-    EmbeddingArticleFilter,
-    _EmbeddingConfig,
-    export_security_query_embeddings,
-)
+from rss_morning.prefilter import EmbeddingArticleFilter
 
 
-class FakeEmbeddingsAPI:
-    def __init__(self, vector_map):
-        self.vector_map = vector_map
+class FakeEmbeddingBackend:
+    def __init__(self, responses):
+        self._responses = {tuple(key): value for key, value in responses.items()}
         self.calls = []
 
-    def create(self, *, model, input):
-        self.calls.append({"model": model, "input": list(input)})
-        data = [SimpleNamespace(embedding=self.vector_map[text]) for text in input]
-        return SimpleNamespace(data=data)
+    def embed(self, texts):
+        key = tuple(texts)
+        self.calls.append(key)
+        if key not in self._responses:
+            raise AssertionError(f"No fake embedding configured for {key!r}")
+        return [list(vector) for vector in self._responses[key]]
 
 
-class FakeClient:
-    def __init__(self, vector_map):
-        self.embeddings = FakeEmbeddingsAPI(vector_map)
-
-
-def reset_cache():
-    EmbeddingArticleFilter._cached_query_embeddings = {}
-
-
-def test_embedding_filter_retains_above_threshold(monkeypatch):
-    vector_map = {
-        "QueryA": [1.0, 0.0],
-        "QueryB": [0.0, 1.0],
-        "Match Title\nMatch Summary\nMatch Body": [1.0, 0.0],
-        "Miss Title\nMiss Body": [0.3, 0.9539392014169457],
-    }
-
-    monkeypatch.setattr(
-        EmbeddingArticleFilter,
-        "CONFIG",
-        _EmbeddingConfig(model="fake-model", batch_size=2, threshold=0.98),
+def test_filter_uses_embedding_backend():
+    backend = FakeEmbeddingBackend(
+        {
+            ("custom query",): [[1.0, 0.0]],
+            ("Article A", "Article B"): [[1.0, 0.0], [0.0, 1.0]],
+        }
     )
-    reset_cache()
-
-    filter_layer = EmbeddingArticleFilter(
-        client=FakeClient(vector_map), queries=("QueryA", "QueryB")
+    filt = EmbeddingArticleFilter(
+        backend=backend,
+        queries=("custom query",),
     )
 
     articles = [
-        {"title": "Match Title", "summary": "Match Summary", "text": "Match Body"},
-        {"title": "Miss Title", "summary": "", "text": "Miss Body"},
+        {"title": "Article A", "url": "https://example.com/a"},
+        {"title": "Article B", "url": "https://example.com/b"},
     ]
 
-    retained = filter_layer.filter(articles)
+    filtered = filt.filter(articles)
 
-    assert len(retained) == 1
-    assert retained[0]["title"] == "Match Title"
-    assert retained[0]["prefilter_match"] == "QueryA"
-    assert retained[0]["prefilter_score"] == pytest.approx(1.0)
-
-    calls = filter_layer._client.embeddings.calls
-    assert calls[0]["input"] == ["QueryA", "QueryB"]
-    assert calls[1]["input"] == [
-        "Match Title\nMatch Summary\nMatch Body",
-        "Miss Title\nMiss Body",
+    assert [article["title"] for article in filtered] == ["Article A"]
+    assert filtered[0]["prefilter_match"] == "custom query"
+    assert filtered[0]["prefilter_score"] == 1.0
+    assert backend.calls == [
+        ("custom query",),
+        ("Article A", "Article B"),
     ]
 
 
-def test_embedding_filter_returns_original_on_error(monkeypatch):
-    filter_layer = EmbeddingArticleFilter(
-        client=FakeClient({"noop": [1.0]}), queries=("Only",)
+def test_filter_clusters_articles():
+    query_vector = np.array([1.0, 1.0], dtype=float)
+    query_vector /= np.linalg.norm(query_vector)
+    article_a = np.array([1.0, 0.0])
+    article_b = np.array([0.99, 0.01], dtype=float)
+    article_b /= np.linalg.norm(article_b)
+    article_c = np.array([0.0, 1.0])
+
+    backend = FakeEmbeddingBackend(
+        {
+            ("cluster query",): [query_vector.tolist()],
+            ("Article A", "Article B", "Article C"): [
+                article_a.tolist(),
+                article_b.tolist(),
+                article_c.tolist(),
+            ],
+        }
     )
 
-    def boom(*args, **kwargs):
-        raise RuntimeError("no embeddings for you")
-
-    monkeypatch.setattr(filter_layer, "_get_query_embeddings", boom)
-
-    articles = [{"title": "Title", "summary": "Sum", "text": "Body"}]
-    retained = filter_layer.filter(articles)
-
-    assert retained == [articles[0]]
-
-
-def test_embedding_filter_uses_precomputed_queries(tmp_path, monkeypatch):
-    reset_cache()
-    cache_file = tmp_path / "queries.json"
-    cache_file.write_text(
-        json.dumps(
-            {
-                "model": EmbeddingArticleFilter.CONFIG.model,
-                "threshold": EmbeddingArticleFilter.CONFIG.threshold,
-                "queries": ["QueryA", "QueryB"],
-                "embeddings": [[1.0, 0.0], [0.0, 1.0]],
-            }
-        )
+    filt = EmbeddingArticleFilter(
+        backend=backend,
+        queries=("cluster query",),
     )
 
-    article_text = "Title\nBody"
-    vector_map = {
-        article_text: [1.0, 0.0],
-    }
-    client = FakeClient(vector_map)
+    articles = [
+        {"title": "Article A", "url": "https://example.com/a"},
+        {"title": "Article B", "url": "https://example.com/b"},
+        {"title": "Article C", "url": "https://example.com/c"},
+    ]
 
-    filter_layer = EmbeddingArticleFilter(
-        client=client,
-        query_embeddings_path=str(cache_file),
-        queries=("QueryA", "QueryB"),
+    filtered = filt.filter(
+        articles,
+        cluster_threshold=0.98,
+        rng=random.Random(0),
     )
 
-    articles = [{"title": "Title", "summary": "", "text": "Body"}]
-    retained = filter_layer.filter(articles)
+    assert [article["url"] for article in filtered] == [
+        "https://example.com/b",
+        "https://example.com/c",
+    ]
+    assert filtered[0]["other_urls"] == [
+        {"url": "https://example.com/a", "distance": 0.0001}
+    ]
+    assert filtered[1]["other_urls"] == []
 
-    assert len(retained) == 1
-    assert client.embeddings.calls[0]["input"] == [article_text]
 
+def test_filter_respects_cluster_threshold():
+    query_vector = np.array([1.0, 0.0])
+    article_a = np.array([1.0, 0.0])
+    article_b = np.array([0.99, 0.01], dtype=float)
+    article_b /= np.linalg.norm(article_b)
 
-def test_export_security_query_embeddings(tmp_path, monkeypatch):
-    config = _EmbeddingConfig(model="fake", batch_size=2, threshold=0.5)
-    reset_cache()
-
-    vector_map = {
-        "Alpha": [1.0, 0.0],
-        "Beta": [0.0, 1.0],
-    }
-    client = FakeClient(vector_map)
-
-    destination = tmp_path / "export.json"
-    export_security_query_embeddings(
-        str(destination),
-        config=config,
-        client=client,
-        queries=("Alpha", "Beta"),
+    backend = FakeEmbeddingBackend(
+        {
+            ("threshold query",): [query_vector.tolist()],
+            ("Article A", "Article B"): [
+                article_a.tolist(),
+                article_b.tolist(),
+            ],
+        }
     )
 
-    payload = json.loads(destination.read_text())
-    assert payload["model"] == "fake"
-    assert payload["threshold"] == 0.5
-    assert payload["queries"] == ["Alpha", "Beta"]
-    assert payload["embeddings"] == [[1.0, 0.0], [0.0, 1.0]]
+    filt = EmbeddingArticleFilter(
+        backend=backend,
+        queries=("threshold query",),
+    )
 
-    calls = client.embeddings.calls
-    assert calls[0]["input"] == ["Alpha", "Beta"]
+    articles = [
+        {"title": "Article A", "url": "https://example.com/a"},
+        {"title": "Article B", "url": "https://example.com/b"},
+    ]
+
+    filtered = filt.filter(
+        articles,
+        cluster_threshold=0.99999,
+        rng=random.Random(1),
+    )
+
+    assert [article["url"] for article in filtered] == [
+        "https://example.com/a",
+        "https://example.com/b",
+    ]
+    assert filtered[0]["other_urls"] == []
+    assert filtered[1]["other_urls"] == []

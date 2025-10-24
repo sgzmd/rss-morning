@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import math
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
@@ -15,11 +15,13 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Any,
     Dict,
 )
 
+import numpy as np
 from openai import OpenAI
+
+from .embeddings import EmbeddingBackend, OpenAIEmbeddingBackend
 
 logger = logging.getLogger(__name__)
 
@@ -75,18 +77,29 @@ class EmbeddingArticleFilter:
     DEFAULT_QUERIES: Tuple[str, ...] = load_queries()
     _cached_query_embeddings: Dict[Tuple[Tuple[str, ...], str], List[List[float]]] = {}
 
+    @dataclass
+    class _ScoredArticle:
+        score: float
+        article: MutableArticle
+        vector: np.ndarray
+
     def __init__(
         self,
         client: Optional[OpenAI] = None,
         *,
+        backend: Optional[EmbeddingBackend] = None,
         query_embeddings_path: Optional[str] = None,
         queries_file: Optional[str] = None,
         queries: Optional[Sequence[str]] = None,
         config: Optional[_EmbeddingConfig] = None,
     ):
-        self._client = client or OpenAI()
         self._config = config or self.CONFIG
         self._query_embeddings_override: Optional[List[List[float]]] = None
+        if backend is not None and client is not None:
+            logger.info(
+                "EmbeddingArticleFilter received both backend and client; backend takes precedence."
+            )
+
         if queries is not None and queries_file is not None:
             raise ValueError("Provide either queries or queries_file, not both.")
 
@@ -98,6 +111,16 @@ class EmbeddingArticleFilter:
             loaded_queries = self.DEFAULT_QUERIES
 
         self._queries: Tuple[str, ...] = loaded_queries
+        if backend is not None:
+            self._backend = backend
+        else:
+            resolved_client = client or OpenAI()
+            self._backend = OpenAIEmbeddingBackend(
+                client=resolved_client,
+                model=self._config.model,
+                batch_size=self._config.batch_size,
+            )
+
         if query_embeddings_path:
             self._query_embeddings_override = self._load_query_embeddings(
                 Path(query_embeddings_path)
@@ -107,7 +130,13 @@ class EmbeddingArticleFilter:
     def queries(self) -> Tuple[str, ...]:
         return self._queries
 
-    def filter(self, articles: Iterable[Article]) -> List[MutableArticle]:
+    def filter(
+        self,
+        articles: Iterable[Article],
+        *,
+        cluster_threshold: Optional[float] = None,
+        rng: Optional[random.Random] = None,
+    ) -> List[MutableArticle]:
         """Return the list of articles that pass the embedding filter."""
         materialized = [dict(article) for article in articles]
         if not materialized:
@@ -123,7 +152,16 @@ class EmbeddingArticleFilter:
                 return materialized
 
             article_texts = [self._compose_article_text(item) for item in materialized]
-            article_vectors = self._embed_texts(article_texts)
+            raw_vectors = self._embed_texts(article_texts)
+            article_vectors: List[np.ndarray] = []
+            for vector in raw_vectors or []:
+                arr = np.asarray(vector, dtype=float)
+                norm = float(np.linalg.norm(arr))
+                if norm:
+                    arr = arr / norm
+                else:
+                    arr = np.zeros_like(arr)
+                article_vectors.append(arr)
             if not article_vectors:
                 logger.warning(
                     "Embedding pre-filter failed to obtain article embeddings; "
@@ -132,7 +170,7 @@ class EmbeddingArticleFilter:
                 )
                 return materialized
 
-            scored_items: List[Tuple[float, MutableArticle]] = []
+            scored_items: List[EmbeddingArticleFilter._ScoredArticle] = []
             threshold = self._config.threshold
             for original, vector in zip(materialized, article_vectors):
                 best_idx, best_score = self._score_against_queries(
@@ -143,11 +181,22 @@ class EmbeddingArticleFilter:
 
                 original["prefilter_score"] = best_score
                 original["prefilter_match"] = self._queries[best_idx]
-                scored_items.append((best_score, original))
+                scored_items.append(
+                    EmbeddingArticleFilter._ScoredArticle(
+                        score=best_score, article=original, vector=vector
+                    )
+                )
 
             if scored_items:
-                scored_items.sort(key=lambda item: item[0], reverse=True)
-                retained = [article for _, article in scored_items]
+                scored_items.sort(key=lambda item: item.score, reverse=True)
+                if cluster_threshold is not None:
+                    retained = self._apply_clustering(
+                        scored_items, cluster_threshold, rng=rng
+                    )
+                else:
+                    for item in scored_items:
+                        item.article["other_urls"] = []
+                    retained = [item.article for item in scored_items]
             else:
                 retained = []
 
@@ -179,21 +228,7 @@ class EmbeddingArticleFilter:
 
     def _embed_texts(self, texts: Sequence[str]) -> List[List[float]]:
         """Generate normalised embedding vectors for the given texts."""
-        if not texts:
-            return []
-
-        try:
-            embeddings_api: Any = self._client.embeddings
-        except AttributeError:  # pragma: no cover - defensive
-            raise RuntimeError("OpenAI client does not expose embeddings API")
-
-        vectors: List[List[float]] = []
-        for start in range(0, len(texts), self._config.batch_size):
-            batch = texts[start : start + self._config.batch_size]
-            response = embeddings_api.create(model=self._config.model, input=batch)
-            for item in response.data:
-                vectors.append(self._normalise_vector(item.embedding))
-        return vectors
+        return self._backend.embed(texts)
 
     def _load_query_embeddings(self, path: Path) -> Optional[List[List[float]]]:
         try:
@@ -250,13 +285,6 @@ class EmbeddingArticleFilter:
         body = str(article.get("text") or "")
         return "\n".join(part for part in (title, summary, body) if part).strip()
 
-    @staticmethod
-    def _normalise_vector(vector: Sequence[float]) -> List[float]:
-        norm = math.sqrt(sum(component * component for component in vector))
-        if norm == 0:
-            return [0.0 for component in vector]
-        return [component / norm for component in vector]
-
     def _score_against_queries(
         self,
         article_vector: Sequence[float],
@@ -277,6 +305,118 @@ class EmbeddingArticleFilter:
     @staticmethod
     def _dot(left: Sequence[float], right: Sequence[float]) -> float:
         return sum(lft * rght for lft, rght in zip(left, right))
+
+    def _apply_clustering(
+        self,
+        items: List[_ScoredArticle],
+        threshold: float,
+        *,
+        rng: Optional[random.Random] = None,
+    ) -> List[MutableArticle]:
+        working_threshold = threshold
+        rng = rng or random.Random()
+        remaining = list(range(len(items)))
+        kernels: List[EmbeddingArticleFilter._ScoredArticle] = []
+
+        while remaining:
+            seed_position = rng.randrange(len(remaining))
+            seed_index = remaining.pop(seed_position)
+            cluster_indices = [seed_index]
+            seed_vector = items[seed_index].vector
+
+            updated_remaining: List[int] = []
+            for index in remaining:
+                similarity = self._cosine(seed_vector, items[index].vector)
+                if similarity >= working_threshold:
+                    cluster_indices.append(index)
+                else:
+                    updated_remaining.append(index)
+            remaining = updated_remaining
+
+            cluster_members = [items[idx] for idx in cluster_indices]
+            centroid = self._cluster_centroid(
+                [member.vector for member in cluster_members]
+            )
+            kernel = self._select_kernel(cluster_members, centroid)
+            others = [member for member in cluster_members if member is not kernel]
+            kernel.article["other_urls"] = self._build_other_urls(kernel, others)
+            kernels.append(kernel)
+
+        kernels.sort(key=lambda item: item.score, reverse=True)
+        return [item.article for item in kernels]
+
+    def _cluster_centroid(self, vectors: Sequence[np.ndarray]) -> np.ndarray:
+        stack = np.stack(vectors, axis=0)
+        centroid = np.mean(stack, axis=0)
+        norm = float(np.linalg.norm(centroid))
+        if norm:
+            return centroid / norm
+        return np.zeros_like(centroid)
+
+    def _select_kernel(
+        self,
+        members: Sequence[_ScoredArticle],
+        centroid: np.ndarray,
+    ) -> _ScoredArticle:
+        best_item = members[0]
+        best_cosine = self._cosine(best_item.vector, centroid)
+
+        for candidate in members[1:]:
+            cosine = self._cosine(candidate.vector, centroid)
+            if cosine > best_cosine + 1e-12:
+                best_item = candidate
+                best_cosine = cosine
+                continue
+            if abs(cosine - best_cosine) > 1e-12:
+                continue
+
+            if candidate.score > best_item.score + 1e-12:
+                best_item = candidate
+                best_cosine = cosine
+                continue
+            if abs(candidate.score - best_item.score) > 1e-12:
+                continue
+
+            current_url = str(best_item.article.get("url") or "")
+            candidate_url = str(candidate.article.get("url") or "")
+            if candidate_url < current_url:
+                best_item = candidate
+                best_cosine = cosine
+
+        return best_item
+
+    def _build_other_urls(
+        self,
+        kernel: _ScoredArticle,
+        others: Sequence[_ScoredArticle],
+    ) -> List[Dict[str, object]]:
+        if not others:
+            return []
+
+        entries = []
+        sorted_others = sorted(
+            others,
+            key=lambda item: 1.0 - self._cosine(kernel.vector, item.vector),
+        )
+        for item in sorted_others:
+            cosine = self._cosine(kernel.vector, item.vector)
+            distance = max(0.0, 1.0 - cosine)
+            entries.append(
+                {
+                    "url": str(item.article.get("url") or ""),
+                    "distance": round(distance, 4),
+                }
+            )
+        return entries
+
+    @staticmethod
+    def _cosine(left: np.ndarray, right: np.ndarray) -> float:
+        left_norm = float(np.linalg.norm(left))
+        right_norm = float(np.linalg.norm(right))
+        if not left_norm or not right_norm:
+            return 0.0
+        value = float(np.dot(left, right) / (left_norm * right_norm))
+        return max(min(value, 1.0), -1.0)
 
 
 def export_security_query_embeddings(

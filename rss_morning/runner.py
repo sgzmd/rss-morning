@@ -31,6 +31,7 @@ class RunConfig:
     email_to: Optional[str] = None
     email_from: Optional[str] = None
     email_subject: Optional[str] = None
+    cluster_threshold: float = 0.84
 
 
 @dataclass
@@ -119,7 +120,9 @@ def execute(config: RunConfig) -> RunResult:
         filter_layer = EmbeddingArticleFilter(
             query_embeddings_path=config.pre_filter_embeddings_path
         )
-        filtered_articles = filter_layer.filter(list(articles))
+        filtered_articles = filter_layer.filter(
+            list(articles), cluster_threshold=config.cluster_threshold
+        )
         if filtered_articles is None:
             logger.warning(
                 "Embedding pre-filter returned no articles; keeping original set."

@@ -54,6 +54,7 @@ def test_main_passes_pre_filter_path(monkeypatch, tmp_path):
     config = captured["config"]
     assert config.pre_filter is True
     assert config.pre_filter_embeddings_path == str(cache_path)
+    assert config.cluster_threshold == 0.84
 
 
 def test_main_enables_pre_filter_without_path(monkeypatch):
@@ -62,9 +63,26 @@ def test_main_enables_pre_filter_without_path(monkeypatch):
     def fake_execute(config):
         assert config.pre_filter is True
         assert config.pre_filter_embeddings_path is None
+        assert config.cluster_threshold == 0.84
         return SimpleNamespace(output_text="{}", email_payload=None, is_summary=False)
 
     monkeypatch.setattr(cli, "execute", fake_execute)
 
     exit_code = cli.main(["--pre-filter"])
     assert exit_code == 0
+
+
+def test_main_overrides_cluster_threshold(monkeypatch):
+    monkeypatch.setattr(cli, "configure_logging", lambda level: None)
+
+    captured = {}
+
+    def fake_execute(config):
+        captured["threshold"] = config.cluster_threshold
+        return SimpleNamespace(output_text="{}", email_payload=None, is_summary=False)
+
+    monkeypatch.setattr(cli, "execute", fake_execute)
+
+    exit_code = cli.main(["--cluster-threshold", "0.9"])
+    assert exit_code == 0
+    assert captured["threshold"] == 0.9

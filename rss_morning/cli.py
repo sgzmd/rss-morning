@@ -50,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Apply an embedding-based pre-filter to articles after download. Optionally provide a path to precomputed query embeddings.",
     )
     parser.add_argument(
+        "--cluster-threshold",
+        type=float,
+        default=0.84,
+        help="Cosine similarity threshold for clustering near-duplicate articles during pre-filtering.",
+    )
+    parser.add_argument(
         "--email-to",
         help="If provided, send the results to this email address via Resend.",
     )
@@ -116,6 +122,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         email_to=args.email_to,
         email_from=args.email_from,
         email_subject=args.email_subject,
+        cluster_threshold=args.cluster_threshold,
     )
 
     try:

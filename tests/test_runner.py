@@ -111,8 +111,9 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
             capture["instantiated"] = True
             capture["query_path"] = kwargs.get("query_embeddings_path")
 
-        def filter(self, articles):
+        def filter(self, articles, *, cluster_threshold=None, rng=None):
             capture["articles"] = list(articles)
+            capture["cluster_threshold"] = cluster_threshold
             retained = [dict(articles[0])]
             retained[0]["url"] = "https://filtered.example.com"
             return retained
@@ -136,6 +137,7 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
     assert capture["instantiated"] is True
     assert capture["query_path"] is None
     assert capture["articles"][0]["url"] == "https://example.com"
+    assert capture["cluster_threshold"] == config.cluster_threshold
     assert len(payload) == 1
     assert payload[0]["url"] == "https://filtered.example.com"
 

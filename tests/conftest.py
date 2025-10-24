@@ -3,8 +3,11 @@ import pathlib
 import shutil
 import sys
 import types
-
 import pytest
+
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def _ensure_module(name: str, module):
