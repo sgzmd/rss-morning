@@ -26,6 +26,14 @@ If an article lacks full text, attempt to retrieve it from the URL.
 ### RELEVANCE RULES
 1. Decide whether each article is useful for the stakeholder. Keep it only if it clearly ties to the persona’s focus areas or responsibilities. Skip anything that is purely general interest, unrelated market news, or duplicates.
 2. Consider security, reliability, compliance, and operational impacts that might affect the stakeholder’s scope. If the connection is weak or speculative, drop the article.
+3. Assign one of the following categories to each retained article (ignore any category from the input):
+   - Mobile Malware and Exploits
+   - Mobile App Supply Chain and Integrity
+   - Account Security and Authentication
+   - Fraud and Abuse in Commerce Platforms
+   - API and Data Security
+   - Privacy, Regulation, and Regional Cybersecurity
+   Store the chosen value as the `category` field in the output.
 
 ### SUMMARY REQUIREMENTS
 For each retained article produce a tightly written briefing (4‑6 sentences) that always answers:
@@ -46,7 +54,8 @@ Return a single JSON object with this structure (no markdown fencing):
         "what": "Brief description of the event",
         "so-what": "Why it matters for the persona",
         "now-what": "Recommended action or explicit 'No immediate action'"
-      }
+      },
+      "category": "API and Data Security"
     }
   ]
 }

@@ -36,7 +36,12 @@
             {% for item in summaries %}
               {% set summary = item.get("summary") or {} %}
               <div class="card">
-                <div class="badge">Insight {{ loop.index }}</div>
+                {% set category = item.get("category") %}
+                {% if category %}
+                  <div class="badge">{{ category }}</div>
+                {% else %}
+                  <div class="badge">Insight {{ loop.index }}</div>
+                {% endif %}
                 <h2>{{ summary.get("title") or "Update " ~ loop.index }}</h2>
                 {% if item.get("image") %}
                   <div class="media">

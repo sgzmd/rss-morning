@@ -7,6 +7,7 @@ def test_build_email_html_for_summary_payload():
             {
                 "url": "https://example.com/a",
                 "image": "https://example.com/image.jpg",
+                "category": "API and Data Security",
                 "summary": {
                     "title": "Title",
                     "what": "Thing",
@@ -19,7 +20,7 @@ def test_build_email_html_for_summary_payload():
 
     html = renderers.build_email_html(payload, is_summary=True)
 
-    assert "Insight 1" in html
+    assert "API and Data Security" in html
     assert "Impact" in html
     assert "View Article" in html
     assert '<img src="https://example.com/image.jpg"' in html
