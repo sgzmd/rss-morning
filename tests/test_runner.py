@@ -55,7 +55,6 @@ def test_execute_standard_flow(monkeypatch):
     payload = json.loads(result.output_text)
 
     assert payload[0]["text"] == "trimmed"
-    assert payload[0]["text"] == "trimmed"
     assert payload[0]["image"] == "https://img.example.com"
     assert not result.is_summary
 
@@ -70,10 +69,12 @@ def test_execute_summary_flow(monkeypatch):
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
     )
+    article_image = "https://example.com/summary-image.jpg"
+
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url: ArticleContent(text=None, image=None),
+        lambda url: ArticleContent(text=None, image=article_image),
     )
     monkeypatch.setattr(runner, "truncate_text", lambda text: text)
 
@@ -105,10 +106,13 @@ def test_execute_summary_flow(monkeypatch):
 
     result = execute(config)
 
-    assert json.loads(result.output_text)["summaries"]
+    rendered = json.loads(result.output_text)
+    assert rendered["summaries"]
+    assert rendered["summaries"][0]["image"] == article_image
     assert result.is_summary
     assert calls[0]["is_summary"] is True
     assert calls[0]["subject"] == "RSS Mailer update for 1999-12-31 at 23:59"
+    assert calls[0]["payload"]["summaries"][0]["image"] == article_image
 
 
 def test_execute_uses_custom_email_subject(monkeypatch):

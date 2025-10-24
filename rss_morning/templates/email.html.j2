@@ -38,6 +38,14 @@
               <div class="card">
                 <div class="badge">Insight {{ loop.index }}</div>
                 <h2>{{ summary.get("title") or "Update " ~ loop.index }}</h2>
+                {% if item.get("image") %}
+                  <div class="media">
+                    <img src="{{ item.get("image") }}" alt="{{ summary.get("title") or item.get("url") or "Summary image" }}" />
+                  </div>
+                  {% if item.get("url") %}
+                    <div class="media-caption">Image from <a href="{{ item.get("url") }}" target="_blank" rel="noopener">source article</a></div>
+                  {% endif %}
+                {% endif %}
                 <div class="section-label">What</div>
                 <p>{{ summary.get("what") | nl2br or "—" }}</p>
                 <div class="section-label">So What</div>

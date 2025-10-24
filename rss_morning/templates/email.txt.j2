@@ -6,6 +6,7 @@
 {% for item in summaries -%}
 Title: {{ (item.get("summary") or {}).get("title") or item.get("url") or "Update " ~ loop.index }}
 {% set summary = item.get("summary") or {} -%}
+{% if item.get("image") %}Image: {{ item.get("image") }}{% endif -%}
 {% if summary.get("what") %}What: {{ summary.get("what") }}{% endif -%}
 {% if summary.get("so-what") %}So What: {{ summary.get("so-what") }}{% endif -%}
 {% if summary.get("now-what") %}Now What: {{ summary.get("now-what") }}{% endif -%}

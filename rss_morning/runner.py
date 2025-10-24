@@ -151,6 +151,39 @@ def _collect_entries(config: RunConfig) -> List[dict]:
     return output
 
 
+def _attach_summary_images(summary_payload: Any, source_articles: List[dict]) -> Any:
+    """Populate missing image fields in summary payload using original articles."""
+    if not isinstance(summary_payload, dict):
+        return summary_payload
+
+    summaries = summary_payload.get("summaries")
+    if not isinstance(summaries, list) or not summaries:
+        return summary_payload
+
+    images_by_url = {
+        article.get("url"): article.get("image")
+        for article in source_articles
+        if article.get("url") and article.get("image")
+    }
+    if not images_by_url:
+        return summary_payload
+
+    for item in summaries:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url")
+        if not url:
+            continue
+        current_image = item.get("image")
+        if current_image:
+            continue
+        replacement = images_by_url.get(url)
+        if replacement:
+            item["image"] = replacement
+
+    return summary_payload
+
+
 def _build_default_email_subject() -> str:
     timestamp = datetime.now(timezone.utc)
     return "RSS Mailer update for " + timestamp.strftime("%Y-%m-%d at %H:%M")
@@ -193,6 +226,8 @@ def execute(config: RunConfig) -> RunResult:
         summary_output, summary_data = generate_summary(articles, return_dict=True)
         output_text = summary_output
         if summary_data is not None:
+            summary_data = _attach_summary_images(summary_data, articles)
+            output_text = json.dumps(summary_data, indent=2, ensure_ascii=False)
             email_payload = summary_data
             is_summary_payload = True
     else:
