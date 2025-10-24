@@ -49,7 +49,7 @@ def fetch_article_content(url: str, timeout: int = 20) -> ArticleContent:
     return ArticleContent(text=text, image=image)
 
 
-def truncate_text(value: str, limit: int = 2500) -> str:
+def truncate_text(value: str, limit: int = 1000) -> str:
     """Limit text length to the given number of characters."""
     if len(value) <= limit:
         return value
