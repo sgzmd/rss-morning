@@ -1,8 +1,11 @@
+import requests.adapters  # noqa: F401
+
 import json
 from datetime import datetime, timezone, timedelta
 
 import pytest
 
+from rss_morning.articles import ArticleContent
 from rss_morning.models import FeedConfig, FeedEntry
 from rss_morning.runner import RunConfig, execute
 import rss_morning.runner as runner
@@ -28,7 +31,13 @@ def test_execute_standard_flow(monkeypatch):
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
     )
-    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url: ArticleContent(
+            text="article text", image="https://img.example.com"
+        ),
+    )
     monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
@@ -46,6 +55,8 @@ def test_execute_standard_flow(monkeypatch):
     payload = json.loads(result.output_text)
 
     assert payload[0]["text"] == "trimmed"
+    assert payload[0]["text"] == "trimmed"
+    assert payload[0]["image"] == "https://img.example.com"
     assert not result.is_summary
 
 
@@ -59,7 +70,11 @@ def test_execute_summary_flow(monkeypatch):
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
     )
-    monkeypatch.setattr(runner, "fetch_article_text", lambda url: None)
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url: ArticleContent(text=None, image=None),
+    )
     monkeypatch.setattr(runner, "truncate_text", lambda text: text)
 
     summary_payload = {"summaries": [{"url": "https://example.com"}]}
@@ -106,7 +121,11 @@ def test_execute_uses_custom_email_subject(monkeypatch):
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
     )
-    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url: ArticleContent(text="article text", image=None),
+    )
     monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
 
     captured = {}
@@ -141,7 +160,11 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
     )
-    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url: ArticleContent(text="article text", image=None),
+    )
     monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
@@ -193,7 +216,11 @@ def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
     )
-    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url: ArticleContent(text="article text", image=None),
+    )
     monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
@@ -256,7 +283,11 @@ def test_execute_save_articles_writes_file(monkeypatch, tmp_path):
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
     )
-    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url: ArticleContent(text="article text", image=None),
+    )
     monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
@@ -326,7 +357,11 @@ def test_execute_limit_applies_per_feed(monkeypatch):
         return list(feed_entries[feed.url])
 
     monkeypatch.setattr(runner, "fetch_feed_entries", fake_fetch)
-    monkeypatch.setattr(runner, "fetch_article_text", lambda url: None)
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url: ArticleContent(text=None, image=None),
+    )
     monkeypatch.setattr(runner, "truncate_text", lambda text: text)
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
@@ -391,7 +426,11 @@ def test_execute_raises_when_no_entries(monkeypatch):
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
     )
-    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "text")
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url: ArticleContent(text="text", image=None),
+    )
     monkeypatch.setattr(runner, "truncate_text", lambda text: text)
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 

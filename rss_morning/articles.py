@@ -3,42 +3,53 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Optional
 
-import requests
-from lxml import html
-from readability import Document
+from newspaper import Article, Config
+from newspaper.article import ArticleException
 
 logger = logging.getLogger(__name__)
 
 
-def fetch_article_text(url: str, timeout: int = 20) -> Optional[str]:
-    """Download and extract readable text from an article URL."""
+@dataclass
+class ArticleContent:
+    """Structured content retrieved from an article."""
+
+    text: Optional[str]
+    image: Optional[str]
+
+
+def fetch_article_content(url: str, timeout: int = 20) -> ArticleContent:
+    """Download article content using newspaper3k and return text and lead image."""
     logger.debug("Downloading article content from %s", url)
-    try:
-        response = requests.get(url, timeout=timeout)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        logger.warning("Failed to download article %s: %s", url, exc)
-        return None
+    config = Config()
+    config.fetch_images = True
+    config.memoize_articles = False
+    config.request_timeout = timeout
 
-    document = Document(response.text)
-    summary_html = document.summary(html_partial=True)
-    try:
-        parsed = html.fromstring(summary_html)
-    except (html.ParserError, TypeError) as exc:
-        logger.warning("Failed to parse article HTML %s: %s", url, exc)
-        return None
+    article = Article(url=url, config=config)
 
-    text = parsed.text_content().strip()
+    try:
+        article.download()
+        article.parse()
+    except ArticleException as exc:
+        logger.warning("Failed to process article %s: %s", url, exc)
+        return ArticleContent(text=None, image=None)
+    except Exception as exc:  # noqa: BLE001 - defensive against library internals
+        logger.warning("Unexpected error while processing article %s: %s", url, exc)
+        return ArticleContent(text=None, image=None)
+
+    text = (article.text or "").strip() or None
+    image = (article.top_image or "").strip() or None
+
     if not text:
         logger.info("Article contains no readable text: %s", url)
-        return None
 
-    return text
+    return ArticleContent(text=text, image=image)
 
 
-def truncate_text(value: str, limit: int = 1000) -> str:
+def truncate_text(value: str, limit: int = 2500) -> str:
     """Limit text length to the given number of characters."""
     if len(value) <= limit:
         return value

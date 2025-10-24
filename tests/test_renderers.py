@@ -30,6 +30,7 @@ def test_build_email_text_for_articles_list():
             "summary": "Summary",
             "text": "Body",
             "url": "https://example.com",
+            "image": "https://example.com/hero.jpg",
         }
     ]
 
@@ -37,6 +38,24 @@ def test_build_email_text_for_articles_list():
 
     assert "Example" in text
     assert "Body" in text
+    assert "https://example.com/hero.jpg" in text
+
+
+def test_build_email_html_includes_article_image():
+    payload = [
+        {
+            "title": "Visual Story",
+            "summary": "Summary",
+            "text": "Excerpt",
+            "url": "https://example.com/story",
+            "image": "https://example.com/hero.jpg",
+        }
+    ]
+
+    html = renderers.build_email_html(payload, is_summary=False)
+
+    assert '<img src="https://example.com/hero.jpg"' in html
+    assert "Visual Story" in html
 
 
 def test_build_email_html_handles_fallback():

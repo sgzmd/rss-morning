@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, List, Optional
 
-from .articles import fetch_article_text, truncate_text
+from .articles import fetch_article_content, truncate_text
 from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
@@ -129,19 +129,21 @@ def _collect_entries(config: RunConfig) -> List[dict]:
 
     output = []
     for entry in unique_entries:
-        text = fetch_article_text(entry.link)
+        content = fetch_article_content(entry.link)
         payload = {
             "url": entry.link,
             "category": entry.category,
             "title": entry.title,
             "summary": entry.summary or "",
         }
-        if text:
-            payload["text"] = truncate_text(text)
+        if content.text:
+            payload["text"] = truncate_text(content.text)
         else:
             logger.info(
                 "Article text unavailable; including metadata only: %s", entry.link
             )
+        if content.image:
+            payload["image"] = content.image
 
         output.append(payload)
 

@@ -4,103 +4,94 @@ import types
 
 
 def _install_article_dependencies(
-    monkeypatch, response_text="<p>Article body</p>", text_content="Article body"
+    monkeypatch,
+    *,
+    article_text="Article body",
+    top_image="https://example.com/image.jpg",
+    download_error=None,
+    parse_error=None,
+    parse_error_factory=None,
 ):
-    class FakeResponse:
-        def __init__(self, text):
-            self.text = text
+    class FakeArticle:
+        def __init__(self, url, config):
+            self.url = url
+            self.config = config
+            self.text = ""
+            self.top_image = ""
 
-        def raise_for_status(self):
-            return None
+        def download(self):
+            if download_error:
+                raise download_error
 
-    def fake_get(url, timeout=20):
-        return FakeResponse(response_text)
+        def parse(self):
+            if parse_error_factory:
+                raise parse_error_factory(FakeArticleException)
+            if parse_error:
+                raise parse_error
+            self.text = article_text
+            self.top_image = top_image
 
-    fake_requests = types.ModuleType("requests")
-    fake_requests.get = fake_get
+    fake_newspaper = types.ModuleType("newspaper")
+    fake_newspaper.Article = FakeArticle
 
-    class FakeDocument:
-        def __init__(self, text):
-            self._text = text
+    class FakeConfig:
+        def __init__(self):
+            self.fetch_images = False
+            self.memoize_articles = True
+            self.request_timeout = None
 
-        def summary(self, html_partial=True):
-            return self._text
+    fake_newspaper.Config = FakeConfig
 
-    fake_readability = types.ModuleType("readability")
-    fake_readability.Document = FakeDocument
+    class FakeArticleException(Exception):
+        pass
 
-    fake_html_module = types.ModuleType("html")
+    fake_article_module = types.ModuleType("newspaper.article")
+    fake_article_module.ArticleException = FakeArticleException
 
-    class FakeParsed:
-        def text_content(self):
-            return text_content
-
-    def fake_fromstring(_html):
-        return FakeParsed()
-
-    fake_html_module.fromstring = fake_fromstring
-    fake_lxml = types.ModuleType("lxml")
-    fake_lxml.html = fake_html_module
-
-    monkeypatch.setitem(sys.modules, "requests", fake_requests)
-    monkeypatch.setitem(sys.modules, "readability", fake_readability)
-    monkeypatch.setitem(sys.modules, "lxml", fake_lxml)
-    monkeypatch.setitem(sys.modules, "lxml.html", fake_html_module)
+    monkeypatch.setitem(sys.modules, "newspaper", fake_newspaper)
+    monkeypatch.setitem(sys.modules, "newspaper.article", fake_article_module)
 
     sys.modules.pop("rss_morning.articles", None)
-    return importlib.import_module("rss_morning.articles")
+    return importlib.import_module("rss_morning.articles"), FakeArticleException
 
 
-def test_fetch_article_text_returns_parsed_content(monkeypatch):
-    articles_module = _install_article_dependencies(monkeypatch)
+def test_fetch_article_content_returns_text_and_image(monkeypatch):
+    articles_module, _ = _install_article_dependencies(monkeypatch)
 
-    text = articles_module.fetch_article_text("https://example.com/article")
+    content = articles_module.fetch_article_content("https://example.com/article")
 
-    assert text == "Article body"
+    assert content.text == "Article body"
+    assert content.image == "https://example.com/image.jpg"
 
 
-def test_fetch_article_text_handles_request_errors(monkeypatch):
-    class FakeResponse:
-        def raise_for_status(self):
-            raise Exception("boom")
-
-    def fake_get(url, timeout=20):
-        return FakeResponse()
-
-    fake_requests = types.ModuleType("requests")
-    fake_requests.get = fake_get
-    fake_requests.RequestException = Exception
-
-    class FakeDocument:
-        def __init__(self, text):
-            self.text = text
-
-        def summary(self, html_partial=True):
-            return "<p></p>"
-
-    fake_readability = types.ModuleType("readability")
-    fake_readability.Document = FakeDocument
-
-    fake_html_module = types.ModuleType("html")
-    fake_html_module.fromstring = lambda html: types.SimpleNamespace(
-        text_content=lambda: ""
+def test_fetch_article_content_handles_download_errors(monkeypatch):
+    (
+        articles_module,
+        article_exception,
+    ) = _install_article_dependencies(
+        monkeypatch, download_error=Exception("download boom")
     )
 
-    fake_lxml = types.ModuleType("lxml")
-    fake_lxml.html = fake_html_module
+    content = articles_module.fetch_article_content("https://example.com")
 
-    monkeypatch.setitem(sys.modules, "requests", fake_requests)
-    monkeypatch.setitem(sys.modules, "readability", fake_readability)
-    monkeypatch.setitem(sys.modules, "lxml", fake_lxml)
-    monkeypatch.setitem(sys.modules, "lxml.html", fake_html_module)
-    sys.modules.pop("rss_morning.articles", None)
-    articles_module = importlib.import_module("rss_morning.articles")
+    assert content.text is None
+    assert content.image is None
 
-    assert articles_module.fetch_article_text("https://example.com") is None
+
+def test_fetch_article_content_handles_library_exceptions(monkeypatch):
+    articles_module, _ = _install_article_dependencies(
+        monkeypatch,
+        parse_error_factory=lambda exc_cls: exc_cls("parse boom"),
+    )
+
+    content = articles_module.fetch_article_content("https://example.com")
+
+    assert content.text is None
+    assert content.image is None
 
 
 def test_truncate_text(monkeypatch):
-    articles_module = _install_article_dependencies(monkeypatch)
+    articles_module, _ = _install_article_dependencies(monkeypatch)
     text = "x" * 1050
 
     truncated = articles_module.truncate_text(text, limit=100)
