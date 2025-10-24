@@ -2,6 +2,8 @@
 
 Some of us just want to sip the first coffee of the day and know whether the world is on fire. Others (hi) are on call for the industry gossip mill and still want to keep the caffeine sacred. RSS Morning is the homebrew rig I built so I can stay in the loop without doomscrolling twenty browser tabs. It slurps the headlines from your carefully curated feeds, bins the junk with embeddings, writes summaries that sound like a thoughtful teammate, and — if you want — emails the whole thing to you before your coffee is cold.
 
+<img src="static/screenshot.png" style="max-width: 500px"/>
+
 ## What It Actually Does
 
 - Pulls the latest items from an OPML feed list and runs them through Readability so you get clean article text.

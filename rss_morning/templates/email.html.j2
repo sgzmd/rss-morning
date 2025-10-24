@@ -17,6 +17,9 @@
       a { color: #2563eb; text-decoration: none; }
       footer { padding: 16px 24px; font-size: 12px; color: #6b7280; background-color: #f3f4f6; }
       .section-label { font-weight: bold; color: #374151; text-transform: uppercase; font-size: 12px; letter-spacing: 0.08em; margin-bottom: 6px; }
+      .media { margin: 16px 0; border-radius: 12px; overflow: hidden; box-shadow: 0 12px 24px rgba(15,23,42,0.15); display: flex; justify-content: center; }
+      .media img { width: auto; max-width: 100%; height: auto; max-height: 400px; display: block; border: 0; }
+      .media-caption { font-size: 12px; color: #6b7280; text-align: right; margin-top: 6px; }
     </style>
   </head>
   <body>
@@ -35,6 +38,14 @@
               <div class="card">
                 <div class="badge">Insight {{ loop.index }}</div>
                 <h2>{{ summary.get("title") or "Update " ~ loop.index }}</h2>
+                {% if item.get("image") %}
+                  <div class="media">
+                    <img src="{{ item.get("image") }}" alt="{{ summary.get("title") or item.get("url") or "Summary image" }}" />
+                  </div>
+                  {% if item.get("url") %}
+                    <div class="media-caption">Image from <a href="{{ item.get("url") }}" target="_blank" rel="noopener">source article</a></div>
+                  {% endif %}
+                {% endif %}
                 <div class="section-label">What</div>
                 <p>{{ summary.get("what") | nl2br or "—" }}</p>
                 <div class="section-label">So What</div>
@@ -58,6 +69,14 @@
                   <div class="badge">{{ article.get("category") }}</div>
                 {% endif %}
                 <h2>{{ article.get("title") or article.get("url") or "Untitled Article" }}</h2>
+                {% if article.get("image") %}
+                  <div class="media">
+                    <img src="{{ article.get("image") }}" alt="{{ article.get("title") or "Article image" }}" />
+                  </div>
+                  {% if article.get("url") %}
+                    <div class="media-caption">Image from <a href="{{ article.get("url") }}" target="_blank" rel="noopener">source article</a></div>
+                  {% endif %}
+                {% endif %}
                 <div class="section-label">Summary</div>
                 <p>{{ article.get("summary") | nl2br or "—" }}</p>
                 {% if article.get("text") %}

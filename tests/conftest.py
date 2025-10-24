@@ -1,4 +1,5 @@
 import contextlib
+import importlib.util
 import pathlib
 import shutil
 import sys
@@ -11,7 +12,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 def _ensure_module(name: str, module):
-    sys.modules.setdefault(name, module)
+    if name in sys.modules:
+        return
+    if importlib.util.find_spec(name) is None:
+        sys.modules[name] = module
 
 
 # Provide lightweight stubs for optional third-party dependencies to keep tests hermetic.
@@ -40,16 +44,10 @@ fake_html.fromstring = lambda *_args, **_kwargs: (_ for _ in ()).throw(
 fake_lxml = types.ModuleType("lxml")
 fake_lxml.html = fake_html
 
-fake_feedparser = types.ModuleType("feedparser")
-fake_feedparser.parse = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-    RuntimeError("feedparser stub")
-)
-
 _ensure_module("requests", fake_requests)
 _ensure_module("readability", fake_readability)
 _ensure_module("lxml", fake_lxml)
 _ensure_module("lxml.html", fake_html)
-_ensure_module("feedparser", fake_feedparser)
 
 
 @pytest.fixture(scope="session", autouse=True)

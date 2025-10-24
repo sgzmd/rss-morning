@@ -6,6 +6,7 @@
 {% for item in summaries -%}
 Title: {{ (item.get("summary") or {}).get("title") or item.get("url") or "Update " ~ loop.index }}
 {% set summary = item.get("summary") or {} -%}
+{% if item.get("image") %}Image: {{ item.get("image") }}{% endif -%}
 {% if summary.get("what") %}What: {{ summary.get("what") }}{% endif -%}
 {% if summary.get("so-what") %}So What: {{ summary.get("so-what") }}{% endif -%}
 {% if summary.get("now-what") %}Now What: {{ summary.get("now-what") }}{% endif -%}
@@ -21,6 +22,7 @@ No relevant articles identified.
 {% for article in articles -%}
 Title: {{ article.get("title") or article.get("url") or "Untitled Article" }}
 {% if article.get("summary") %}Summary: {{ article.get("summary") }}{% endif -%}
+{% if article.get("image") %}Image: {{ article.get("image") }}{% endif -%}
 {% if article.get("text") %}Excerpt: {{ article.get("text") }}{% endif -%}
 {% if article.get("url") %}Link: {{ article.get("url") }}{% endif -%}
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional
 
 from .runner import RunConfig, execute
@@ -77,20 +77,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--email-subject",
         help="Subject line to use when emailing results.",
     )
+    parser.add_argument(
+        "--log-file",
+        help="Optional path to a log file; when provided logs are written to both console and the file.",
+    )
     return parser
 
 
-def configure_logging(level_name: str) -> None:
+def configure_logging(level_name: str, log_file: Optional[str] = None) -> None:
     """Initialise logging according to CLI options."""
     log_level = getattr(logging, level_name.upper(), None)
     if not isinstance(log_level, int):
         raise ValueError(f"Unsupported log level: {level_name}")
 
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-
-    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    safe_timestamp = timestamp.replace(":", "-")
-    log_filename = f"rss-morning-{safe_timestamp}.log"
 
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
@@ -103,11 +103,22 @@ def configure_logging(level_name: str) -> None:
     stream_handler.setFormatter(formatter)
     root_logger.addHandler(stream_handler)
 
-    file_handler = logging.FileHandler(log_filename, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
-
-    logger.debug("Logger initialised with level %s", level_name.upper())
+    if log_file:
+        log_path = Path(log_file)
+        if log_path.parent and not log_path.parent.exists():
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+        logger.debug(
+            "Logger initialised with level %s and file output to %s",
+            level_name.upper(),
+            log_path,
+        )
+    else:
+        logger.debug(
+            "Logger initialised with console output at level %s", level_name.upper()
+        )
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -116,7 +127,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        configure_logging(args.log_level)
+        configure_logging(args.log_level, args.log_file)
     except ValueError as exc:
         parser.error(str(exc))
 
