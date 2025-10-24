@@ -6,6 +6,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, List, Optional
 
 from .articles import fetch_article_text, truncate_text
@@ -32,6 +33,8 @@ class RunConfig:
     email_from: Optional[str] = None
     email_subject: Optional[str] = None
     cluster_threshold: float = 0.84
+    save_articles_path: Optional[str] = None
+    load_articles_path: Optional[str] = None
 
 
 @dataclass
@@ -41,6 +44,40 @@ class RunResult:
     output_text: str
     email_payload: Any
     is_summary: bool
+
+
+def _load_articles_from_file(path: str) -> List[dict]:
+    location = Path(path)
+    try:
+        payload = json.loads(location.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:  # pragma: no cover - defensive
+        raise RuntimeError(f"Article snapshot not found: {location}") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Article snapshot is not valid JSON: {location}") from exc
+
+    if not isinstance(payload, list):
+        raise RuntimeError("Article snapshot must contain a JSON array.")
+
+    articles: List[dict] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise RuntimeError("Article snapshot must contain objects only.")
+        articles.append(dict(item))
+
+    logger.info("Loaded %d articles from %s", len(articles), location)
+    return articles
+
+
+def _save_articles_to_file(path: str, articles: List[dict]) -> None:
+    location = Path(path)
+    if location.parent and not location.parent.exists():
+        location.parent.mkdir(parents=True, exist_ok=True)
+
+    serialisable = [dict(article) for article in articles]
+    location.write_text(
+        json.dumps(serialisable, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    logger.info("Saved %d articles to %s", len(serialisable), location)
 
 
 def _collect_entries(config: RunConfig) -> List[dict]:
@@ -114,7 +151,14 @@ def _collect_entries(config: RunConfig) -> List[dict]:
 
 def execute(config: RunConfig) -> RunResult:
     """Run the application logic and return the result payload."""
-    articles = _collect_entries(config)
+    if config.load_articles_path:
+        articles = _load_articles_from_file(config.load_articles_path)
+    else:
+        articles = _collect_entries(config)
+
+    if config.save_articles_path:
+        _save_articles_to_file(config.save_articles_path, articles)
+
     if config.pre_filter:
         logger.info("Applying embedding pre-filter to %d articles", len(articles))
         filter_layer = EmbeddingArticleFilter(

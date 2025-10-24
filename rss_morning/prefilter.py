@@ -190,6 +190,11 @@ class EmbeddingArticleFilter:
             if scored_items:
                 scored_items.sort(key=lambda item: item.score, reverse=True)
                 if cluster_threshold is not None:
+                    logger.info(
+                        "Clustering %d articles at threshold %.2f",
+                        len(scored_items),
+                        cluster_threshold,
+                    )
                     retained = self._apply_clustering(
                         scored_items, cluster_threshold, rng=rng
                     )
@@ -317,6 +322,7 @@ class EmbeddingArticleFilter:
         rng = rng or random.Random()
         remaining = list(range(len(items)))
         kernels: List[EmbeddingArticleFilter._ScoredArticle] = []
+        cluster_index = 0
 
         while remaining:
             seed_position = rng.randrange(len(remaining))
@@ -334,6 +340,13 @@ class EmbeddingArticleFilter:
             remaining = updated_remaining
 
             cluster_members = [items[idx] for idx in cluster_indices]
+            seed_url = str(items[seed_index].article.get("url") or "")
+            logger.debug(
+                "Cluster %d seeded with %s (%d members)",
+                cluster_index + 1,
+                seed_url,
+                len(cluster_members),
+            )
             centroid = self._cluster_centroid(
                 [member.vector for member in cluster_members]
             )
@@ -341,8 +354,14 @@ class EmbeddingArticleFilter:
             others = [member for member in cluster_members if member is not kernel]
             kernel.article["other_urls"] = self._build_other_urls(kernel, others)
             kernels.append(kernel)
+            cluster_index += 1
 
         kernels.sort(key=lambda item: item.score, reverse=True)
+        logger.info(
+            "Clustering produced %d kernels from %d articles",
+            len(kernels),
+            len(items),
+        )
         return [item.article for item in kernels]
 
     def _cluster_centroid(self, vectors: Sequence[np.ndarray]) -> np.ndarray:

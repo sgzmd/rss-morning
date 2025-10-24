@@ -64,6 +64,8 @@ def test_main_enables_pre_filter_without_path(monkeypatch):
         assert config.pre_filter is True
         assert config.pre_filter_embeddings_path is None
         assert config.cluster_threshold == 0.84
+        assert config.save_articles_path is None
+        assert config.load_articles_path is None
         return SimpleNamespace(output_text="{}", email_payload=None, is_summary=False)
 
     monkeypatch.setattr(cli, "execute", fake_execute)
@@ -86,3 +88,32 @@ def test_main_overrides_cluster_threshold(monkeypatch):
     exit_code = cli.main(["--cluster-threshold", "0.9"])
     assert exit_code == 0
     assert captured["threshold"] == 0.9
+
+
+def test_main_handles_save_and_load(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "configure_logging", lambda level: None)
+
+    captured = {}
+
+    def fake_execute(config):
+        captured["config"] = config
+        return SimpleNamespace(output_text="{}", email_payload=None, is_summary=False)
+
+    monkeypatch.setattr(cli, "execute", fake_execute)
+
+    save_path = tmp_path / "stored.json"
+    load_path = tmp_path / "input.json"
+
+    exit_code = cli.main(
+        [
+            "--save-articles",
+            str(save_path),
+            "--load-articles",
+            str(load_path),
+        ]
+    )
+
+    assert exit_code == 0
+    config = captured["config"]
+    assert config.save_articles_path == str(save_path)
+    assert config.load_articles_path == str(load_path)

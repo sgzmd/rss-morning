@@ -179,6 +179,65 @@ def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
     assert payload[0]["url"] == "https://example.com"
 
 
+def test_execute_load_articles_short_circuits_fetch(monkeypatch, tmp_path):
+    snapshot = tmp_path / "articles.json"
+    payload = [{"url": "https://loaded.example.com", "title": "Loaded"}]
+    snapshot.write_text(json.dumps(payload))
+
+    def fail_collect(_):
+        raise AssertionError("_collect_entries should not run when loading from file")
+
+    monkeypatch.setattr(runner, "_collect_entries", fail_collect)
+
+    config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=5,
+        max_age_hours=None,
+        summary=False,
+        pre_filter=False,
+        save_articles_path=None,
+        load_articles_path=str(snapshot),
+    )
+
+    result = execute(config)
+    data = json.loads(result.output_text)
+
+    assert data == payload
+
+
+def test_execute_save_articles_writes_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
+    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
+    monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
+    monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
+
+    save_path = tmp_path / "fetched.json"
+
+    config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=5,
+        max_age_hours=None,
+        summary=False,
+        pre_filter=False,
+        save_articles_path=str(save_path),
+        load_articles_path=None,
+    )
+
+    result = execute(config)
+    saved = json.loads(save_path.read_text())
+
+    assert saved == json.loads(result.output_text)
+    assert saved[0]["text"] == "trimmed"
+
+
 def test_execute_limit_applies_per_feed(monkeypatch):
     now = datetime(2024, 1, 2, tzinfo=timezone.utc)
     feeds = [

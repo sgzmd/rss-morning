@@ -73,6 +73,8 @@ CLI highlights:
 - Without `--summary`, the command prints raw article JSON.
 - With `--summary`, Gemini is called using `prompt.md` and the response is printed and reused for email payloads.
 - Add `--pre-filter` to screen articles with the embedding layer. Provide a path (e.g. `--pre-filter query_embeddings.json`) to reuse cached vectors, or supply the flag without an argument to embed the active queries file on the fly.
+- Supply `--save-articles path.json` to persist the fetched articles before any filtering or summarisation.
+- Reuse a previous snapshot with `--load-articles path.json` to skip RSS fetching (useful for offline iteration or testing summaries).
 - Email delivery requires both `--email-to` and a valid Resend configuration.
 
 ## Embedding Pre-filter Workflow

@@ -56,6 +56,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Cosine similarity threshold for clustering near-duplicate articles during pre-filtering.",
     )
     parser.add_argument(
+        "--save-articles",
+        metavar="PATH",
+        help="Write the fetched articles to PATH as JSON before further processing.",
+    )
+    parser.add_argument(
+        "--load-articles",
+        metavar="PATH",
+        help="Load pre-fetched articles from PATH instead of fetching feeds.",
+    )
+    parser.add_argument(
         "--email-to",
         help="If provided, send the results to this email address via Resend.",
     )
@@ -123,6 +133,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         email_from=args.email_from,
         email_subject=args.email_subject,
         cluster_threshold=args.cluster_threshold,
+        save_articles_path=args.save_articles,
+        load_articles_path=args.load_articles,
     )
 
     try:
