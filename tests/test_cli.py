@@ -5,7 +5,7 @@ from rss_morning import cli
 from rss_morning.cli import configure_logging
 
 
-def test_configure_logging_creates_file_and_console_handlers(monkeypatch, tmp_path):
+def test_configure_logging_defaults_to_console_only(monkeypatch, tmp_path):
     original_handlers = list(logging.getLogger().handlers)
     for handler in logging.getLogger().handlers[:]:
         logging.getLogger().removeHandler(handler)
@@ -15,8 +15,28 @@ def test_configure_logging_creates_file_and_console_handlers(monkeypatch, tmp_pa
 
         configure_logging("INFO")
 
-        log_files = list(tmp_path.glob("rss-morning-*.log"))
-        assert len(log_files) == 1
+        handlers = logging.getLogger().handlers
+        assert any(isinstance(handler, logging.StreamHandler) for handler in handlers)
+        assert not any(isinstance(handler, logging.FileHandler) for handler in handlers)
+    finally:
+        for handler in logging.getLogger().handlers[:]:
+            logging.getLogger().removeHandler(handler)
+            handler.close()
+        for handler in original_handlers:
+            logging.getLogger().addHandler(handler)
+
+
+def test_configure_logging_with_log_file_creates_file_handler(monkeypatch, tmp_path):
+    original_handlers = list(logging.getLogger().handlers)
+    for handler in logging.getLogger().handlers[:]:
+        logging.getLogger().removeHandler(handler)
+
+    try:
+        log_path = tmp_path / "custom.log"
+
+        configure_logging("INFO", str(log_path))
+
+        assert log_path.exists()
 
         handlers = logging.getLogger().handlers
         assert any(isinstance(handler, logging.StreamHandler) for handler in handlers)
@@ -36,7 +56,7 @@ def test_cli_parser_accepts_pre_filter_path():
 
 
 def test_main_passes_pre_filter_path(monkeypatch, tmp_path):
-    monkeypatch.setattr(cli, "configure_logging", lambda level: None)
+    monkeypatch.setattr(cli, "configure_logging", lambda level, log_file=None: None)
 
     captured = {}
 
@@ -58,7 +78,7 @@ def test_main_passes_pre_filter_path(monkeypatch, tmp_path):
 
 
 def test_main_enables_pre_filter_without_path(monkeypatch):
-    monkeypatch.setattr(cli, "configure_logging", lambda level: None)
+    monkeypatch.setattr(cli, "configure_logging", lambda level, log_file=None: None)
 
     def fake_execute(config):
         assert config.pre_filter is True
@@ -75,7 +95,7 @@ def test_main_enables_pre_filter_without_path(monkeypatch):
 
 
 def test_main_overrides_cluster_threshold(monkeypatch):
-    monkeypatch.setattr(cli, "configure_logging", lambda level: None)
+    monkeypatch.setattr(cli, "configure_logging", lambda level, log_file=None: None)
 
     captured = {}
 
@@ -91,7 +111,7 @@ def test_main_overrides_cluster_threshold(monkeypatch):
 
 
 def test_main_handles_save_and_load(monkeypatch, tmp_path):
-    monkeypatch.setattr(cli, "configure_logging", lambda level: None)
+    monkeypatch.setattr(cli, "configure_logging", lambda level, log_file=None: None)
 
     captured = {}
 

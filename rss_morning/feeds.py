@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from typing import Iterable, List, Optional
 
 import feedparser
+from bs4 import BeautifulSoup
+import re
 
 from .models import FeedConfig, FeedEntry
 
@@ -48,7 +50,7 @@ def fetch_feed_entries(feed: FeedConfig) -> List[FeedEntry]:
                 except (TypeError, KeyError, IndexError, AttributeError):
                     summary = None
         if summary:
-            summary = summary.strip()
+            summary = _strip_html(summary)
 
         published = None
         for attr in ("published_parsed", "updated_parsed", "created_parsed"):
@@ -68,6 +70,15 @@ def fetch_feed_entries(feed: FeedConfig) -> List[FeedEntry]:
 
     logger.info("Collected %d entries from feed '%s'", len(entries), feed.url)
     return entries
+
+
+def _strip_html(raw_value: str) -> str:
+    """Return text content extracted from HTML fragments."""
+    soup = BeautifulSoup(raw_value, "html.parser")
+    text = soup.get_text(separator=" ", strip=True)
+    text = re.sub(r"\s+([.,;:!?])", r"\1", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
 
 
 def select_recent_entries(
