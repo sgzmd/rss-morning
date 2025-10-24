@@ -149,6 +149,11 @@ def _collect_entries(config: RunConfig) -> List[dict]:
     return output
 
 
+def _build_default_email_subject() -> str:
+    timestamp = datetime.now(timezone.utc)
+    return "RSS Mailer update for " + timestamp.strftime("%Y-%m-%d at %H:%M")
+
+
 def execute(config: RunConfig) -> RunResult:
     """Run the application logic and return the result payload."""
     if config.load_articles_path:
@@ -192,12 +197,13 @@ def execute(config: RunConfig) -> RunResult:
         output_text = json.dumps(articles, indent=2, ensure_ascii=False)
 
     if config.email_to:
+        subject = config.email_subject or _build_default_email_subject()
         send_email_report(
             payload=email_payload,
             is_summary=is_summary_payload,
             to_address=config.email_to,
             from_address=config.email_from,
-            subject=config.email_subject,
+            subject=subject,
         )
 
     return RunResult(

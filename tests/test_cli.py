@@ -54,7 +54,7 @@ def test_main_passes_pre_filter_path(monkeypatch, tmp_path):
     config = captured["config"]
     assert config.pre_filter is True
     assert config.pre_filter_embeddings_path == str(cache_path)
-    assert config.cluster_threshold == 0.84
+    assert config.cluster_threshold == 0.8
 
 
 def test_main_enables_pre_filter_without_path(monkeypatch):
@@ -63,7 +63,7 @@ def test_main_enables_pre_filter_without_path(monkeypatch):
     def fake_execute(config):
         assert config.pre_filter is True
         assert config.pre_filter_embeddings_path is None
-        assert config.cluster_threshold == 0.84
+        assert config.cluster_threshold == 0.8
         assert config.save_articles_path is None
         assert config.load_articles_path is None
         return SimpleNamespace(output_text="{}", email_payload=None, is_summary=False)

@@ -72,6 +72,11 @@ def test_execute_summary_flow(monkeypatch):
     monkeypatch.setattr(
         runner, "send_email_report", lambda **kwargs: calls.append(kwargs)
     )
+    monkeypatch.setattr(
+        runner,
+        "_build_default_email_subject",
+        lambda: "RSS Mailer update for 1999-12-31 at 23:59",
+    )
 
     config = RunConfig(
         feeds_file="feeds.xml",
@@ -88,6 +93,42 @@ def test_execute_summary_flow(monkeypatch):
     assert json.loads(result.output_text)["summaries"]
     assert result.is_summary
     assert calls[0]["is_summary"] is True
+    assert calls[0]["subject"] == "RSS Mailer update for 1999-12-31 at 23:59"
+
+
+def test_execute_uses_custom_email_subject(monkeypatch):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
+    monkeypatch.setattr(runner, "fetch_article_text", lambda url: "article text")
+    monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
+
+    captured = {}
+
+    def fake_send_email(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(runner, "send_email_report", fake_send_email)
+
+    config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=5,
+        max_age_hours=None,
+        summary=False,
+        email_to="user@example.com",
+        email_from=None,
+        email_subject="Custom Subject",
+    )
+
+    execute(config)
+
+    assert captured["subject"] == "Custom Subject"
 
 
 def test_execute_pre_filter_applies_when_enabled(monkeypatch):

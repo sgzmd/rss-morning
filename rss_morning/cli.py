@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cluster-threshold",
         type=float,
-        default=0.84,
+        default=0.8,
         help="Cosine similarity threshold for clustering near-duplicate articles during pre-filtering.",
     )
     parser.add_argument(
