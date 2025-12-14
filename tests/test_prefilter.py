@@ -130,3 +130,22 @@ def test_filter_respects_cluster_threshold():
     ]
     assert filtered[0]["other_urls"] == []
     assert filtered[1]["other_urls"] == []
+
+
+def test_compose_article_text_truncates_long_content():
+    """Verify that article content is truncated to the configured limit."""
+    long_text = "x" * 10000
+    article = {"title": "Title", "summary": "Summary", "text": long_text}
+
+    # Default limit (5000)
+    backend = FakeEmbeddingBackend({})
+    filt = EmbeddingArticleFilter(backend=backend)
+    composed = filt._compose_article_text(article)
+    assert len(composed) == 5000
+
+    # Custom limit via config
+    config_cls = type(EmbeddingArticleFilter.CONFIG)
+    custom_config = config_cls(max_article_length=100)
+    filt_custom = EmbeddingArticleFilter(config=custom_config, backend=backend)
+    composed_custom = filt_custom._compose_article_text(article)
+    assert len(composed_custom) == 100

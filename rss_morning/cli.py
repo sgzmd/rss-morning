@@ -81,6 +81,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--log-file",
         help="Optional path to a log file; when provided logs are written to both console and the file.",
     )
+    parser.add_argument(
+        "--max-article-length",
+        type=int,
+        default=5000,
+        help="Maximum length of article text to use for embedding (default: 5000).",
+    )
     return parser
 
 
@@ -146,6 +152,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         cluster_threshold=args.cluster_threshold,
         save_articles_path=args.save_articles,
         load_articles_path=args.load_articles,
+        max_article_length=args.max_article_length,
     )
 
     try:

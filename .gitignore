@@ -11,3 +11,7 @@ playground/
 prefiltered.json
 query_embeddings.json
 queries.txt
+mylog.txtlogs/
+articles.json
+logs/
+mylog.txt

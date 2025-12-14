@@ -175,6 +175,24 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
     capture = {}
 
     class FakeFilter:
+        class FakeConfig:
+            model = "test-model"
+            batch_size = 1
+            threshold = 0.5
+
+            def __init__(
+                self,
+                model=None,
+                batch_size=None,
+                threshold=None,
+                max_article_length=None,
+            ):
+                self.model = model
+                self.batch_size = batch_size
+                self.threshold = threshold
+
+        CONFIG = FakeConfig()
+
         def __init__(self, *args, **kwargs):
             capture["instantiated"] = True
             capture["query_path"] = kwargs.get("query_embeddings_path")
@@ -186,7 +204,9 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
             retained[0]["url"] = "https://filtered.example.com"
             return retained
 
-    monkeypatch.setattr(runner, "EmbeddingArticleFilter", FakeFilter)
+    import rss_morning.prefilter as prefilter_module
+
+    monkeypatch.setattr(prefilter_module, "EmbeddingArticleFilter", FakeFilter)
 
     config = RunConfig(
         feeds_file="feeds.xml",
@@ -232,7 +252,9 @@ def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
         def __init__(self, *args, **kwargs):
             raise AssertionError("pre-filter should not be instantiated")
 
-    monkeypatch.setattr(runner, "EmbeddingArticleFilter", FailingFilter)
+    import rss_morning.prefilter as prefilter_module
+
+    monkeypatch.setattr(prefilter_module, "EmbeddingArticleFilter", FailingFilter)
 
     config = RunConfig(
         feeds_file="feeds.xml",

@@ -66,8 +66,9 @@ class _EmbeddingConfig:
     """Configuration for embedding lookups."""
 
     model: str = "text-embedding-3-small"
-    batch_size: int = 32
+    batch_size: int = 16
     threshold: float = 0.5
+    max_article_length: int = 5000
 
 
 class EmbeddingArticleFilter:
@@ -288,7 +289,9 @@ class EmbeddingArticleFilter:
         title = str(article.get("title") or "")
         summary = str(article.get("summary") or "")
         body = str(article.get("text") or "")
-        return "\n".join(part for part in (title, summary, body) if part).strip()
+        return "\n".join(part for part in (title, summary, body) if part).strip()[
+            : self._config.max_article_length
+        ]
 
     def _score_against_queries(
         self,

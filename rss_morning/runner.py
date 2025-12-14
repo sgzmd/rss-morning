@@ -13,7 +13,6 @@ from .articles import fetch_article_content, truncate_text
 from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
-from .prefilter import EmbeddingArticleFilter
 from .summaries import generate_summary
 
 logger = logging.getLogger(__name__)
@@ -35,6 +34,7 @@ class RunConfig:
     cluster_threshold: float = 0.84
     save_articles_path: Optional[str] = None
     load_articles_path: Optional[str] = None
+    max_article_length: int = 5000
 
 
 @dataclass
@@ -201,8 +201,21 @@ def execute(config: RunConfig) -> RunResult:
 
     if config.pre_filter:
         logger.info("Applying embedding pre-filter to %d articles", len(articles))
+
+        from .prefilter import EmbeddingArticleFilter
+
+        # Create a config object with the runtime settings.
+        emb_config_cls = type(EmbeddingArticleFilter.CONFIG)
+        emb_config = emb_config_cls(
+            model=EmbeddingArticleFilter.CONFIG.model,
+            batch_size=EmbeddingArticleFilter.CONFIG.batch_size,
+            threshold=EmbeddingArticleFilter.CONFIG.threshold,
+            max_article_length=config.max_article_length,
+        )
+
         filter_layer = EmbeddingArticleFilter(
-            query_embeddings_path=config.pre_filter_embeddings_path
+            query_embeddings_path=config.pre_filter_embeddings_path,
+            config=emb_config,
         )
         filtered_articles = filter_layer.filter(
             list(articles), cluster_threshold=config.cluster_threshold
