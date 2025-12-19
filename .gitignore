@@ -19,6 +19,7 @@ mylog.txt
 # Configs
 configs/*
 !configs/*.xml.example
+
 *.db
 .*
 *.opml 
@@ -29,3 +30,4 @@ preview.html
 rss.log
 tmp/
 verify_email.py
+.DS_Store

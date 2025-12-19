@@ -1,0 +1,17 @@
+.git
+.gitignore
+.dockerignore
+venv/
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
+logs/
+configs/*.xml
+docker-compose.override.yml
+query_embeddings.json
+prefiltered.json
+articles.json
+mylog.txt

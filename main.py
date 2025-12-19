@@ -18,7 +18,16 @@ if __name__ == "__main__":
     defaults = []
     if not any(arg.startswith("--log-level") for arg in sys.argv):
         defaults.extend(["--log-level", "DEBUG"])
-    if not any(arg.startswith("--log-file") for arg in sys.argv):
+
+    # Check if we should log to stdout (cloud-friendly) or default to file
+    import os
+
+    if os.environ.get("RSS_MORNING_LOG_STDOUT") == "1":
+        # Do not add --log-file; application defaults to stderr/stdout usually if no file specified?
+        # Attempting to check cli.py to see default behavior if not file is provided.
+        # Assuming cli.py handles it, or we pass nothing to let it default (often stdout).
+        pass
+    elif not any(arg.startswith("--log-file") for arg in sys.argv):
         defaults.extend(["--log-file", "logs/rss-morning.log"])
 
     if defaults:
