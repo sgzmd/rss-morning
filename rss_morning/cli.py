@@ -108,6 +108,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         log_level = args.log_level or app_config.logging.level
         log_file = args.log_file or app_config.logging.file
 
+        # AWS Deployment Guide 1.3: Cloud-Friendly Logging
+        if os.environ.get("RSS_MORNING_LOG_STDOUT") == "1":
+            log_file = None
+
         configure_logging(log_level, log_file)
 
         # Create RunConfig
