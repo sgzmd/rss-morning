@@ -44,7 +44,7 @@ def call_gemini(system_prompt: str, payload: str) -> str:
         )
 
     client = genai.Client()
-    logger.info("Requesting summary from Gemini API (model gemini-2.5-flash)")
+    logger.info("Requesting summary from Gemini API (model gemini-flash-lite-latest)")
 
     thinking_config = genai_types.ThinkingConfig(
         thinking_budget=-1, include_thoughts=True
