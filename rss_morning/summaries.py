@@ -4,42 +4,19 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional, Tuple, List
+import os
+from typing import Optional, Tuple
 
 from bs4 import BeautifulSoup
-from pydantic import BaseModel, Field
 
 try:
     from google import genai
-    from google.genai import types as genai_types
+    from google.genai import types
 except Exception:  # pragma: no cover - optional dependency
     genai = None
-    genai_types = None
+    types = None
 
 logger = logging.getLogger(__name__)
-
-
-class SummaryFields(BaseModel):
-    """Fields describing the summary content."""
-
-    title: str = Field(description="Generated title")
-    what: str = Field(description="The What summary")
-    so_what: str = Field(alias="so-what", description="The So What? Summary")
-    now_what: str = Field(alias="now-what", description="The Now What? Section")
-
-
-class ArticleSummary(BaseModel):
-    """Structured summary for a single article."""
-
-    url: str = Field(description="URL of the article being summarized")
-    summary: SummaryFields
-    category: str = Field(description="Category of the article")
-
-
-class SummaryResponse(BaseModel):
-    """Top-level response structure expected from the LLM."""
-
-    summaries: List[ArticleSummary]
 
 
 def sanitize_html(text: str) -> str:
@@ -65,32 +42,7 @@ def build_summary_input(articles: list[dict]) -> str:
         )
     payload = json.dumps(prepared, ensure_ascii=False, indent=2)
     logger.debug("Prepared %d articles for summarisation", len(prepared))
-    logger.debug("Summary input payload: \n%s", payload)
     return payload
-
-
-def call_gemini(system_prompt: str, payload: str) -> str:
-    """Call the Gemini API and return the raw response text."""
-    if genai is None or genai_types is None:
-        raise RuntimeError(
-            "google-genai package is required for --summary but is not installed."
-        )
-
-    client = genai.Client()
-    logger.info("Requesting summary from Gemini API (model gemini-flash-lite-latest)")
-
-    response = client.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=payload,
-        config=genai_types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            response_mime_type="application/json",
-            response_schema=SummaryResponse.model_json_schema(),
-        ),
-    )
-    if not hasattr(response, "text") or response.text is None:
-        raise RuntimeError("Gemini API returned no text response.")
-    return response.text.strip()
 
 
 def generate_summary(
@@ -106,24 +58,115 @@ def generate_summary(
             return json.dumps(empty, ensure_ascii=False), empty
         return json.dumps(empty, ensure_ascii=False)
 
-    payload = build_summary_input(articles)
+    if genai is None or types is None:
+        raise RuntimeError(
+            "google-genai package is required for --summary but is not installed."
+        )
+
+    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    logger.info("Using API key ending with: %s", api_key[:])
+    client = genai.Client(api_key=api_key)
+
+    model = "gemini-flash-latest"
+    summary_input = build_summary_input(articles)
+
+    # Construct input with system prompt and articles
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(text=f"{system_prompt}\n\n{summary_input}"),
+            ],
+        ),
+    ]
+
+    generate_content_config = types.GenerateContentConfig(
+        # thinking_config=types.ThinkingConfig(
+        #     thinking_level="HIGH",
+        # ),
+        response_mime_type="application/json",
+        response_schema=types.Schema(
+            type=types.Type.OBJECT,
+            description="Top-level response structure expected from the LLM.",
+            required=["summaries"],
+            properties={
+                "summaries": types.Schema(
+                    type=types.Type.ARRAY,
+                    items=types.Schema(
+                        type=types.Type.OBJECT,
+                        required=["url", "category", "summary"],
+                        properties={
+                            "url": types.Schema(
+                                type=types.Type.STRING,
+                                description="URL of the article being summarized",
+                            ),
+                            "category": types.Schema(
+                                type=types.Type.STRING,
+                                description="Category of the article",
+                            ),
+                            "summary": types.Schema(
+                                type=types.Type.OBJECT,
+                                description="Fields describing the summary content.",
+                                required=["title", "what", "so-what", "now-what"],
+                                properties={
+                                    "title": types.Schema(
+                                        type=types.Type.STRING,
+                                        description="Generated title",
+                                    ),
+                                    "what": types.Schema(
+                                        type=types.Type.STRING,
+                                        description="The What summary",
+                                    ),
+                                    "so-what": types.Schema(
+                                        type=types.Type.STRING,
+                                        description="The So What? Summary",
+                                    ),
+                                    "now-what": types.Schema(
+                                        type=types.Type.STRING,
+                                        description="The Now What? Section",
+                                    ),
+                                },
+                            ),
+                        },
+                    ),
+                ),
+            },
+        ),
+    )
+
+    logger.info("Requesting summary from Gemini API (model %s)", model)
 
     try:
-        raw_response = call_gemini(system_prompt, payload)
+        response_text = ""
+        # Accumulate stream to return full JSON string
+        for chunk in client.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=generate_content_config,
+        ):
+            response_text += chunk.text
 
-        # Validate with Pydantic
-        summary_response = SummaryResponse.model_validate_json(raw_response)
+        # Parse JSON
+        parsed = json.loads(response_text)
 
         # Sanitize content
-        for item in summary_response.summaries:
-            item.summary.title = sanitize_html(item.summary.title)
-            item.summary.what = sanitize_html(item.summary.what)
-            item.summary.so_what = sanitize_html(item.summary.so_what)
-            item.summary.now_what = sanitize_html(item.summary.now_what)
-            item.category = sanitize_html(item.category)
+        for item in parsed.get("summaries", []):
+            if "summary" in item:
+                item["summary"]["title"] = sanitize_html(item["summary"].get("title"))
+                item["summary"]["what"] = sanitize_html(item["summary"].get("what"))
+                item["summary"]["so-what"] = sanitize_html(
+                    item["summary"].get("so-what")
+                )
+                item["summary"]["now-what"] = sanitize_html(
+                    item["summary"].get("now-what")
+                )
+            if "category" in item:
+                item["category"] = sanitize_html(item["category"])
 
-        # Convert back to dict for consistency with rest of app
-        parsed = summary_response.model_dump(by_alias=True)
+        rendered = json.dumps(parsed, ensure_ascii=False, indent=2)
+        if return_dict:
+            return rendered, parsed
+        return rendered
 
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to generate summary via Gemini API: %s", exc)
@@ -132,9 +175,3 @@ def generate_summary(
         if return_dict:
             return fallback, None
         return fallback
-
-    logger.debug("Successfully generated summary JSON via Gemini API.")
-    rendered = json.dumps(parsed, ensure_ascii=False, indent=2)
-    if return_dict:
-        return rendered, parsed
-    return rendered
