@@ -1,0 +1,27 @@
+<config>
+    <!-- Paths are relative to this config file or absolute -->
+    <feeds>../feeds.xml</feeds>
+    <env>env.xml</env>
+    <limit>10</limit>
+    <max-age-hours>24</max-age-hours>
+    <summary>true</summary>
+    <pre-filter>
+        <enabled>true</enabled>
+        <embeddings-path>../query_embeddings.json</embeddings-path>
+        <cluster-threshold>0.8</cluster-threshold>
+    </pre-filter>
+    <email>
+        <to>user@example.com</to>
+        <from>mailer@example.com</from>
+        <subject>Morning RSS Digest</subject>
+    </email>
+    <logging>
+        <level>INFO</level>
+        <file>../logs/rss-morning.log</file>
+    </logging>
+    <prompt>
+        <![CDATA[
+            Your prompt goes here.
+        ]]>
+    </prompt>
+</config>

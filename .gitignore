@@ -15,3 +15,7 @@ mylog.txtlogs/
 articles.json
 logs/
 mylog.txt
+
+# Configs
+configs/*.xml
+!configs/*.xml.example

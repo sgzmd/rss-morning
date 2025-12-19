@@ -80,7 +80,7 @@ def test_execute_summary_flow(monkeypatch):
 
     summary_payload = {"summaries": [{"url": "https://example.com"}]}
 
-    def fake_generate(articles, return_dict):
+    def fake_generate(articles, system_prompt, return_dict):
         return json.dumps(summary_payload), summary_payload
 
     monkeypatch.setattr(runner, "generate_summary", fake_generate)
@@ -102,6 +102,7 @@ def test_execute_summary_flow(monkeypatch):
         email_to="user@example.com",
         email_from=None,
         email_subject=None,
+        system_prompt="You are a secure AI",
     )
 
     result = execute(config)

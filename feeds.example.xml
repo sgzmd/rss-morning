@@ -4,32 +4,60 @@
         <title>Sample RSS Morning Feeds</title>
     </head>
     <body>
-        <outline text="Security &amp; Threat Intelligence" title="Security &amp; Threat Intelligence">
-            <outline text="The Hacker News" title="The Hacker News" type="rss"
-                     xmlUrl="https://feeds.feedburner.com/TheHackersNews"
-                     htmlUrl="https://thehackernews.com/"/>
-            <outline text="Krebs on Security" title="Krebs on Security" type="rss"
-                     xmlUrl="https://krebsonsecurity.com/feed/"
-                     htmlUrl="https://krebsonsecurity.com/"/>
-            <outline text="Cisco Talos Blog" title="Cisco Talos Blog" type="rss"
-                     xmlUrl="https://blog.talosintelligence.com/feed/"
-                     htmlUrl="https://blog.talosintelligence.com/"/>
+        <outline text="Premium Security News" title="Premium Security News">
+            <outline type="rss" text="Krebs on Security" xmlUrl="https://krebsonsecurity.com/feed/"
+                htmlUrl="https://krebsonsecurity.com" />
+            <outline type="rss" text="The Hacker News"
+                xmlUrl="https://feeds.feedburner.com/TheHackersNews"
+                htmlUrl="https://thehackernews.com" />
+            <outline type="rss" text="BleepingComputer"
+                xmlUrl="https://www.bleepingcomputer.com/feed/"
+                htmlUrl="https://www.bleepingcomputer.com" />
+            <outline type="rss" text="Dark Reading" xmlUrl="https://www.darkreading.com/rss.xml"
+                htmlUrl="https://www.darkreading.com" />
+            <outline type="rss" text="Threatpost" xmlUrl="https://threatpost.com/feed/"
+                htmlUrl="https://threatpost.com" />
+            <outline type="rss" text="Graham Cluley" xmlUrl="https://grahamcluley.com/feed/"
+                htmlUrl="https://grahamcluley.com" />
+            <outline type="rss" text="Schneier on Security"
+                xmlUrl="https://www.schneier.com/blog/index.rdf" htmlUrl="https://www.schneier.com" />
         </outline>
-        <outline text="Cloud &amp; Identity Security" title="Cloud &amp; Identity Security">
-            <outline text="AWS Security Blog" title="AWS Security Blog" type="rss"
-                     xmlUrl="https://aws.amazon.com/blogs/security/feed/"
-                     htmlUrl="https://aws.amazon.com/blogs/security/"/>
-            <outline text="Okta Security Blog" title="Okta Security Blog" type="rss"
-                     xmlUrl="https://sec.okta.com/rss.xml"
-                     htmlUrl="https://sec.okta.com/"/>
+        <outline text="Account and Identity Specialists" title="Account and Identity Specialists">
+            <outline type="rss" text="Troy Hunt" xmlUrl="https://www.troyhunt.com/rss/"
+                htmlUrl="https://www.troyhunt.com" />
+            <outline type="rss" text="Okta Security Blog"
+                xmlUrl="https://www.okta.com/blog/category/security/feed/"
+                htmlUrl="https://www.okta.com/blog/" />
+            <outline type="rss" text="Google Security Blog"
+                xmlUrl="https://feeds.feedburner.com/GoogleOnlineSecurityBlog"
+                htmlUrl="https://security.googleblog.com" />
+            <outline type="rss" text="Microsoft Security Blog"
+                xmlUrl="https://www.microsoft.com/security/blog/feed/"
+                htmlUrl="https://www.microsoft.com/security/blog/" />
         </outline>
-        <outline text="Mobile &amp; Application Security" title="Mobile &amp; Application Security">
-            <outline text="Android Developers Blog (Security)" title="Android Developers Blog (Security)" type="rss"
-                     xmlUrl="https://android-developers.googleblog.com/feeds/posts/default/-/Security"
-                     htmlUrl="https://android-developers.googleblog.com/search/label/Security"/>
-            <outline text="NowSecure Blog" title="NowSecure Blog" type="rss"
-                     xmlUrl="https://www.nowsecure.com/blog/feed/"
-                     htmlUrl="https://www.nowsecure.com/blog/"/>
+        <outline text="Community and High Volume (Early Signals)"
+            title="Community and High Volume (Early Signals)">
+            <outline type="rss" text="Hacker News (HNRSS - Security)"
+                xmlUrl="https://hnrss.org/newest?q=security" htmlUrl="https://news.ycombinator.com" />
+            <outline type="rss" text="Reddit - /r/Cybersecurity"
+                xmlUrl="https://www.reddit.com/r/cybersecurity/.rss"
+                htmlUrl="https://www.reddit.com/r/cybersecurity/" />
+            <outline type="rss" text="Reddit - /r/Netsec"
+                xmlUrl="https://www.reddit.com/r/netsec/.rss"
+                htmlUrl="https://www.reddit.com/r/netsec/" />
+            <outline type="rss" text="Reddit - /r/IdentityManagement"
+                xmlUrl="https://www.reddit.com/r/identitymanagement/.rss"
+                htmlUrl="https://www.reddit.com/r/identitymanagement/" />
+        </outline>
+        <outline text="Research and Vulnerabilities" title="Research and Vulnerabilities">
+            <outline type="rss" text="CISA Current Activity"
+                xmlUrl="https://www.cisa.gov/cybersecurity-advisories/all.xml"
+                htmlUrl="https://www.cisa.gov/uscert/ncas/current-activity" />
+            <outline type="rss" text="arXiv cs.CR (Cryptography and Security)"
+                xmlUrl="https://arxiv.org/rss/cs.CR" htmlUrl="https://arxiv.org/list/cs.CR/recent" />
+            <outline type="rss" text="NVD - Recent Vulnerabilities"
+                xmlUrl="https://nvd.nist.gov/feeds/xml/cve/misc/nvd-rss.xml"
+                htmlUrl="https://nvd.nist.gov/" />
         </outline>
     </body>
 </opml>

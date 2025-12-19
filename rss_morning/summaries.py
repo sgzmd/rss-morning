@@ -16,18 +16,6 @@ except Exception:  # pragma: no cover - optional dependency
 logger = logging.getLogger(__name__)
 
 
-def load_system_prompt(path: str) -> str:
-    """Load the Gemini system prompt from disk."""
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            prompt = handle.read().strip()
-            logger.debug("Loaded system prompt from %s", path)
-            return prompt
-    except FileNotFoundError:
-        logger.error("System prompt file not found: %s", path)
-        raise
-
-
 def build_summary_input(articles: list[dict]) -> str:
     """Prepare Gemini request payload from article data."""
     prepared = []
@@ -75,7 +63,7 @@ def call_gemini(system_prompt: str, payload: str) -> str:
 
 
 def generate_summary(
-    articles: list[dict], prompt_path: str = "prompt.md", return_dict: bool = False
+    articles: list[dict], system_prompt: str, return_dict: bool = False
 ) -> str | Tuple[str, Optional[dict]]:
     """Generate summary JSON for a list of articles."""
     if not articles:
@@ -87,7 +75,6 @@ def generate_summary(
             return json.dumps(empty, ensure_ascii=False), empty
         return json.dumps(empty, ensure_ascii=False)
 
-    system_prompt = load_system_prompt(prompt_path)
     payload = build_summary_input(articles)
 
     try:

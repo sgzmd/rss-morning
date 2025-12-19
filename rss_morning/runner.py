@@ -35,6 +35,7 @@ class RunConfig:
     save_articles_path: Optional[str] = None
     load_articles_path: Optional[str] = None
     max_article_length: int = 5000
+    system_prompt: Optional[str] = None
 
 
 @dataclass
@@ -236,7 +237,19 @@ def execute(config: RunConfig) -> RunResult:
     is_summary_payload = False
 
     if config.summary:
-        summary_output, summary_data = generate_summary(articles, return_dict=True)
+        if not config.system_prompt:
+            logger.warning(
+                "Summary requested but no system prompt provided using default."
+            )
+            # We might want to fail here or provide a hardcoded default,
+            # but for now let's assume the caller ensures it or we might need a default string.
+            # Actually, `generate_summary` expects a string now.
+            # Let's fail if it's missing to be safe, or provide a minimal one.
+            raise ValueError("Summary requested but no system_prompt configured.")
+
+        summary_output, summary_data = generate_summary(
+            articles, config.system_prompt, return_dict=True
+        )
         output_text = summary_output
         if summary_data is not None:
             summary_data = _attach_summary_images(summary_data, articles)
