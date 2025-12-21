@@ -25,4 +25,6 @@ ENV DB_PATH=/app/data/db
 
 COPY . .
 
+RUN useradd -m -u 1000 appuser
+USER appuser
 ENTRYPOINT ["python", "main.py"]
