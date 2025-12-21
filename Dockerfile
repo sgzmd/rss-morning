@@ -23,4 +23,6 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
 
+RUN useradd -m -u 1000 appuser
+USER appuser
 ENTRYPOINT ["python", "main.py"]
