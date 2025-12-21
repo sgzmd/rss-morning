@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang xml:lang>
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>RSS-Morning AWS Deployment Guide</title>
+  <style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+  <style type="text/css">:root {
+--bg-color: #f8f9fa;
+--text-color: #24292e;
+--sidebar-width: 300px;
+--content-max-width: 900px;
+--accent-color: #0366d6;
+--code-bg: #f6f8fa;
+--border-color: #e1e4e8;
+}
+body {
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+line-height: 1.6;
+color: var(--text-color);
+background-color: #fff;
+margin: 0;
+margin-left: 320px;
+
+padding: 2rem 4rem;
+max-width: 900px;
+
+display: block;
+}
+
+.main-container {
+display: flex;
+width: 100%;
+max-width: 1400px;
+background: white;
+min-height: 100vh;
+box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
+}
+
+nav#TOC {
+width: var(--sidebar-width);
+position: fixed;
+left: 0;
+top: 0;
+height: 100vh;
+overflow-y: auto;
+padding: 2rem;
+background-color: #fcfcfc;
+border-right: 1px solid var(--border-color);
+box-sizing: border-box;
+font-size: 0.9rem;
+}
+nav#TOC ul {
+list-style: none;
+padding-left: 0;
+}
+nav#TOC ul ul {
+padding-left: 1.5em;
+margin-top: 0.5em;
+}
+nav#TOC a {
+text-decoration: none;
+color: #586069;
+display: block;
+padding: 4px 0;
+transition: color 0.2s;
+}
+nav#TOC a:hover {
+color: var(--accent-color);
+}
+
+h1,
+h2,
+h3 {
+margin-top: 2rem;
+margin-bottom: 1rem;
+font-weight: 600;
+line-height: 1.25;
+}
+h1 {
+font-size: 2.5rem;
+border-bottom: 1px solid var(--border-color);
+padding-bottom: 0.5rem;
+}
+h2 {
+font-size: 1.75rem;
+border-bottom: 1px solid var(--border-color);
+padding-bottom: 0.3rem;
+}
+h3 {
+font-size: 1.25rem;
+}
+a {
+color: var(--accent-color);
+text-decoration: none;
+}
+a:hover {
+text-decoration: underline;
+}
+
+pre {
+background-color: var(--code-bg);
+border-radius: 6px;
+padding: 16px;
+overflow: auto;
+font-size: 90%;
+border: 1px solid var(--border-color);
+}
+code {
+font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+padding: 0.2em 0.4em;
+margin: 0;
+font-size: 85%;
+background-color: rgba(27, 31, 35, 0.05);
+border-radius: 3px;
+}
+pre>code {
+background-color: transparent;
+padding: 0;
+font-size: 100%;
+}
+blockquote {
+color: #6a737d;
+border-left: 0.25em solid #dfe2e5;
+padding: 0 1em;
+margin-left: 0;
+}
+
+@media (max-width: 1000px) {
+body {
+margin-left: 0;
+padding: 2rem;
+}
+nav#TOC {
+position: static;
+width: 100%;
+height: auto;
+border-right: none;
+border-bottom: 1px solid #eee;
+margin-bottom: 2rem;
+}
+}</style>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Select the pre.mermaid elements that Pandoc generates
+      const pandocBlocks = document.querySelectorAll('pre.mermaid');
+      
+      for (const block of pandocBlocks) {
+        // Decode HTML entities (like --&gt;) by reading textContent
+        const rawMermaid = block.textContent;
+        
+        // Create a replacement div
+          const div = document.createElement('div');
+          div.className = 'mermaid';
+          div.textContent = rawMermaid;
+          
+          // Replace <pre><code>...</code></pre> with <div class="mermaid">...</div>
+          block.parentNode.replaceChild(div, block);
+      }
+      
+      // Now trigger mermaid to render the clean divs
+      await mermaid.run({
+        nodes: document.querySelectorAll('div.mermaid')
+      });
+    });
+  </script>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">RSS-Morning AWS Deployment Guide</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#part-0-architecture-overview" id="toc-part-0-architecture-overview">Part 0: Architecture Overview</a>
+<ul>
+<li><a href="#goal" id="toc-goal">Goal</a></li>
+<li><a href="#the-serverless-batch-pattern" id="toc-the-serverless-batch-pattern">The “Serverless Batch”
+Pattern</a></li>
+<li><a href="#architecture-diagram" id="toc-architecture-diagram">Architecture Diagram</a></li>
+<li><a href="#key-components" id="toc-key-components">Key
+Components</a></li>
+</ul></li>
+<li><a href="#part-1-security-first-principles" id="toc-part-1-security-first-principles">Part 1: Security First
+Principles</a>
+<ul>
+<li><a href="#least-privilege" id="toc-least-privilege">1. Least
+Privilege</a></li>
+<li><a href="#secrets-management" id="toc-secrets-management">2. Secrets
+Management</a></li>
+<li><a href="#network-isolation" id="toc-network-isolation">3. Network
+Isolation</a></li>
+<li><a href="#immutable-infrastructure" id="toc-immutable-infrastructure">4. Immutable Infrastructure</a></li>
+<li><a href="#observability-as-security" id="toc-observability-as-security">5. Observability as Security</a></li>
+</ul></li>
+<li><a href="#part-2-prerequisites" id="toc-part-2-prerequisites">Part
+2: Prerequisites</a>
+<ul>
+<li><a href="#install-aws-cli" id="toc-install-aws-cli">1. Install AWS
+CLI</a></li>
+<li><a href="#install-jq" id="toc-install-jq">2. Install jq</a></li>
+<li><a href="#configure-aws-cli" id="toc-configure-aws-cli">3. Configure
+AWS CLI</a></li>
+<li><a href="#verify-identity" id="toc-verify-identity">4. Verify
+Identity</a></li>
+</ul></li>
+<li><a href="#part-3-application-preparation" id="toc-part-3-application-preparation">Part 3: Application
+Preparation</a>
+<ul>
+<li><a href="#security-create-.dockerignore" id="toc-security-create-.dockerignore">1. Security: Create
+<code>.dockerignore</code></a></li>
+<li><a href="#security-run-as-non-root" id="toc-security-run-as-non-root">2. Security: Run as Non-Root</a></li>
+<li><a href="#observability-logging" id="toc-observability-logging">3.
+Observability: Logging</a></li>
+</ul></li>
+<li><a href="#part-4-networking-identity-iam" id="toc-part-4-networking-identity-iam">Part 4: Networking &amp;
+Identity (IAM)</a>
+<ul>
+<li><a href="#iam-roles" id="toc-iam-roles">1. IAM Roles</a></li>
+<li><a href="#networking-vpc-security-groups" id="toc-networking-vpc-security-groups">2. Networking (VPC &amp;
+Security Groups)</a></li>
+</ul></li>
+<li><a href="#part-5-infrastructure-ecr-secrets" id="toc-part-5-infrastructure-ecr-secrets">Part 5: Infrastructure (ECR
+&amp; Secrets)</a>
+<ul>
+<li><a href="#amazon-ecr-elastic-container-registry" id="toc-amazon-ecr-elastic-container-registry">1. Amazon ECR (Elastic
+Container Registry)</a></li>
+<li><a href="#cloudwatch-logs" id="toc-cloudwatch-logs">2. CloudWatch
+Logs</a></li>
+<li><a href="#secrets-management-ssm-parameter-store" id="toc-secrets-management-ssm-parameter-store">3. Secrets Management
+(SSM Parameter Store)</a></li>
+</ul></li>
+<li><a href="#part-6-pipeline-deployment" id="toc-part-6-pipeline-deployment">Part 6: Pipeline &amp;
+Deployment</a>
+<ul>
+<li><a href="#build-and-push" id="toc-build-and-push">1. Build and
+Push</a></li>
+<li><a href="#register-task-definition" id="toc-register-task-definition">2. Register Task Definition</a></li>
+</ul></li>
+<li><a href="#part-7-scheduling" id="toc-part-7-scheduling">Part 7:
+Scheduling</a>
+<ul>
+<li><a href="#eventbridge-scheduler" id="toc-eventbridge-scheduler">EventBridge Scheduler</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="part-0-architecture-overview">Part 0: Architecture Overview</h1>
+<h2 id="goal">Goal</h2>
+<p>Deploy <code>rss-morning</code> as a secure, automated, serverless
+batch job on AWS.</p>
+<h2 id="the-serverless-batch-pattern">The “Serverless Batch”
+Pattern</h2>
+<p>We are eschewing traditional servers (EC2) in favor of <strong>AWS
+Fargate</strong>.</p>
+<ul>
+<li><strong>Why?</strong> No OS patching, no server maintenance, pay
+only for the seconds the code runs.</li>
+<li><strong>Cost</strong>: For a daily job running for ~2 minutes, the
+cost is pennies per month.</li>
+</ul>
+<h2 id="architecture-diagram">Architecture Diagram</h2>
+<pre class="mermaid"><code>flowchart LR
+    Scheduler[EventBridge Scheduler]
+    
+    subgraph VPC
+        ECS[ECS Fargate Task]
+    end
+    
+    ECR[Amazon ECR]
+    SSM[Systems Manager Parameter Store]
+    Internet((Internet))
+    CW[CloudWatch Logs]
+
+    Scheduler --&gt;|Triggers cron| ECS
+    ECS --&gt;|Pulls Image| ECR
+    ECS --&gt;|Reads Secrets| SSM
+    ECS --&gt;|Outbound HTTPS| Internet
+    ECS --&gt;|Logs| CW</code></pre>
+<h2 id="key-components">Key Components</h2>
+<ol type="1">
+<li><strong>Docker Container</strong>: The unit of deployment.</li>
+<li><strong>Amazon ECR</strong>: Where we store the Docker images (like
+GitHub for Docker).</li>
+<li><strong>AWS ECS (Fargate)</strong>: The engine that runs the
+container.</li>
+<li><strong>EventBridge</strong>: The alarm clock that wakes up the
+container.</li>
+<li><strong>IAM</strong>: The ID card that gives the container
+permission to touch other AWS services.</li>
+</ol>
+<h1 id="part-1-security-first-principles">Part 1: Security First
+Principles</h1>
+<p>Before running a single command, we must establish the security
+rules. In AWS, security is “Job Zero”. The default settings in many
+tutorials are <strong>insecure</strong> (e.g., using Admin keys, public
+S3 buckets).</p>
+<h2 id="least-privilege">1. Least Privilege</h2>
+<p><strong>Concept</strong>: A component (like our script) should have
+<em>only</em> the permissions it needs to do its job, and nothing
+more.</p>
+<ul>
+<li><strong>Application Needs</strong>: Read RSS feeds (Internet), Read
+API Keys (SSM), Write Logs (CloudWatch), <strong>Read S3 (Optional for
+Configs)</strong>.</li>
+<li><strong>Application DOES NOT Need</strong>: EC2 admin rights, User
+management, Open Inbound Ports.</li>
+</ul>
+<h2 id="secrets-management">2. Secrets Management</h2>
+<p><strong>Never</strong> hardcode API keys in code or Dockerfiles.</p>
+<ul>
+<li><strong>Bad</strong>: <code>ENV OPENAI_API_KEY=sk-...</code> in
+Dockerfile (visible in image history).</li>
+<li><strong>Good</strong>: Inject at runtime from a secure vault. We
+will use <strong>AWS Systems Manager Parameter Store</strong>
+(SecureString).</li>
+</ul>
+<h2 id="network-isolation">3. Network Isolation</h2>
+<p><strong>Concept</strong>: Control traffic flow.</p>
+<ul>
+<li><strong>Inbound</strong>: Our batch job needs <strong>zero</strong>
+inbound ports open. No SSH, no HTTP listener. It initiates connections;
+it does not receive them.</li>
+<li><strong>Outbound</strong>: Needs HTTPS (443) only.</li>
+</ul>
+<h2 id="immutable-infrastructure">4. Immutable Infrastructure</h2>
+<p>Once a Docker image is built and tested, it should not change. We
+deploy specific versions (tags), not just “latest”.</p>
+<h2 id="observability-as-security">5. Observability as Security</h2>
+<p>If you can’t see it, you can’t secure it. We will enforce:</p>
+<ul>
+<li><strong>Structured Logging</strong>: Sending logs to
+CloudWatch.</li>
+<li><strong>Cost Monitoring</strong>: Serverless limits cost exposure
+(code stops running = billing stops).</li>
+</ul>
+<h1 id="part-2-prerequisites">Part 2: Prerequisites</h1>
+<p>We assume you have <code>docker</code> installed. We need to install
+the tools to interact with AWS.</p>
+<h2 id="install-aws-cli">1. Install AWS CLI</h2>
+<p>The command line interface for AWS.</p>
+<ul>
+<li><strong>Why?</strong> Reproducibility. Clicking in the console is
+error-prone. Scripts are source control friendly.</li>
+</ul>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="st">&quot;https://awscli.amazonaws.com/AWSCLIV2.pkg&quot;</span> <span class="at">-o</span> <span class="st">&quot;AWSCLIV2.pkg&quot;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> installer <span class="at">-pkg</span> AWSCLIV2.pkg <span class="at">-target</span> /</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> AWSCLIV2.pkg</span></code></pre></div>
+<p><em>Verify</em>: <code>aws --version</code></p>
+<h2 id="install-jq">2. Install jq</h2>
+<p>A lightweight command-line JSON processor.</p>
+<ul>
+<li><strong>Why?</strong> AWS CLI outputs JSON. We need <code>jq</code>
+to extract IDs (like Subnet ID or Security Group ID) for variables.</li>
+</ul>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">brew</span> install jq</span></code></pre></div>
+<h2 id="configure-aws-cli">3. Configure AWS CLI</h2>
+<p>You need your <strong>AWS Access Key ID</strong> and <strong>Secret
+Access Key</strong> from the AWS Console (IAM User).</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> configure</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co"># AWS Access Key ID: &lt;your-key-id&gt;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co"># AWS Secret Access Key: &lt;your-secret-key&gt;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Default region name: us-east-1 (or your preferred region)</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Default output format: json</span></span></code></pre></div>
+<h2 id="verify-identity">4. Verify Identity</h2>
+<p>Check who you are logged in as.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> sts get-caller-identity</span></code></pre></div>
+<h1 id="part-3-application-preparation">Part 3: Application
+Preparation</h1>
+<p>Before deploying, we must “harden” the application to ensure it is
+secure and observability-friendly.</p>
+<h2 id="security-create-.dockerignore">1. Security: Create
+<code>.dockerignore</code></h2>
+<p><strong>Why?</strong> By default, Docker copies <em>everything</em>.
+We do not want to bake <code>.git</code> history, local secrets, or
+virtual environments into the image. This bloats the image and leaks
+sensitive data.</p>
+<p><strong>Action</strong>: Create <code>.dockerignore</code> in the
+project root.</p>
+<pre class="text"><code>.git
+.gitignore
+.dockerignore
+venv/
+__pycache__/
+*.pyc
+logs/
+configs/*.xml
+!configs/*.xml.example
+.env
+# Exclude pre-computed embeddings if you want a fresh start
+query_embeddings.json</code></pre>
+<blockquote>
+<p>[!NOTE] <strong>Strategy Decision</strong>: The above
+<code>.dockerignore</code> excludes <code>configs/*.xml</code> (except
+examples). This assumes you will either: 1. <strong>Fetch Configs from
+S3</strong> at runtime (requires S3 permissions, see Part 4). 2.
+<strong>Mount Configs</strong> via EFS or Volume (complex for Fargate).
+3. <strong>Bake Configs In</strong>: If you prefer to bake non-sensitive
+configs into the image, remove <code>configs/*.xml</code> from this
+list.</p>
+</blockquote>
+<h2 id="security-run-as-non-root">2. Security: Run as Non-Root</h2>
+<p><strong>Why?</strong> If an attacker compromises your container
+running as root, they have root access to the container filesytem. Using
+a standardized non-privileged user greatly limits the blast radius.</p>
+<p><strong>Action</strong>: Update <code>Dockerfile</code> to create and
+switch to a user.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ... inside Dockerfile ...</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="kw">RUN</span> <span class="ex">useradd</span> <span class="at">-m</span> <span class="at">-u</span> 1000 appuser</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="kw">USER</span> appuser</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="kw">CMD</span> [<span class="st">&quot;python&quot;</span>, <span class="st">&quot;main.py&quot;</span>]</span></code></pre></div>
+<h2 id="observability-logging">3. Observability: Logging</h2>
+<p><strong>Why?</strong> In the cloud, you don’t SSH into a server to
+read a log file. You stream logs to <code>stdout</code> (standard
+output), which the container runtime captures and sends to
+CloudWatch.</p>
+<p><strong>Action</strong>: Ensure <code>main.py</code> respects
+<code>RSS_MORNING_LOG_STDOUT=1</code>.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># main.py snippet</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> os.environ.get(<span class="st">&quot;RSS_MORNING_LOG_STDOUT&quot;</span>) <span class="op">==</span> <span class="st">&quot;1&quot;</span>:</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Configure logging to stream to sys.stdout</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    logging.basicConfig(level<span class="op">=</span>logging.INFO, stream<span class="op">=</span>sys.stdout)</span></code></pre></div>
+<h1 id="part-4-networking-identity-iam">Part 4: Networking &amp;
+Identity (IAM)</h1>
+<p>We need to create the identity our app will use (<code>Role</code>)
+and define where it runs (<code>VPC</code>).</p>
+<h2 id="iam-roles">1. IAM Roles</h2>
+<p><strong>Why?</strong> AWS resources are “deny by default”. To allow
+Fargate to pull an image or write to logs, we need a <strong>Task
+Execution Role</strong>. To allow the <em>running app</em> to read
+secrets, we need a <strong>Task Role</strong>.</p>
+<p><strong>Action</strong>: Create the Execution Role (Infrastructure
+permissions).</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. Create a Trust Policy (Who can assume this role? ECS Tasks)</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span> <span class="op">&lt;&lt;EOF</span> <span class="op">&gt;</span> ecs-trust-policy.json</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="st">{</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="st">  &quot;Version&quot;: &quot;2012-10-17&quot;,</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="st">  &quot;Statement&quot;: [</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="st">    {</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="st">      &quot;Sid&quot;: &quot;&quot;,</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="st">      &quot;Effect&quot;: &quot;Allow&quot;,</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="st">      &quot;Principal&quot;: { &quot;Service&quot;: &quot;ecs-tasks.amazonaws.com&quot; },</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="st">      &quot;Action&quot;: &quot;sts:AssumeRole&quot;</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="st">    }</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="st">  ]</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="op">EOF</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. Create the Role</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> iam create-role <span class="dt">\</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">--role-name</span> RssMorningExecutionRole <span class="dt">\</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">--assume-role-policy-document</span> file://ecs-trust-policy.json</span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. Attach the managed policy for basic ECS execution (Pull images, write logs)</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> iam attach-role-policy <span class="dt">\</span></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">--role-name</span> RssMorningExecutionRole <span class="dt">\</span></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">--policy-arn</span> arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy</span></code></pre></div>
+<p><strong>Action</strong>: Create the Task Role (Application
+permissions - access to Secrets).</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> iam create-role <span class="dt">\</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    <span class="at">--role-name</span> RssMorningTaskRole <span class="dt">\</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">--assume-role-policy-document</span> file://ecs-trust-policy.json</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Allow access to SSM Parameter Store (Inline Policy for Least Privilege)</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span> <span class="op">&lt;&lt;EOF</span> <span class="op">&gt;</span> ssm-policy.json</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="st">{</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="st">    &quot;Version&quot;: &quot;2012-10-17&quot;,</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="st">    &quot;Statement&quot;: [</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a><span class="st">        {</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Effect&quot;: &quot;Allow&quot;,</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Action&quot;: &quot;ssm:GetParameters&quot;,</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Resource&quot;: &quot;arn:aws:ssm:*:*:parameter/rss-morning/*&quot;</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a><span class="st">        }</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a><span class="st">    ]</span></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a><span class="op">EOF</span></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> iam put-role-policy <span class="dt">\</span></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">--role-name</span> RssMorningTaskRole <span class="dt">\</span></span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">--policy-name</span> AccessSecrets <span class="dt">\</span></span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>    <span class="at">--policy-document</span> file://ssm-policy.json</span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a><span class="co"># (Optional) Allow access to S3 for Configs</span></span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a><span class="co"># If you plan to store configs in S3 instead of baking them in, attach this policy.</span></span>
+<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span> <span class="op">&lt;&lt;EOF</span> <span class="op">&gt;</span> s3-policy.json</span>
+<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a><span class="st">{</span></span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a><span class="st">    &quot;Version&quot;: &quot;2012-10-17&quot;,</span></span>
+<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a><span class="st">    &quot;Statement&quot;: [</span></span>
+<span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a><span class="st">        {</span></span>
+<span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Effect&quot;: &quot;Allow&quot;,</span></span>
+<span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Action&quot;: [&quot;s3:GetObject&quot;, &quot;s3:ListBucket&quot;],</span></span>
+<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Resource&quot;: [</span></span>
+<span id="cb10-34"><a href="#cb10-34" aria-hidden="true" tabindex="-1"></a><span class="st">                &quot;arn:aws:s3:::your-config-bucket-name&quot;,</span></span>
+<span id="cb10-35"><a href="#cb10-35" aria-hidden="true" tabindex="-1"></a><span class="st">                &quot;arn:aws:s3:::your-config-bucket-name/*&quot;</span></span>
+<span id="cb10-36"><a href="#cb10-36" aria-hidden="true" tabindex="-1"></a><span class="st">            ]</span></span>
+<span id="cb10-37"><a href="#cb10-37" aria-hidden="true" tabindex="-1"></a><span class="st">        }</span></span>
+<span id="cb10-38"><a href="#cb10-38" aria-hidden="true" tabindex="-1"></a><span class="st">    ]</span></span>
+<span id="cb10-39"><a href="#cb10-39" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb10-40"><a href="#cb10-40" aria-hidden="true" tabindex="-1"></a><span class="op">EOF</span></span>
+<span id="cb10-41"><a href="#cb10-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-42"><a href="#cb10-42" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> iam put-role-policy <span class="dt">\</span></span>
+<span id="cb10-43"><a href="#cb10-43" aria-hidden="true" tabindex="-1"></a>    <span class="at">--role-name</span> RssMorningTaskRole <span class="dt">\</span></span>
+<span id="cb10-44"><a href="#cb10-44" aria-hidden="true" tabindex="-1"></a>    <span class="at">--policy-name</span> AccessS3Configs <span class="dt">\</span></span>
+<span id="cb10-45"><a href="#cb10-45" aria-hidden="true" tabindex="-1"></a>    <span class="at">--policy-document</span> file://s3-policy.json</span></code></pre></div>
+<h2 id="networking-vpc-security-groups">2. Networking (VPC &amp;
+Security Groups)</h2>
+<p><strong>Why?</strong> We need internet access to fetch RSS feeds. The
+simplest secure setup for a Fargate task is a <strong>Public
+Subnet</strong> with a <strong>Security Group</strong> that allows only
+outbound traffic.</p>
+<p><strong>Action</strong>: Get your default VPC ID and a Subnet ID.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Get Default VPC ID</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="va">VPC_ID</span><span class="op">=</span><span class="va">$(</span><span class="ex">aws</span> ec2 describe-vpcs <span class="at">--filters</span> <span class="st">&quot;Name=isDefault,Values=true&quot;</span> <span class="kw">|</span> <span class="ex">jq</span> <span class="at">-r</span> <span class="st">&#39;.Vpcs[0].VpcId&#39;</span><span class="va">)</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Get a Public Subnet ID (usually all subnets in default VPC are public)</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="va">SUBNET_ID</span><span class="op">=</span><span class="va">$(</span><span class="ex">aws</span> ec2 describe-subnets <span class="at">--filters</span> <span class="st">&quot;Name=vpc-id,Values=</span><span class="va">$VPC_ID</span><span class="st">&quot;</span> <span class="kw">|</span> <span class="ex">jq</span> <span class="at">-r</span> <span class="st">&#39;.Subnets[0].SubnetId&#39;</span><span class="va">)</span></span></code></pre></div>
+<p><strong>Action</strong>: Create a Security Group.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="va">GROUP_ID</span><span class="op">=</span><span class="va">$(</span><span class="ex">aws</span> ec2 create-security-group <span class="dt">\</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    <span class="at">--group-name</span> rs-morning-sg <span class="dt">\</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">--description</span> <span class="st">&quot;Security group for rss-morning batch job&quot;</span> <span class="dt">\</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">--vpc-id</span> <span class="va">$VPC_ID</span> <span class="kw">|</span> <span class="ex">jq</span> <span class="at">-r</span> <span class="st">&#39;.GroupId&#39;</span><span class="va">)</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Add Outbound Rule (HTTPS to everywhere) - Security Groups usually allow all outbound by default, but let&#39;s be explicit if needed.</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Note: AWS CLI create-security-group default includes Allow All Outbound. We will NOT add any Inbound rules.</span></span></code></pre></div>
+<h1 id="part-5-infrastructure-ecr-secrets">Part 5: Infrastructure (ECR
+&amp; Secrets)</h1>
+<p>Now we engage the storage and configuration services.</p>
+<h2 id="amazon-ecr-elastic-container-registry">1. Amazon ECR (Elastic
+Container Registry)</h2>
+<p><strong>Why?</strong> We need a place to host our Docker image that
+ECS can pull from securely. <strong>Action</strong>:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> ecr create-repository <span class="at">--repository-name</span> rss-morning</span></code></pre></div>
+<h2 id="cloudwatch-logs">2. CloudWatch Logs</h2>
+<p><strong>Why?</strong> ECS can auto-create log groups, but creating
+one explicitly lets us control retention (cost management).
+<strong>Action</strong>:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> logs create-log-group <span class="at">--log-group-name</span> /ecs/rss-morning</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> logs put-retention-policy <span class="at">--log-group-name</span> /ecs/rss-morning <span class="at">--retention-in-days</span> 14</span></code></pre></div>
+<h2 id="secrets-management-ssm-parameter-store">3. Secrets Management
+(SSM Parameter Store)</h2>
+<p><strong>Why?</strong> We never deploy <code>.env</code> files. We
+store secrets in SSM as <code>SecureString</code> types. Fargate will
+decrypt them at start time.</p>
+<p><strong>Action</strong>:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co"># OpenAI Key</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> ssm put-parameter <span class="dt">\</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">--name</span> <span class="st">&quot;/rss-morning/OPENAI_API_KEY&quot;</span> <span class="dt">\</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">--value</span> <span class="st">&quot;sk-YOUR_KEY_HERE&quot;</span> <span class="dt">\</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">--type</span> <span class="st">&quot;SecureString&quot;</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Resend/Sendgrid Key</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> ssm put-parameter <span class="dt">\</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">--name</span> <span class="st">&quot;/rss-morning/RESEND_API_KEY&quot;</span> <span class="dt">\</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">--value</span> <span class="st">&quot;re_YOUR_KEY_HERE&quot;</span> <span class="dt">\</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">--type</span> <span class="st">&quot;SecureString&quot;</span></span></code></pre></div>
+<p><em>Note: Replace <code>YOUR_KEY_HERE</code> with actual
+values.</em></p>
+<h1 id="part-6-pipeline-deployment">Part 6: Pipeline &amp;
+Deployment</h1>
+<p>We are ready to build the artifact and define the running task.</p>
+<h2 id="build-and-push">1. Build and Push</h2>
+<p><strong>Authentication</strong>: Login Docker to AWS ECR.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="va">ACCOUNT_ID</span><span class="op">=</span><span class="va">$(</span><span class="ex">aws</span> sts get-caller-identity <span class="at">--query</span> Account <span class="at">--output</span> text<span class="va">)</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="va">REGION</span><span class="op">=</span><span class="va">$(</span><span class="ex">aws</span> configure get region<span class="va">)</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="va">ECR_URL</span><span class="op">=</span><span class="st">&quot;</span><span class="va">${ACCOUNT_ID}</span><span class="st">.dkr.ecr.</span><span class="va">${REGION}</span><span class="st">.amazonaws.com&quot;</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> ecr get-login-password <span class="at">--region</span> <span class="va">$REGION</span> <span class="kw">|</span> <span class="ex">docker</span> login <span class="at">--username</span> AWS <span class="at">--password-stdin</span> <span class="va">$ECR_URL</span></span></code></pre></div>
+<p><strong>Build &amp; Push</strong>:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> rss-morning .</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> tag rss-morning:latest <span class="va">$ECR_URL</span>/rss-morning:latest</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> push <span class="va">$ECR_URL</span>/rss-morning:latest</span></code></pre></div>
+<h2 id="register-task-definition">2. Register Task Definition</h2>
+<p><strong>Why?</strong> This tells ECS <em>how</em> to run the
+container (how much CPU, which image, which secrets).</p>
+<p><strong>Action</strong>: Create <code>task-def.json</code>.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;family&quot;</span><span class="fu">:</span> <span class="st">&quot;rss-morning&quot;</span><span class="fu">,</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;networkMode&quot;</span><span class="fu">:</span> <span class="st">&quot;awsvpc&quot;</span><span class="fu">,</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;requiresCompatibilities&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;FARGATE&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;cpu&quot;</span><span class="fu">:</span> <span class="st">&quot;256&quot;</span><span class="fu">,</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;memory&quot;</span><span class="fu">:</span> <span class="st">&quot;512&quot;</span><span class="fu">,</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;executionRoleArn&quot;</span><span class="fu">:</span> <span class="st">&quot;arn:aws:iam::ACCOUNT_ID:role/RssMorningExecutionRole&quot;</span><span class="fu">,</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;taskRoleArn&quot;</span><span class="fu">:</span> <span class="st">&quot;arn:aws:iam::ACCOUNT_ID:role/RssMorningTaskRole&quot;</span><span class="fu">,</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;containerDefinitions&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;app&quot;</span><span class="fu">,</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;image&quot;</span><span class="fu">:</span> <span class="st">&quot;ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/rss-morning:latest&quot;</span><span class="fu">,</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;essential&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;environment&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;RSS_MORNING_LOG_STDOUT&quot;</span><span class="fu">,</span> <span class="dt">&quot;value&quot;</span><span class="fu">:</span> <span class="st">&quot;1&quot;</span> <span class="fu">}</span></span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;secrets&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;OPENAI_API_KEY&quot;</span><span class="fu">,</span> <span class="dt">&quot;valueFrom&quot;</span><span class="fu">:</span> <span class="st">&quot;/rss-morning/OPENAI_API_KEY&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;RESEND_API_KEY&quot;</span><span class="fu">,</span> <span class="dt">&quot;valueFrom&quot;</span><span class="fu">:</span> <span class="st">&quot;/rss-morning/RESEND_API_KEY&quot;</span> <span class="fu">}</span></span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;logConfiguration&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a>        <span class="dt">&quot;logDriver&quot;</span><span class="fu">:</span> <span class="st">&quot;awslogs&quot;</span><span class="fu">,</span></span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a>        <span class="dt">&quot;options&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb18-24"><a href="#cb18-24" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;awslogs-group&quot;</span><span class="fu">:</span> <span class="st">&quot;/ecs/rss-morning&quot;</span><span class="fu">,</span></span>
+<span id="cb18-25"><a href="#cb18-25" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;awslogs-region&quot;</span><span class="fu">:</span> <span class="st">&quot;REGION&quot;</span><span class="fu">,</span></span>
+<span id="cb18-26"><a href="#cb18-26" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;awslogs-stream-prefix&quot;</span><span class="fu">:</span> <span class="st">&quot;ecs&quot;</span></span>
+<span id="cb18-27"><a href="#cb18-27" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb18-28"><a href="#cb18-28" aria-hidden="true" tabindex="-1"></a>      <span class="fu">}</span></span>
+<span id="cb18-29"><a href="#cb18-29" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb18-30"><a href="#cb18-30" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb18-31"><a href="#cb18-31" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p><em>Replace <code>ACCOUNT_ID</code> and <code>REGION</code> in the
+file above.</em></p>
+<p><strong>Register</strong>:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> ecs register-task-definition <span class="at">--cli-input-json</span> file://task-def.json</span></code></pre></div>
+<h1 id="part-7-scheduling">Part 7: Scheduling</h1>
+<p>The final piece: making it run automatically.</p>
+<h2 id="eventbridge-scheduler">EventBridge Scheduler</h2>
+<p><strong>Why?</strong> We want standard cron-like behavior.
+<code>0 7 * * ? *</code> means “7:00 AM every day”.</p>
+<p><strong>Action</strong>:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="co"># We need a role for the Scheduler to invoke ECS</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span> <span class="op">&lt;&lt;EOF</span> <span class="op">&gt;</span> scheduler-trust.json</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="st">{</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="st">    &quot;Version&quot;: &quot;2012-10-17&quot;,</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="st">    &quot;Statement&quot;: [{&quot;Effect&quot;: &quot;Allow&quot;, &quot;Principal&quot;: {&quot;Service&quot;: &quot;scheduler.amazonaws.com&quot;}, &quot;Action&quot;: &quot;sts:AssumeRole&quot;}]</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="op">EOF</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> iam create-role <span class="at">--role-name</span> RssMorningSchedulerRole <span class="at">--assume-role-policy-document</span> file://scheduler-trust.json</span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Give permission to run ECS tasks</span></span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span> <span class="op">&lt;&lt;EOF</span> <span class="op">&gt;</span> scheduler-policy.json</span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a><span class="st">{</span></span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a><span class="st">    &quot;Version&quot;: &quot;2012-10-17&quot;,</span></span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a><span class="st">    &quot;Statement&quot;: [</span></span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a><span class="st">        {</span></span>
+<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Effect&quot;: &quot;Allow&quot;,</span></span>
+<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Action&quot;: &quot;ecs:RunTask&quot;,</span></span>
+<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Resource&quot;: &quot;*&quot;</span></span>
+<span id="cb20-20"><a href="#cb20-20" aria-hidden="true" tabindex="-1"></a><span class="st">        },</span></span>
+<span id="cb20-21"><a href="#cb20-21" aria-hidden="true" tabindex="-1"></a><span class="st">        {</span></span>
+<span id="cb20-22"><a href="#cb20-22" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Effect&quot;: &quot;Allow&quot;,</span></span>
+<span id="cb20-23"><a href="#cb20-23" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Action&quot;: &quot;iam:PassRole&quot;,</span></span>
+<span id="cb20-24"><a href="#cb20-24" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;Resource&quot;: &quot;*&quot;</span></span>
+<span id="cb20-25"><a href="#cb20-25" aria-hidden="true" tabindex="-1"></a><span class="st">        }</span></span>
+<span id="cb20-26"><a href="#cb20-26" aria-hidden="true" tabindex="-1"></a><span class="st">    ]</span></span>
+<span id="cb20-27"><a href="#cb20-27" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb20-28"><a href="#cb20-28" aria-hidden="true" tabindex="-1"></a><span class="op">EOF</span></span>
+<span id="cb20-29"><a href="#cb20-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-30"><a href="#cb20-30" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> iam put-role-policy <span class="at">--role-name</span> RssMorningSchedulerRole <span class="at">--policy-name</span> InvokeECS <span class="at">--policy-document</span> file://scheduler-policy.json</span></code></pre></div>
+<p><strong>Create Schedule (Cron)</strong>:</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> scheduler create-schedule <span class="dt">\</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>    <span class="at">--name</span> rss-morning-daily <span class="dt">\</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">--schedule-expression</span> <span class="st">&quot;cron(0 7 * * ? *)&quot;</span> <span class="dt">\</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">--target</span> <span class="st">&#39;{</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="st">        &quot;Arn&quot;: &quot;arn:aws:ecs:REGION:ACCOUNT_ID:cluster/default&quot;,</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="st">        &quot;RoleArn&quot;: &quot;arn:aws:iam::ACCOUNT_ID:role/RssMorningSchedulerRole&quot;,</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="st">        &quot;EcsParameters&quot;: {</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;TaskDefinitionArn&quot;: &quot;arn:aws:ecs:REGION:ACCOUNT_ID:task-definition/rss-morning&quot;,</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;LaunchType&quot;: &quot;FARGATE&quot;,</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="st">            &quot;NetworkConfiguration&quot;: {</span></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a><span class="st">                &quot;AwsvpcConfiguration&quot;: {</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a><span class="st">                    &quot;Subnets&quot;: [&quot;&#39;</span><span class="va">$SUBNET_ID</span><span class="st">&#39;&quot;],</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a><span class="st">                    &quot;SecurityGroups&quot;: [&quot;&#39;</span><span class="va">$GROUP_ID</span><span class="st">&#39;&quot;],</span></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a><span class="st">                    &quot;AssignPublicIp&quot;: &quot;ENABLED&quot;</span></span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a><span class="st">                }</span></span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a><span class="st">            }</span></span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a><span class="st">        }</span></span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a><span class="st">    }&#39;</span> <span class="dt">\</span></span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">--flexible-time-window</span> <span class="st">&#39;{ &quot;Mode&quot;: &quot;OFF&quot; }&#39;</span></span></code></pre></div>
+<p><em>Note: Replace <code>REGION</code> and <code>ACCOUNT_ID</code>
+appropriately.</em></p>
+</body>
+</html>

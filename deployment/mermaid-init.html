@@ -1,0 +1,28 @@
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  
+  mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    // Select the pre.mermaid elements that Pandoc generates
+    const pandocBlocks = document.querySelectorAll('pre.mermaid');
+    
+    for (const block of pandocBlocks) {
+      // Decode HTML entities (like --&gt;) by reading textContent
+      const rawMermaid = block.textContent;
+      
+      // Create a replacement div
+        const div = document.createElement('div');
+        div.className = 'mermaid';
+        div.textContent = rawMermaid;
+        
+        // Replace <pre><code>...</code></pre> with <div class="mermaid">...</div>
+        block.parentNode.replaceChild(div, block);
+    }
+    
+    // Now trigger mermaid to render the clean divs
+    await mermaid.run({
+      nodes: document.querySelectorAll('div.mermaid')
+    });
+  });
+</script>
