@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from .config import parse_app_config, parse_env_config
+from .config import parse_app_config
 from .runner import RunConfig, execute
 
 logger = logging.getLogger(__name__)
@@ -99,10 +99,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         # Load main config
         app_config = parse_app_config(args.config)
 
-        # Load env config if present
-        if app_config.env_file:
-            env_vars = parse_env_config(app_config.env_file)
-            os.environ.update(env_vars)
+        # Load env config if present - NOT for secrets anymore, but handled by parse_app_config
+        # We can still load it if there are other env vars, but load_secrets handles the keys.
+        # If we remove os.environ.update, implicit usage (if any remains) would break.
+        # But we refactored components to use explicit keys.
+        # So we can remove this block or comment it out if env.xml is strictly for secrets.
+        # However, parse_app_config calls load_secrets which reads env.xml variables.
+        # So we don't need to push them to os.environ globally.
 
         # Determine logging settings (CLI overrides Config)
         log_level = args.log_level or app_config.logging.level
@@ -123,13 +126,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             pre_filter=app_config.pre_filter.enabled,
             pre_filter_embeddings_path=app_config.pre_filter.embeddings_path,
             email_to=app_config.email.to_addr,
-            email_from=app_config.email.from_addr,
+            email_from=None,  # Handled via SecretsConfig
             email_subject=app_config.email.subject,
             cluster_threshold=app_config.pre_filter.cluster_threshold,
             save_articles_path=args.save_articles,
             load_articles_path=args.load_articles,
             max_article_length=app_config.max_article_length,
             system_prompt=app_config.prompt,
+            secrets=app_config.secrets,
         )
 
         result = execute(config)

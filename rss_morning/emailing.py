@@ -22,6 +22,7 @@ def send_email_report(
     to_address: str,
     from_address: Optional[str] = None,
     subject: Optional[str] = None,
+    resend_api_key: Optional[str] = None,
 ) -> None:
     """Send the prepared report via Resend."""
     if resend is None:
@@ -30,7 +31,7 @@ def send_email_report(
         )
         return
 
-    api_key = os.environ.get("RESEND_API_KEY")
+    api_key = resend_api_key or os.environ.get("RESEND_API_KEY")
     if not api_key:
         logger.error(
             "RESEND_API_KEY environment variable is not set; skipping email delivery."

@@ -46,7 +46,10 @@ def build_summary_input(articles: list[dict]) -> str:
 
 
 def generate_summary(
-    articles: list[dict], system_prompt: str, return_dict: bool = False
+    articles: list[dict],
+    system_prompt: str,
+    return_dict: bool = False,
+    google_api_key: Optional[str] = None,
 ) -> str | Tuple[str, Optional[dict]]:
     """Generate summary JSON for a list of articles."""
     if not articles:
@@ -63,8 +66,20 @@ def generate_summary(
             "google-genai package is required for --summary but is not installed."
         )
 
-    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    logger.info("Using API key ending with: %s", api_key[:])
+    api_key = (
+        google_api_key
+        or os.environ.get("GOOGLE_API_KEY")
+        or os.environ.get("GEMINI_API_KEY")
+    )
+    if not api_key:
+        # We might want to raise error or just log
+        logger.warning("No Google API Key provided for summarization.")
+    else:
+        logger.info(
+            "Using Google API key ending with: ...%s",
+            api_key[-4:] if len(api_key) > 4 else "std",
+        )
+
     client = genai.Client(api_key=api_key)
 
     model = "gemini-flash-latest"

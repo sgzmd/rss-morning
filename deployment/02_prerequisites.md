@@ -14,27 +14,20 @@ rm AWSCLIV2.pkg
 ```
 *Verify*: `aws --version`
 
-## 2. Install jq
-A lightweight command-line JSON processor.
 
-*   **Why?** AWS CLI outputs JSON. We need `jq` to extract IDs (like Subnet ID or Security Group ID) for variables.
+## 2. Configure AWS CLI
+The modern way to authenticate is using the `aws login` command (requires AWS CLI v2.32.0+).
 
-```bash
-brew install jq
-```
+1.  Run the login command:
+    ```bash
+    aws login
+    ```
+2.  This will open your browser to authenticate with your AWS credentials (Identity Center/SSO or Console credentials).
+3.  Follow the prompts in the browser and CLI.
 
-## 3. Configure AWS CLI
-You need your **AWS Access Key ID** and **Secret Access Key** from the AWS Console (IAM User).
+*Note: For older CLI versions or specific CI/CD use cases, `aws configure` (static keys) or `aws configure sso` may still be used, but `aws login` is recommended for local development.*
 
-```bash
-aws configure
-# AWS Access Key ID: <your-key-id>
-# AWS Secret Access Key: <your-secret-key>
-# Default region name: us-east-1 (or your preferred region)
-# Default output format: json
-```
-
-## 4. Verify Identity
+## 3. Verify Identity
 Check who you are logged in as.
 ```bash
 aws sts get-caller-identity

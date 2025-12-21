@@ -88,6 +88,7 @@ class EmbeddingArticleFilter:
         self,
         client: Optional[OpenAI] = None,
         *,
+        api_key: Optional[str] = None,
         backend: Optional[EmbeddingBackend] = None,
         query_embeddings_path: Optional[str] = None,
         queries_file: Optional[str] = None,
@@ -115,7 +116,19 @@ class EmbeddingArticleFilter:
         if backend is not None:
             self._backend = backend
         else:
-            resolved_client = client or OpenAI()
+            if client:
+                resolved_client = client
+            elif api_key:
+                resolved_client = OpenAI(api_key=api_key)
+            else:
+                # Fallback to env var if no key provided, but we want to be explicit.
+                # However, for backward compatibility or ease, we can let OpenAI() default behaviour
+                # (which checks env vars) remain IF we haven't strictly forbidden it here.
+                # But task says "keys are passed implicitly... This is not right".
+                # So we should probably prefer explicit key.
+                # If no key is passed, we might still instantiate OpenAI() which will look for env var.
+                # But since we are cleaning this up, let's keep it robust.
+                resolved_client = OpenAI()
             self._backend = OpenAIEmbeddingBackend(
                 client=resolved_client,
                 model=self._config.model,

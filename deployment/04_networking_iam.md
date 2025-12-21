@@ -88,10 +88,10 @@ aws iam put-role-policy \
 **Action**: Get your default VPC ID and a Subnet ID.
 ```bash
 # Get Default VPC ID
-VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" | jq -r '.Vpcs[0].VpcId')
+VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text)
 
 # Get a Public Subnet ID (usually all subnets in default VPC are public)
-SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" | jq -r '.Subnets[0].SubnetId')
+SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[0].SubnetId" --output text)
 ```
 
 **Action**: Create a Security Group.
@@ -99,7 +99,9 @@ SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" | jq
 GROUP_ID=$(aws ec2 create-security-group \
     --group-name rs-morning-sg \
     --description "Security group for rss-morning batch job" \
-    --vpc-id $VPC_ID | jq -r '.GroupId')
+    --vpc-id $VPC_ID \
+    --query "GroupId" \
+    --output text)
 
 # Add Outbound Rule (HTTPS to everywhere) - Security Groups usually allow all outbound by default, but let's be explicit if needed.
 # Note: AWS CLI create-security-group default includes Allow All Outbound. We will NOT add any Inbound rules.

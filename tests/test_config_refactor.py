@@ -1,5 +1,21 @@
-import textwrap
 from rss_morning.config import parse_app_config, parse_env_config, AppConfig
+import os
+import pytest
+import textwrap
+
+
+@pytest.fixture
+def env_secrets():
+    os.environ["OPENAI_API_KEY"] = "k1"
+    os.environ["GOOGLE_API_KEY"] = "k2"
+    os.environ["RESEND_API_KEY"] = "k3"
+    os.environ["RESEND_FROM_EMAIL"] = "e1"
+    yield
+    # Cleanup
+    del os.environ["OPENAI_API_KEY"]
+    del os.environ["GOOGLE_API_KEY"]
+    del os.environ["RESEND_API_KEY"]
+    del os.environ["RESEND_FROM_EMAIL"]
 
 
 def test_parse_env_config(tmp_path):
@@ -19,7 +35,7 @@ def test_parse_env_config(tmp_path):
     assert env_vars["ANOTHER_VAR"] == "12345"
 
 
-def test_parse_app_config(tmp_path):
+def test_parse_app_config(env_secrets, tmp_path):
     config_file = tmp_path / "config.xml"
     feeds_file = tmp_path / "feeds.xml"
     env_file = tmp_path / "env.xml"
@@ -27,7 +43,7 @@ def test_parse_app_config(tmp_path):
 
     # Create dummy sibling files
     feeds_file.touch()
-    env_file.touch()
+    env_file.write_text("<environment/>", encoding="utf-8")
 
     config_file.write_text(
         textwrap.dedent("""
@@ -65,9 +81,10 @@ def test_parse_app_config(tmp_path):
     assert config.env_file == str(env_file.resolve())
     assert config.logging.file == str(log_file.resolve())
     assert config.prompt.strip() == "System Prompt content"
+    assert config.secrets.openai_api_key == "k1"
 
 
-def test_parse_app_config_minimal(tmp_path):
+def test_parse_app_config_minimal(env_secrets, tmp_path):
     config_file = tmp_path / "minimal.xml"
     feeds_file = tmp_path / "feeds.xml"
     feeds_file.touch()

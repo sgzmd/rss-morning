@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from .articles import fetch_article_content, truncate_text
-from .config import parse_feeds_config
+from .config import parse_feeds_config, SecretsConfig
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
 from .summaries import generate_summary
@@ -36,6 +36,7 @@ class RunConfig:
     load_articles_path: Optional[str] = None
     max_article_length: int = 5000
     system_prompt: Optional[str] = None
+    secrets: Optional[SecretsConfig] = None
 
 
 @dataclass
@@ -217,6 +218,7 @@ def execute(config: RunConfig) -> RunResult:
         filter_layer = EmbeddingArticleFilter(
             query_embeddings_path=config.pre_filter_embeddings_path,
             config=emb_config,
+            api_key=config.secrets.openai_api_key if config.secrets else None,
         )
         filtered_articles = filter_layer.filter(
             list(articles), cluster_threshold=config.cluster_threshold
@@ -248,7 +250,10 @@ def execute(config: RunConfig) -> RunResult:
             raise ValueError("Summary requested but no system_prompt configured.")
 
         summary_output, summary_data = generate_summary(
-            articles, config.system_prompt, return_dict=True
+            articles,
+            config.system_prompt,
+            return_dict=True,
+            google_api_key=config.secrets.google_api_key if config.secrets else None,
         )
         output_text = summary_output
         if summary_data is not None:
@@ -265,8 +270,11 @@ def execute(config: RunConfig) -> RunResult:
             payload=email_payload,
             is_summary=is_summary_payload,
             to_address=config.email_to,
-            from_address=config.email_from,
+            from_address=config.secrets.resend_from_email
+            if config.secrets
+            else config.email_from,
             subject=subject,
+            resend_api_key=config.secrets.resend_api_key if config.secrets else None,
         )
 
     return RunResult(

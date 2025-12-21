@@ -2,7 +2,13 @@ import logging
 from types import SimpleNamespace
 
 from rss_morning import cli
-from rss_morning.config import AppConfig, LoggingConfig, PreFilterConfig, EmailConfig
+from rss_morning.config import (
+    AppConfig,
+    LoggingConfig,
+    PreFilterConfig,
+    EmailConfig,
+    SecretsConfig,
+)
 
 
 def test_configure_logging_defaults_to_console_only(monkeypatch, tmp_path):
@@ -60,10 +66,15 @@ def test_main_loads_config_and_runs(monkeypatch):
         logging=LoggingConfig(),
         max_article_length=1000,
         prompt="System Prompt",
+        secrets=SecretsConfig(
+            openai_api_key="k",
+            google_api_key="k",
+            resend_api_key="k",
+            resend_from_email="e",
+        ),
     )
 
     monkeypatch.setattr(cli, "parse_app_config", lambda path: mock_app_config)
-    monkeypatch.setattr(cli, "parse_env_config", lambda path: {})
 
     captured = {}
 
@@ -96,9 +107,14 @@ def test_main_cli_overrides_logging(monkeypatch):
         feeds_file="feeds.xml",
         env_file=None,
         logging=LoggingConfig(level="INFO", file="config.log"),
+        secrets=SecretsConfig(
+            openai_api_key="k",
+            google_api_key="k",
+            resend_api_key="k",
+            resend_from_email="e",
+        ),
     )
     monkeypatch.setattr(cli, "parse_app_config", lambda path: mock_app_config)
-    monkeypatch.setattr(cli, "parse_env_config", lambda path: {})
     monkeypatch.setattr(
         cli,
         "execute",
@@ -115,9 +131,17 @@ def test_main_cli_overrides_logging(monkeypatch):
 
 def test_main_save_load_articles_args(monkeypatch):
     monkeypatch.setattr(cli, "configure_logging", lambda level, log_file=None: None)
-    mock_app_config = AppConfig(feeds_file="feeds.xml", env_file=None)
+    mock_app_config = AppConfig(
+        feeds_file="feeds.xml",
+        env_file=None,
+        secrets=SecretsConfig(
+            openai_api_key="k",
+            google_api_key="k",
+            resend_api_key="k",
+            resend_from_email="e",
+        ),
+    )
     monkeypatch.setattr(cli, "parse_app_config", lambda path: mock_app_config)
-    monkeypatch.setattr(cli, "parse_env_config", lambda path: {})
 
     captured = {}
 

@@ -32,6 +32,12 @@ articles.json
 mylog.txt
 ```
 
+### 1.4. Configuration: Production Config
+**Requirement**: The application requires `config.xml` and `feeds.xml` to run. Local `config.xml` often points to `env.xml` which is not suitable for production.
+**Action**:
+- Create `config.prod.xml` (already done) which removes `<env>` (relying on env vars) and properly points to `../feeds.xml`.
+- Ensure `Dockerfile` copies `config.prod.xml` to `/app/configs/config.xml` and `feeds.xml` to `/app/feeds.xml`.
+
 ### 1.2. Security: Remove Secrets from Build Usage
 **Critical**: The `Dockerfile` currently accepts `ARG OPENAI_API_KEY`. Passing secrets as build args persists them in the container layer history, which is a security vulnerability.
 **Action**: Modify `Dockerfile`:

@@ -5,8 +5,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from xml.etree import ElementTree as ET
+import os
+
+try:
+    import boto3
+except ImportError:
+    boto3 = None
 
 from .models import FeedConfig
 
@@ -21,9 +27,16 @@ class PreFilterConfig:
 
 
 @dataclass
+class SecretsConfig:
+    openai_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
+    resend_api_key: Optional[str] = None
+    resend_from_email: Optional[str] = None
+
+
+@dataclass
 class EmailConfig:
     to_addr: Optional[str] = None
-    from_addr: Optional[str] = None
     subject: Optional[str] = None
 
 
@@ -42,6 +55,7 @@ class AppConfig:
     summary: bool = False
     pre_filter: PreFilterConfig = field(default_factory=PreFilterConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
+    secrets: SecretsConfig = field(default_factory=SecretsConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     prompt: Optional[str] = None
     max_article_length: int = 5000
@@ -118,6 +132,110 @@ def parse_env_config(path: str) -> Dict[str, str]:
     return env_vars
 
 
+def _fetch_ssm_parameter(client: Any, parameter_name: str) -> Optional[str]:
+    """Fetch a parameter from SSM, returning None if not found or on error."""
+    try:
+        response = client.get_parameter(Name=parameter_name, WithDecryption=True)
+        return response.get("Parameter", {}).get("Value")
+    except Exception as exc:
+        logger.debug("Failed to fetch SSM parameter %s: %s", parameter_name, exc)
+        return None
+
+
+def load_secrets(
+    env_file: Optional[str],
+    use_ssm: bool = False,
+    ssm_prefix: str = "/rss-morning",
+) -> SecretsConfig:
+    """
+    Load secrets from multiple sources with strict conflict resolution.
+
+    Sources checked:
+    1. SSM (if use_ssm=True and boto3 available)
+    2. os.environ
+    3. env_file (XML)
+
+    Conflict Policy:
+    If a secret is defined in more than one source, raising ValueError.
+    """
+    # Mapping of internal secret name -> (env_var_name, ssm_suffix)
+    secret_map = {
+        "openai_api_key": ("OPENAI_API_KEY", "OPENAI_API_KEY"),
+        "google_api_key": ("GOOGLE_API_KEY", "GOOGLE_API_KEY"),
+        "resend_api_key": ("RESEND_API_KEY", "RESEND_API_KEY"),
+        "resend_from_email": ("RESEND_FROM_EMAIL", "RESEND_FROM_EMAIL"),
+    }
+
+    # 1. Load from XML
+    xml_secrets = {}
+    if env_file:
+        xml_data = parse_env_config(env_file)
+        for secret_field, (env_var_name, _) in secret_map.items():
+            if env_var_name in xml_data:
+                xml_secrets[secret_field] = xml_data[env_var_name]
+
+    # 2. Load from os.environ
+    env_secrets = {}
+    for secret_field, (env_var_name, _) in secret_map.items():
+        val = os.environ.get(env_var_name)
+        if val:
+            env_secrets[secret_field] = val
+
+    # 3. Load from SSM
+    ssm_secrets = {}
+    if use_ssm:
+        if boto3 is None:
+            logger.warning("SSM requested but boto3 is not installed; skipping SSM.")
+        else:
+            try:
+                ssm = boto3.client("ssm")
+                for secret_field, (_, ssm_suffix) in secret_map.items():
+                    param_name = f"{ssm_prefix}/{ssm_suffix}"
+                    val = _fetch_ssm_parameter(ssm, param_name)
+                    if val:
+                        ssm_secrets[secret_field] = val
+            except Exception as exc:
+                logger.error("Error initializing SSM client: %s", exc)
+
+    # 4. Conflict Resolution & Merging
+    final_secrets = {}
+    for secret_field in secret_map:
+        sources_found = []
+        val_ssm = ssm_secrets.get(secret_field)
+        val_env = env_secrets.get(secret_field)
+        val_xml = xml_secrets.get(secret_field)
+
+        if val_ssm is not None:
+            sources_found.append("SSM")
+        if val_env is not None:
+            sources_found.append("Environment")
+        if val_xml is not None:
+            sources_found.append("XML")
+
+        if len(sources_found) > 1:
+            raise ValueError(
+                f"Secret conflict for '{secret_field}': found in {', '.join(sources_found)}. "
+                "Strict conflict resolution enabled; please define in only one source."
+            )
+
+        if val_ssm:
+            final_secrets[secret_field] = val_ssm
+        elif val_env:
+            final_secrets[secret_field] = val_env
+        elif val_xml:
+            final_secrets[secret_field] = val_xml
+
+    # 5. Validation: Ensure all secrets are present
+    missing = [k for k in secret_map if k not in final_secrets]
+    if missing:
+        raise ValueError(
+            f"Missing required secrets: {', '.join(missing)}. "
+            "All secrets must be provided via XML, Environment, or SSM."
+        )
+
+    return SecretsConfig(**final_secrets)
+
+
 def parse_app_config(path: str) -> AppConfig:
     """Parse the main application configuration XML."""
     config_path = Path(path).resolve()
@@ -141,6 +259,20 @@ def parse_app_config(path: str) -> AppConfig:
         if env_node is not None and env_node.text
         else None
     )
+
+    # Secrets loading
+    # Note: caller or args might override use_ssm, but for now we defaults to False or check env?
+    # We can perhaps check if we are in AWS or have a flag?
+    # The user instruction implies we might not have a CLI flag for SSM yet, but we should support it.
+    # Let's assume we want to support SSM if configured. For now, rely on default of False,
+    # OR we can update `parse_app_config` signature to accept `use_ssm`.
+    # But `parse_app_config` is called early.
+    # Let's check an Environment Variable RSS_MORNING_USE_SSM to toggle this for now?
+    # Or strict logic: if `env_file` is NOT present, maybe we check SSM?
+    # Actually, let's look at the `AppConfig` signature change.
+
+    use_ssm = os.environ.get("RSS_MORNING_USE_SSM", "false").lower() == "true"
+    secrets = load_secrets(env_file=env_file, use_ssm=use_ssm)
 
     # Simple values
     limit = int(root.findtext("limit", "10"))
@@ -173,7 +305,9 @@ def parse_app_config(path: str) -> AppConfig:
     email = EmailConfig()
     if email_node is not None:
         email.to_addr = email_node.findtext("to")
-        email.from_addr = email_node.findtext("from")
+        # from_addr is now a secret/env var usually, but kept in config if needed?
+        # The user instructions said RESEND_FROM_EMAIL is a secret.
+        # We removed from_addr from EmailConfig to move it to SecretsConfig.
         email.subject = email_node.findtext("subject")
 
     # Logging
@@ -201,6 +335,7 @@ def parse_app_config(path: str) -> AppConfig:
         summary=summary,
         pre_filter=pre_filter,
         email=email,
+        secrets=secrets,
         logging=logging_config,
         prompt=prompt,
         max_article_length=max_len,
