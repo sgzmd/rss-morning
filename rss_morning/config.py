@@ -142,6 +142,17 @@ def _fetch_ssm_parameter(client: Any, parameter_name: str) -> Optional[str]:
         return None
 
 
+def _get_ssm_client() -> Any:
+    # If we are in LocalStack, this ENV var is usually auto-injected or we set it manually
+    endpoint_url = os.environ.get("AWS_ENDPOINT_URL")
+
+    return boto3.client(
+        "ssm",
+        region_name="us-east-1",
+        endpoint_url=endpoint_url,  # If None, defaults to real AWS
+    )
+
+
 def load_secrets(
     env_file: Optional[str],
     use_ssm: bool = False,
@@ -188,7 +199,7 @@ def load_secrets(
             logger.warning("SSM requested but boto3 is not installed; skipping SSM.")
         else:
             try:
-                ssm = boto3.client("ssm")
+                ssm = _get_ssm_client()
                 for secret_field, (_, ssm_suffix) in secret_map.items():
                     param_name = f"{ssm_prefix}/{ssm_suffix}"
                     val = _fetch_ssm_parameter(ssm, param_name)
