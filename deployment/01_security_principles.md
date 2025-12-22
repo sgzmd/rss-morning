@@ -1,30 +1,30 @@
-# Part 1: Security First Principles
+# Part 1: Security Principles
 
-Before running a single command, we must establish the security rules. In AWS, security is "Job Zero". The default settings in many tutorials are **insecure** (e.g., using Admin keys, public S3 buckets).
-
-## 1. Least Privilege
-**Concept**: A component (like our script) should have *only* the permissions it needs to do its job, and nothing more.
-
-*   **Application Needs**: Read RSS feeds (Internet), Read API Keys (SSM), Write Logs (CloudWatch), **Read S3 (Optional for Configs)**.
-*   **Application DOES NOT Need**: EC2 admin rights, User management, Open Inbound Ports.
+## 1. Least Privilege (IAM)
+*   **Service Role**: The Lambda function must have a devoted IAM Role.
+*   **Policies**:
+    *   `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents` (CloudWatch).
+    *   `secretsmanager:GetSecretValue` (for accessing API keys) OR `ssm:GetParameter`.
+    *   **NO** broad `*` permissions.
 
 ## 2. Secrets Management
-**Never** hardcode API keys in code or Dockerfiles.
+*   **Do NOT** embed API keys in `Dockerfile` or source code.
+*   **Do NOT** use plain-text Environment Variables in the Lambda configuration for sensitive data (they are visible in the console).
+*   **Best Practice**:
+    *   Store `OPENAI_API_KEY` and `RESEND_API_KEY` in **AWS Secrets Manager** or **SSM Parameter Store (SecureString)**.
+    *   Inject them at runtime:
+        *   **Option A**: Use the AWS Parameters and Secrets Lambda Extension (caches secrets, easy access).
+        *   **Option B**: Use the AWS SDK (`boto3`) inside the app to fetch them on startup.
 
-*   **Bad**: `ENV OPENAI_API_KEY=sk-...` in Dockerfile (visible in image history).
-*   **Good**: Inject at runtime from a secure vault. We will use **AWS Systems Manager Parameter Store** (SecureString).
+## 3. Networking & VPC
+*   **Default (Recommended for this use case)**: Run Lambda **outside of VPC**.
+    *   **Pros**: Fastest cold starts, free direct internet access (required for RSS feeds).
+    *   **Cons**: Cannot access internal private resources (RDS, Redis) - *Not applicable here*.
+*   **VPC Deployment**: If you *must* run in a VPC:
+    *   Place Lambda in **Private Subnets**.
+    *   You **MUST** provision a **NAT Gateway** in a Public Subnet to access public internet (RSS feeds, External APIs).
+    *   **Warning**: NAT Gateways cost ~$30/month + data processing fees. Avoid unless necessary.
 
-## 3. Network Isolation
-**Concept**: Control traffic flow.
-
-*   **Inbound**: Our batch job needs **zero** inbound ports open. No SSH, no HTTP listener. It initiates connections; it does not receive them.
-*   **Outbound**: Needs HTTPS (443) only.
-
-## 4. Immutable Infrastructure
-Once a Docker image is built and tested, it should not change. We deploy specific versions (tags), not just "latest".
-
-## 5. Observability as Security
-If you can't see it, you can't secure it. We will enforce:
-
-*   **Structured Logging**: Sending logs to CloudWatch.
-*   **Cost Monitoring**: Serverless limits cost exposure (code stops running = billing stops).
+## 4. Container Security
+*   **ReadOnly Root Filesystem**: Configure the application to write temporary files only to `/tmp` (Lambda provides 512MB-10GB ephemeral storage at `/tmp`).
+*   **Non-Root User**: Ideally, run the container as a non-root user (though Lambda maps the user automatically, it's good practice in Dockerfile).

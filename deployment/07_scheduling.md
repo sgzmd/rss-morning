@@ -1,64 +1,33 @@
 # Part 7: Scheduling
 
-The final piece: making it run automatically.
+## Overview
+We use **Amazon EventBridge** to trigger the Lambda function on a defined schedule.
 
-## EventBridge Scheduler
-**Why?** We want standard cron-like behavior. `0 7 * * ? *` means "7:00 AM every day".
+## Cron Syntax
+The schedule uses standard cron syntax:
+`cron(Minutes Hours Day-of-month Month Day-of-week Year)`
+*   Note: AWS Cron fields are slightly different from standard Linux cron.
 
-**Action**:
-```bash
-# We need a role for the Scheduler to invoke ECS
-cat <<EOF > scheduler-trust.json
-{
-    "Version": "2012-10-17",
-    "Statement": [{"Effect": "Allow", "Principal": {"Service": "scheduler.amazonaws.com"}, "Action": "sts:AssumeRole"}]
-}
-EOF
+**Example**: Run at 07:00 AM UTC every day.
+`cron(0 7 * * ? *)`
 
-aws iam create-role --role-name RssMorningSchedulerRole --assume-role-policy-document file://scheduler-trust.json
+## CDK Implementation
+As shown in `05_infrastructure.md`, the `aws-events` module makes this simple:
 
-# Give permission to run ECS tasks
-cat <<EOF > scheduler-policy.json
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": "ecs:RunTask",
-            "Resource": "*"
-        },
-        {
-            "Effect": "Allow",
-            "Action": "iam:PassRole",
-            "Resource": "*"
-        }
-    ]
-}
-EOF
-
-aws iam put-role-policy --role-name RssMorningSchedulerRole --policy-name InvokeECS --policy-document file://scheduler-policy.json
+```python
+rule = events.Rule(
+    self, "DailyRunRule",
+    schedule=events.Schedule.cron(minute="0", hour="7")
+)
+rule.add_target(targets.LambdaFunction(docker_func))
 ```
 
-**Create Schedule (Cron)**:
-```bash
-aws scheduler create-schedule \
-    --name rss-morning-daily \
-    --schedule-expression "cron(0 7 * * ? *)" \
-    --target '{
-        "Arn": "arn:aws:ecs:REGION:ACCOUNT_ID:cluster/default",
-        "RoleArn": "arn:aws:iam::ACCOUNT_ID:role/RssMorningSchedulerRole",
-        "EcsParameters": {
-            "TaskDefinitionArn": "arn:aws:ecs:REGION:ACCOUNT_ID:task-definition/rss-morning",
-            "LaunchType": "FARGATE",
-            "NetworkConfiguration": {
-                "AwsvpcConfiguration": {
-                    "Subnets": ["'$SUBNET_ID'"],
-                    "SecurityGroups": ["'$GROUP_ID'"],
-                    "AssignPublicIp": "ENABLED"
-                }
-            }
-        }
-    }' \
-    --flexible-time-window '{ "Mode": "OFF" }'
-```
-*Note: Replace `REGION` and `ACCOUNT_ID` appropriately.*
+## Manual Setup (Console)
+1.  Go to **Amazon EventBridge** > **Rules**.
+2.  Click **Create rule**.
+3.  **Name**: `rss-morning-daily`.
+4.  **Schedule type**: **Schedule** -> **A fine-grained schedule (Cron)**.
+5.  **Cron expression**: `0 7 * * ? *`.
+6.  **Target 1**: **AWS Lambda function**.
+7.  Select your `rss-morning` function.
+8.  Create.

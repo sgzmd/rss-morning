@@ -1,50 +1,81 @@
 # Part 3: Application Preparation
 
-Before deploying, we must "harden" the application to ensure it is secure and observability-friendly.
+## 1. Dockerfile Optimization
+To run on AWS Lambda via Container Images, your `Dockerfile` needs to be compatible with Lambda's execution environment.
 
-## 1. Security: Create `.dockerignore`
-**Why?** By default, Docker copies *everything*. We do not want to bake `.git` history, local secrets, or virtual environments into the image. This bloats the image and leaks sensitive data.
+### Using AWS Lambda Base Images (Recommended)
+The easiest way is to use AWS provided base images.
+```dockerfile
+FROM public.ecr.aws/lambda/python:3.11
 
-**Action**: Create `.dockerignore` in the project root.
+# Copy requirements.txt
+COPY requirements.txt ${LAMBDA_TASK_ROOT}
+
+# Install the specified packages
+RUN pip install -r requirements.txt
+
+# Copy function code
+COPY . ${LAMBDA_TASK_ROOT}
+
+# Set the CMD to your handler (could be a specific lambda_handler function)
+CMD [ "main.lambda_handler" ] 
+```
+
+### Using Custom Base Images (Your current setup)
+If you stick with your standard `python:3.11-slim` image, you must install the **AWS Lambda Runtime Interface Client (RIC)**.
+
+```dockerfile
+# ... existing setup ...
+RUN pip install awslambdaric
+
+# Set entrypoint to the RIC
+ENTRYPOINT [ "python", "-m", "awslambdaric" ]
+CMD [ "main.lambda_handler" ]
+```
+
+**Recommendation**: Since `rss-morning` is a CLI tool, you will need a small adapter (wrapper) to make it invokable by Lambda.
+
+## 2. Create a Lambda Adapter
+Create a small file `lambda_main.py` (or add to `main.py`) to bridge the Lambda event to your CLI logic.
+
+```python
+# main.py addition specifically for Lambda
+import os
+from rss_morning.cli import main
+
+def lambda_handler(event, context):
+    """
+    AWS Lambda entrypoint.
+    Bridge the execution to the CLI main function.
+    """
+    print("Starting RSS Morning job via Lambda...")
+    
+    # Optional: Override args based on event payload if needed
+    # sys.argv = ["rss-morning", "--env", "prod"]
+    
+    try:
+        # Run the main CLI logic
+        # Note: You might need to adjust 'main()' to not sys.exit() 
+        # but just return configuration/status
+        main() 
+        return {"statusCode": 200, "body": "Success"}
+    except Exception as e:
+        print(f"Job failed: {e}")
+        return {"statusCode": 500, "body": str(e)}
+```
+
+## 3. Configuration & Secrets
+*   **Configs**: Ensure `config.prod.xml` is copied into the image at build time (e.g., `COPY configs/config.prod.xml ${LAMBDA_TASK_ROOT}/configs/config.xml`).
+*   **Secrets**: Do **not** bake secrets into the image.
+    *   The code should attempt to read `OPENAI_API_KEY` from environment variables, which will be populated by the Lambda configuration (which in turn can rely on Secrets Manager or secure env vars).
+
+## 4. .dockerignore
+Ensure you have a `.dockerignore` to keep the image small and secure:
 ```text
 .git
-.gitignore
-.dockerignore
-venv/
-__pycache__/
-*.pyc
-logs/
-configs/*.xml
-!configs/*.xml.example
 .env
-# Exclude pre-computed embeddings if you want a fresh start
-query_embeddings.json
-```
-
-> [!NOTE]
-> **Strategy Decision**: The above `.dockerignore` excludes `configs/*.xml` (except examples). This assumes you will either:
-> 1.  **Fetch Configs from S3** at runtime (requires S3 permissions, see Part 4).
-> 2.  **Mount Configs** via EFS or Volume (complex for Fargate).
-> 3.  **Bake Configs In**: If you prefer to bake non-sensitive configs into the image, remove `configs/*.xml` from this list.
-
-## 2. Security: Run as Non-Root
-**Why?** If an attacker compromises your container running as root, they have root access to the container filesytem. Using a standardized non-privileged user greatly limits the blast radius.
-
-**Action**: Update `Dockerfile` to create and switch to a user.
-```dockerfile
-# ... inside Dockerfile ...
-RUN useradd -m -u 1000 appuser
-USER appuser
-CMD ["python", "main.py"]
-```
-
-## 3. Observability: Logging
-**Why?** In the cloud, you don't SSH into a server to read a log file. You stream logs to `stdout` (standard output), which the container runtime captures and sends to CloudWatch.
-
-**Action**: Ensure `main.py` respects `RSS_MORNING_LOG_STDOUT=1`.
-```python
-# main.py snippet
-if os.environ.get("RSS_MORNING_LOG_STDOUT") == "1":
-    # Configure logging to stream to sys.stdout
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+venv
+tests
+__pycache__
+my_local_config.xml
 ```
