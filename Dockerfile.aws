@@ -1,0 +1,40 @@
+FROM public.ecr.aws/lambda/python:3.12
+
+ARG QUERIES_FILE=queries.txt
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONUNBUFFERED=1 \
+  PIP_NO_CACHE_DIR=1 \
+  QUERIES_FILE=${QUERIES_FILE}
+
+# The Lambda base image sets WORKDIR to /var/task by default, but we can stick to /app 
+# if we want to match previous structure, OR just use the default.
+# However, standard lambda deployments usually put code in ${LAMBDA_TASK_ROOT}.
+# Let's use /app to be consistent with previous generic dockerfile, 
+# but note that for actual Lambda deployment, we might need to adjust.
+WORKDIR /app
+
+# Install system dependencies using dnf (Amazon Linux 2023)
+RUN dnf update -y && \
+  dnf install -y \
+  gcc \
+  gcc-c++ \
+  make \
+  libxml2-devel \
+  libxslt-devel \
+  libffi-devel \
+  shadow-utils && \
+  dnf clean all
+
+COPY requirements.txt .
+
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+COPY . .
+
+# Create a non-root user (if desired for ECS, though Lambda runs as root by default usually)
+# shadow-utils is required for useradd
+RUN /usr/sbin/useradd -m -u 1000 appuser
+USER appuser
+
+ENTRYPOINT ["python", "main.py"]
