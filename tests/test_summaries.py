@@ -1,0 +1,106 @@
+import json
+import os
+import pytest
+from unittest.mock import MagicMock, patch
+from rss_morning import summaries
+
+
+@pytest.fixture
+def mock_genai_client():
+    with patch("rss_morning.summaries.genai") as mock_genai:
+        mock_client = MagicMock()
+        mock_genai.Client.return_value = mock_client
+        # Ensure 'types' is also mocked as it's used for config
+        with patch("rss_morning.summaries.types") as mock_types:
+            with patch.dict(os.environ, {"GOOGLE_API_KEY": "dummy-key"}):
+                yield mock_client, mock_types
+
+
+def test_generate_summary_batching(mock_genai_client):
+    mock_client, mock_types = mock_genai_client
+
+    # Setup mock response chunks
+    def side_effect(model, contents, config):
+        # We can inspect 'contents' to see which articles are in this batch if needed
+        # For now, just return a generic valid JSON response structure
+        yield MagicMock(
+            text=json.dumps(
+                {
+                    "summaries": [
+                        {
+                            "url": "http://example.com",
+                            "category": "Tech",
+                            "summary": {
+                                "title": "T",
+                                "what": "W",
+                                "so-what": "S",
+                                "now-what": "N",
+                            },
+                        }
+                    ]
+                }
+            )
+        )
+
+    mock_client.models.generate_content_stream.side_effect = side_effect
+
+    articles = [
+        {"url": f"http://example.com/{i}", "title": f"Title {i}"} for i in range(10)
+    ]
+
+    # Run with batch_size=2, so we expect 5 calls
+    summaries.generate_summary(articles, "System Prompt", batch_size=2)
+
+    assert mock_client.models.generate_content_stream.call_count == 5
+
+
+def test_generate_summary_partial_failure(mock_genai_client):
+    mock_client, mock_types = mock_genai_client
+
+    # 3 batches of 1
+    articles = [
+        {"url": f"http://example.com/{i}", "title": f"Title {i}"} for i in range(3)
+    ]
+
+    # Fail the second batch
+    success_response = MagicMock(
+        text=json.dumps(
+            {
+                "summaries": [
+                    {
+                        "url": "val",
+                        "category": "val",
+                        "summary": {
+                            "title": "T",
+                            "what": "W",
+                            "so-what": "S",
+                            "now-what": "N",
+                        },
+                    }
+                ]
+            }
+        )
+    )
+
+    call_count = 0
+
+    def side_effect(model, contents, config):
+        nonlocal call_count
+        call_count += 1
+        # Generator that simulates the response stream
+        if call_count == 2:
+            raise RuntimeError("API Error")
+        yield success_response
+
+    mock_client.models.generate_content_stream.side_effect = side_effect
+
+    result_json = summaries.generate_summary(articles, "System Prompt", batch_size=1)
+    result = json.loads(result_json)
+
+    # Should have 2 summaries (batch 0 and 2), batch 1 failed
+    assert len(result["summaries"]) == 2
+
+
+def test_generate_summary_empty_input():
+    result = summaries.generate_summary([], "Prompt")
+    assert json.loads(result) == {"summaries": []}

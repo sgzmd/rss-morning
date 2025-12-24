@@ -163,6 +163,9 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                             "summary": cached["summary"] or entry.summary or "",
                             "text": cached["text"],
                             "image": cached["image"],
+                            "published": cached["published"].isoformat()
+                            if cached.get("published")
+                            else None,
                         }
 
             content = fetch_article_content(entry.link, extractor=config.extractor)
@@ -171,6 +174,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                 "category": entry.category,
                 "title": entry.title,
                 "summary": entry.summary or "",
+                "published": entry.published.isoformat() if entry.published else None,
             }
             if content.text:
                 payload["text"] = truncate_text(
@@ -204,6 +208,10 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                 output.append(res)
 
     logger.info("Completed processing. Outputting %d articles as JSON.", len(output))
+    # Sort by published date descending (newest first)
+    output.sort(key=lambda x: x.get("published") or "", reverse=True)
+    # Then sort by category ascending (stable sort preserves published order within category)
+    output.sort(key=lambda x: x.get("category") or "")
     return output
 
 
@@ -321,6 +329,8 @@ def execute(config: RunConfig) -> RunResult:
         output_text = summary_output
         if summary_data is not None:
             summary_data = _attach_summary_images(summary_data, articles)
+            if isinstance(summary_data, dict) and "summaries" in summary_data:
+                summary_data["summaries"].sort(key=lambda x: x.get("category") or "")
             output_text = json.dumps(summary_data, indent=2, ensure_ascii=False)
             email_payload = summary_data
             is_summary_payload = True

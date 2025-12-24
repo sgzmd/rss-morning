@@ -19,6 +19,7 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 ENV FASTEMBED_CACHE_PATH=/app/data/fastembed_cache
+ENV DB_PATH=/app/data/db
 
 COPY . .
 

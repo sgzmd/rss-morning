@@ -92,12 +92,22 @@ def upsert_article(session: Session, data: dict) -> None:
     stmt = select(ArticleModel).where(ArticleModel.url == url)
     existing = session.execute(stmt).scalar_one_or_none()
 
+    published_val = data.get("published")
+    if isinstance(published_val, str):
+        try:
+            published_val = datetime.fromisoformat(published_val)
+        except ValueError:
+            # If parsing fails, leave as None or keep existing if updating?
+            # For now, let's just log or ignore.
+            pass
+
     if existing:
         existing.title = data.get("title")
         existing.content = data.get("text")
         existing.image = data.get("image")
         existing.summary = data.get("summary")
-        # We don't update published date usually as it's from the feed
+        if published_val:
+            existing.published = published_val
         existing.updated_at = datetime.now(timezone.utc)
     else:
         new_article = ArticleModel(
@@ -106,7 +116,7 @@ def upsert_article(session: Session, data: dict) -> None:
             content=data.get("text"),
             image=data.get("image"),
             summary=data.get("summary"),
-            # published might require parsing if it's a string, assuming it's passed correctly or ignored here
+            published=published_val,
             updated_at=datetime.now(timezone.utc),
         )
         session.add(new_article)

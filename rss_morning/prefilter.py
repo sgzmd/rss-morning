@@ -71,6 +71,7 @@ class _EmbeddingConfig:
     batch_size: int = 16
     threshold: float = 0.5
     max_article_length: int = 5000
+    max_cluster_size: int = 5
 
 
 class EmbeddingArticleFilter:
@@ -429,7 +430,10 @@ class EmbeddingArticleFilter:
             )
             kernel = self._select_kernel(cluster_members, centroid)
             others = [member for member in cluster_members if member is not kernel]
-            kernel.article["other_urls"] = self._build_other_urls(kernel, others)
+            max_others = max(0, self._config.max_cluster_size - 1)
+            kernel.article["other_urls"] = self._build_other_urls(
+                kernel, others, limit=max_others
+            )
             kernels.append(kernel)
             cluster_index += 1
 
@@ -485,6 +489,7 @@ class EmbeddingArticleFilter:
         self,
         kernel: _ScoredArticle,
         others: Sequence[_ScoredArticle],
+        limit: Optional[int] = None,
     ) -> List[Dict[str, object]]:
         if not others:
             return []
@@ -494,6 +499,9 @@ class EmbeddingArticleFilter:
             others,
             key=lambda item: 1.0 - self._cosine(kernel.vector, item.vector),
         )
+        if limit is not None:
+            sorted_others = sorted_others[:limit]
+
         for item in sorted_others:
             cosine = self._cosine(kernel.vector, item.vector)
             distance = max(0.0, 1.0 - cosine)
