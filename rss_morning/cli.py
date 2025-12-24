@@ -137,6 +137,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
         config_dict = dataclasses.asdict(config)
+        config_dict["prompt"] = "***MASKED***"
         if config_dict.get("database_connection_string"):
             config_dict["database_connection_string"] = "***MASKED***"
 
