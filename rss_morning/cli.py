@@ -120,6 +120,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             summary=app_config.summary,
             pre_filter=app_config.pre_filter.enabled,
             pre_filter_embeddings_path=app_config.pre_filter.embeddings_path,
+            pre_filter_queries_file=app_config.pre_filter.queries_file,
             email_to=app_config.email.to_addr,
             email_from=app_config.email.from_addr,
             email_subject=app_config.email.subject,

@@ -18,6 +18,7 @@ class PreFilterConfig:
     enabled: bool = False
     embeddings_path: Optional[str] = None
     cluster_threshold: float = 0.8
+    queries_file: Optional[str] = None
 
 
 @dataclass
@@ -180,9 +181,9 @@ def parse_app_config(path: str) -> AppConfig:
         if emb_path:
             pre_filter.embeddings_path = _resolve_path(config_path, emb_path)
 
-        ct_node = pf_node.find("cluster-threshold")
-        if ct_node is not None and ct_node.text:
-            pre_filter.cluster_threshold = float(ct_node.text)
+        queries_file = pf_node.findtext("queries-file")
+        if queries_file:
+            pre_filter.queries_file = _resolve_path(config_path, queries_file)
 
         ct_node = pf_node.find("cluster-threshold")
         if ct_node is not None and ct_node.text:

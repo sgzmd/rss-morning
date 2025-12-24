@@ -1,5 +1,3 @@
-import random
-
 import numpy as np
 
 from rss_morning.prefilter import EmbeddingArticleFilter
@@ -18,16 +16,20 @@ class FakeEmbeddingBackend:
         return [list(vector) for vector in self._responses[key]]
 
 
-def test_filter_uses_embedding_backend():
+def test_filter_uses_embedding_backend_with_categories():
+    # Centroid for "Category A" will be [1.0, 0.0]
+    # Centroid for "Category B" will be [0.0, 1.0]
+
     backend = FakeEmbeddingBackend(
         {
-            ("custom query",): [[1.0, 0.0]],
+            ("cat A query",): [[1.0, 0.0]],
+            ("cat B query",): [[0.0, 1.0]],
             ("Article A", "Article B"): [[1.0, 0.0], [0.0, 1.0]],
         }
     )
     filt = EmbeddingArticleFilter(
         backend=backend,
-        queries=("custom query",),
+        queries={"Category A": ("cat A query",), "Category B": ("cat B query",)},
     )
 
     articles = [
@@ -37,99 +39,89 @@ def test_filter_uses_embedding_backend():
 
     filtered = filt.filter(articles)
 
-    assert [article["title"] for article in filtered] == ["Article A"]
-    assert filtered[0]["prefilter_match"] == "custom query"
-    assert filtered[0]["prefilter_score"] == 1.0
-    assert backend.calls == [
-        ("custom query",),
-        ("Article A", "Article B"),
-    ]
+    assert len(filtered) == 2
+    # Article A should match Category A
+    a_art = next(a for a in filtered if a["title"] == "Article A")
+    assert a_art["category"] == "Category A"
+    assert a_art["prefilter_score"] == 1.0
+
+    # Article B should match Category B
+    b_art = next(a for a in filtered if a["title"] == "Article B")
+    assert b_art["category"] == "Category B"
+    assert b_art["prefilter_score"] == 1.0
 
 
-def test_filter_clusters_articles():
-    query_vector = np.array([1.0, 1.0], dtype=float)
-    query_vector /= np.linalg.norm(query_vector)
-    article_a = np.array([1.0, 0.0])
-    article_b = np.array([0.99, 0.01], dtype=float)
-    article_b /= np.linalg.norm(article_b)
-    article_c = np.array([0.0, 1.0])
+def test_filter_enforces_max_cluster_size():
+    # 6 articles matching Category A
+    # Centroid A: [1.0, 0.0]
+    # Articles with decreasing similarity to [1.0, 0.0]
+    # We'll use 1D approx on [1.0, 0.0] vs close vectors
 
-    backend = FakeEmbeddingBackend(
-        {
-            ("cluster query",): [query_vector.tolist()],
-            ("Article A", "Article B", "Article C"): [
-                article_a.tolist(),
-                article_b.tolist(),
-                article_c.tolist(),
-            ],
-        }
-    )
+    # Let's say we have vectors:
+    # 1. [1.0, 0.0] (Score 1.0)
+    # 2. [0.99, 0.01ish] (Score 0.99)
+    # ...
+    # We mock them directly
 
-    filt = EmbeddingArticleFilter(
-        backend=backend,
-        queries=("cluster query",),
-    )
-
-    articles = [
-        {"title": "Article A", "url": "https://example.com/a"},
-        {"title": "Article B", "url": "https://example.com/b"},
-        {"title": "Article C", "url": "https://example.com/c"},
-    ]
-
-    filtered = filt.filter(
-        articles,
-        cluster_threshold=0.98,
-        rng=random.Random(0),
-    )
-
-    assert [article["url"] for article in filtered] == [
-        "https://example.com/b",
-        "https://example.com/c",
-    ]
-    assert filtered[0]["other_urls"] == [
-        {"url": "https://example.com/a", "distance": 0.0001}
-    ]
-    assert filtered[1]["other_urls"] == []
-
-
-def test_filter_respects_cluster_threshold():
-    query_vector = np.array([1.0, 0.0])
-    article_a = np.array([1.0, 0.0])
-    article_b = np.array([0.99, 0.01], dtype=float)
-    article_b /= np.linalg.norm(article_b)
+    titles = [f"Art{i}" for i in range(10)]
+    vectors = []
+    # Create vectors with score = 1.0 - i*0.01
+    for i in range(10):
+        # We cheat and just say score will be X.
+        # But we need dot product.
+        val = 1.0 - (i * 0.01)
+        # Vector = [val, sqrt(1-val^2)]
+        y = np.sqrt(1 - val**2)
+        vectors.append([val, y])
 
     backend = FakeEmbeddingBackend(
         {
-            ("threshold query",): [query_vector.tolist()],
-            ("Article A", "Article B"): [
-                article_a.tolist(),
-                article_b.tolist(),
-            ],
+            ("query",): [[1.0, 0.0]],
+            tuple(titles): vectors,
         }
     )
 
+    config = type(EmbeddingArticleFilter.CONFIG)(max_cluster_size=3)
+
     filt = EmbeddingArticleFilter(
-        backend=backend,
-        queries=("threshold query",),
+        backend=backend, queries={"Category A": ("query",)}, config=config
     )
 
-    articles = [
-        {"title": "Article A", "url": "https://example.com/a"},
-        {"title": "Article B", "url": "https://example.com/b"},
-    ]
+    articles = [{"title": t, "url": f"http://{t}"} for t in titles]
 
-    filtered = filt.filter(
-        articles,
-        cluster_threshold=0.99999,
-        rng=random.Random(1),
-    )
+    filtered = filt.filter(articles)
 
-    assert [article["url"] for article in filtered] == [
-        "https://example.com/a",
-        "https://example.com/b",
-    ]
-    assert filtered[0]["other_urls"] == []
+    # Should only keep top 3
+    assert len(filtered) == 3
+    assert [a["title"] for a in filtered] == ["Art0", "Art1", "Art2"]
+
+    # Check that Top 1 has 'other_urls' populated
+    top_art = filtered[0]
+    assert len(top_art["other_urls"]) == 2  # The other 2 kept articles
+    assert top_art["other_urls"][0]["url"] == "http://Art1"
+
+    # Others should have empty other_urls because we only attach to Kernel?
+    # Wait, my implementation attached to Kernel, but returned all kept items.
+    # So Art1 and Art2 are in the list.
     assert filtered[1]["other_urls"] == []
+
+
+def test_filter_discards_below_threshold():
+    backend = FakeEmbeddingBackend(
+        {
+            ("query",): [[1.0, 0.0]],
+            ("Article Bad",): [[0.0, 1.0]],  # Orthogonal, score 0
+        }
+    )
+
+    config = type(EmbeddingArticleFilter.CONFIG)(threshold=0.5)
+
+    filt = EmbeddingArticleFilter(
+        backend=backend, queries={"Category A": ("query",)}, config=config
+    )
+
+    filtered = filt.filter([{"title": "Article Bad", "url": "bad"}])
+    assert len(filtered) == 0
 
 
 def test_compose_article_text_truncates_long_content():

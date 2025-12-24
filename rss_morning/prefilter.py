@@ -35,30 +35,62 @@ DEFAULT_QUERIES_FILE = PROJECT_ROOT / "queries.txt"
 EXAMPLE_QUERIES_FILE = PROJECT_ROOT / "queries.example.txt"
 
 
-def _load_queries_from_path(path: Path) -> Tuple[str, ...]:
+def _load_queries_from_path(path: Path) -> Dict[str, Tuple[str, ...]]:
     if not path.is_file():
         raise FileNotFoundError(path)
+
+    if path.suffix.lower() == ".json":
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                # Validate dict values are lists of strings
+                cleaned = {}
+                for k, v in data.items():
+                    if isinstance(v, list):
+                        cleaned[k] = tuple(str(x).strip() for x in v if str(x).strip())
+                return cleaned
+            elif isinstance(data, list):
+                # Fallback for flat list in JSON? Treat as "General" OR raise.
+                # Let's map flat list to "General"
+                return {
+                    "General": tuple(str(x).strip() for x in data if str(x).strip())
+                }
+        except json.JSONDecodeError:
+            pass  # Fallthrough to text handling or raise? Better to fail if .json extension.
+            raise
+
     lines = [
         line.strip()
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    return tuple(lines)
+    return {"General": tuple(lines)}
 
 
-def load_queries(queries_path: Optional[str] = None) -> Tuple[str, ...]:
-    """Load security queries from a file, falling back to the example file."""
+def load_queries(queries_path: Optional[str] = None) -> Dict[str, Tuple[str, ...]]:
+    """Load security queries from a file, falling back to the example file.
+
+    Returns a dictionary mapping category names to tuples of query strings.
+    For flat text files, the category is 'General'.
+    """
     if queries_path:
         return _load_queries_from_path(Path(queries_path))
 
-    for candidate in (DEFAULT_QUERIES_FILE, EXAMPLE_QUERIES_FILE):
+    candidates = [
+        PROJECT_ROOT / "configs" / "queries.json",
+        DEFAULT_QUERIES_FILE.with_suffix(".json"),
+        DEFAULT_QUERIES_FILE,
+        EXAMPLE_QUERIES_FILE,
+    ]
+    for candidate in candidates:
         try:
-            return _load_queries_from_path(candidate)
-        except FileNotFoundError:
+            if candidate.exists():
+                return _load_queries_from_path(candidate)
+        except (FileNotFoundError, json.JSONDecodeError):
             continue
 
     raise RuntimeError(
-        "No queries file found. Provide queries.txt or queries.example.txt."
+        "No queries file found. Provide queries.json, queries.txt or queries.example.txt."
     )
 
 
@@ -78,14 +110,17 @@ class EmbeddingArticleFilter:
     """Embedding-powered article filter that keeps security-relevant content."""
 
     CONFIG = _EmbeddingConfig()
-    DEFAULT_QUERIES: Tuple[str, ...] = load_queries()
+    CONFIG = _EmbeddingConfig()
+    DEFAULT_QUERIES: Dict[str, Tuple[str, ...]] = load_queries()
     _cached_query_embeddings: Dict[Tuple[Tuple[str, ...], str], List[List[float]]] = {}
+    _cached_centroids: Dict[Tuple[Tuple[str, ...], ...], Dict[str, np.ndarray]] = {}
 
     @dataclass
     class _ScoredArticle:
         score: float
         article: MutableArticle
         vector: np.ndarray
+        category: str
 
     def __init__(
         self,
@@ -94,13 +129,15 @@ class EmbeddingArticleFilter:
         backend: Optional[EmbeddingBackend] = None,
         query_embeddings_path: Optional[str] = None,
         queries_file: Optional[str] = None,
-        queries: Optional[Sequence[str]] = None,
+        queries: Optional[Dict[str, Sequence[str]]] = None,
         config: Optional[_EmbeddingConfig] = None,
         session_factory=None,
     ):
         self._config = config or self.CONFIG
         self._session_factory = session_factory
+        # Not fully supported with centroids yet, might need refactor or removal
         self._query_embeddings_override: Optional[List[List[float]]] = None
+
         if backend is not None and client is not None:
             logger.info(
                 "EmbeddingArticleFilter received both backend and client; backend takes precedence."
@@ -110,13 +147,13 @@ class EmbeddingArticleFilter:
             raise ValueError("Provide either queries or queries_file, not both.")
 
         if queries is not None:
-            loaded_queries = tuple(queries)
+            loaded_queries = {k: tuple(v) for k, v in queries.items()}
         elif queries_file is not None:
             loaded_queries = load_queries(queries_file)
         else:
             loaded_queries = self.DEFAULT_QUERIES
 
-        self._queries: Tuple[str, ...] = loaded_queries
+        self._queries: Dict[str, Tuple[str, ...]] = loaded_queries
         if backend is not None:
             self._backend = backend
         elif self._config.provider == "fastembed":
@@ -132,13 +169,11 @@ class EmbeddingArticleFilter:
                 batch_size=self._config.batch_size,
             )
 
-        if query_embeddings_path:
-            self._query_embeddings_override = self._load_query_embeddings(
-                Path(query_embeddings_path)
-            )
+        # Removed query_embeddings_path loading for now as logic changed significantly
+        # If we need it back, we need to restructure the cache format.
 
     @property
-    def queries(self) -> Tuple[str, ...]:
+    def queries(self) -> Dict[str, Tuple[str, ...]]:
         return self._queries
 
     def filter(
@@ -155,11 +190,9 @@ class EmbeddingArticleFilter:
             return []
 
         try:
-            query_vectors = self._get_query_embeddings()
-            if not query_vectors:
-                logger.warning(
-                    "Embedding pre-filter failed to obtain query embeddings."
-                )
+            centroids = self._get_category_centroids()
+            if not centroids:
+                logger.warning("Embedding pre-filter failed to obtain query centroids.")
                 return materialized
 
             article_texts = [self._compose_article_text(item) for item in materialized]
@@ -174,6 +207,7 @@ class EmbeddingArticleFilter:
                 else:
                     arr = np.zeros_like(arr)
                 article_vectors.append(arr)
+
             if not article_vectors:
                 logger.warning(
                     "Embedding pre-filter failed to obtain article embeddings; "
@@ -182,66 +216,113 @@ class EmbeddingArticleFilter:
                 )
                 return materialized
 
-            scored_items: List[EmbeddingArticleFilter._ScoredArticle] = []
             threshold = self._config.threshold
+            # We will group scored items by category
+            scored_by_category: Dict[
+                str, List[EmbeddingArticleFilter._ScoredArticle]
+            ] = {}
+
             for original, vector in zip(materialized, article_vectors):
-                best_idx, best_score = self._score_against_queries(
-                    vector, query_vectors
-                )
-                if best_idx is None or best_score < threshold:
+                best_cat, best_score = self._score_against_centroids(vector, centroids)
+                if best_cat is None or best_score < threshold:
                     continue
 
                 original["prefilter_score"] = best_score
-                original["prefilter_match"] = self._queries[best_idx]
-                scored_items.append(
-                    EmbeddingArticleFilter._ScoredArticle(
-                        score=best_score, article=original, vector=vector
-                    )
-                )
+                original["category"] = best_cat
+                # Optional: keep prefilter_match for debug, showing best category
+                original["prefilter_match"] = best_cat
 
-            if scored_items:
-                scored_items.sort(key=lambda item: item.score, reverse=True)
-                if cluster_threshold is not None:
-                    logger.info(
-                        "Clustering %d articles at threshold %.2f",
-                        len(scored_items),
-                        cluster_threshold,
-                    )
-                    retained = self._apply_clustering(
-                        scored_items, cluster_threshold, rng=rng
-                    )
-                else:
-                    for item in scored_items:
-                        item.article["other_urls"] = []
-                    retained = [item.article for item in scored_items]
-            else:
-                retained = []
+                item = EmbeddingArticleFilter._ScoredArticle(
+                    score=best_score, article=original, vector=vector, category=best_cat
+                )
+                if best_cat not in scored_by_category:
+                    scored_by_category[best_cat] = []
+                scored_by_category[best_cat].append(item)
+
+            retained = []
+            max_size = self._config.max_cluster_size
+
+            for category, items in scored_by_category.items():
+                # Sort descending by score
+                items.sort(key=lambda x: x.score, reverse=True)
+
+                # Keep top N
+                kept_items = items[:max_size]
+
+                # We can compute other_urls if needed, based on the kernel (top item)
+                # or just list others in the category?
+                # The prompt implies top N per cluster (implied category = cluster now).
+                # Logic from previous clustering: "Kernel" + "others".
+                # Let's treat the top 1 as kernel for metadata structure if UI needs it,
+                # but "kept_items" are all valid articles to return.
+                # If we want to maintain the "other_urls" structure for the UI to show grouping:
+                # The top article (kernel) gets "other_urls" populated with the rest of the kept N-1 articles.
+                # The other kept articles get "other_urls" = [].
+                # This matches strict clustering behavior where we show 1 item representing the cluster.
+
+                if kept_items:
+                    kernel = kept_items[0]
+                    others = kept_items[1:]
+
+                    # Calculate distances for others
+                    other_entries = []
+                    for other in others:
+                        cosine = self._cosine(kernel.vector, other.vector)
+                        dist = max(0.0, 1.0 - cosine)
+                        other_entries.append(
+                            {
+                                "url": str(other.article.get("url") or ""),
+                                "distance": round(dist, 4),
+                            }
+                        )
+                        # Ensure others have empty other_urls
+                        other.article["other_urls"] = []
+
+                    kernel.article["other_urls"] = other_entries
+
+                    # Add all kept items to retained list
+                    for item in kept_items:
+                        retained.append(item.article)
 
             logger.info(
-                "Embedding pre-filter retained %d of %d articles",
+                "Embedding pre-filter retained %d articles across %d categories",
                 len(retained),
-                len(materialized),
+                len(scored_by_category),
             )
             return retained
         except Exception:  # noqa: BLE001
             logger.exception(
-                "Embedding pre-filter encountered an error; returning original articles."
+                "Embedding pre-filter encountered an error; returning all articles."
             )
             return materialized
 
-    def _get_query_embeddings(self) -> List[List[float]]:
-        """Fetch and cache embeddings for the security queries."""
-        if self._query_embeddings_override is not None:
-            return self._query_embeddings_override
+    def _get_category_centroids(self) -> Dict[str, np.ndarray]:
+        """Fetch and cache centroids for the security query categories."""
+        # Use a tuple of sorted items as a stable key for caching
+        queries_key = tuple(sorted((k, tuple(v)) for k, v in self._queries.items()))
+        key = (queries_key, self._config.model)
 
-        key = (self._queries, self._config.model)
-        cached = self.__class__._cached_query_embeddings.get(key)
+        cached = self.__class__._cached_centroids.get(key)
         if cached is not None:
             return cached
 
-        embeddings = self._embed_texts(list(self._queries))
-        self.__class__._cached_query_embeddings[key] = embeddings
-        return embeddings
+        centroids = {}
+        for category, query_list in self._queries.items():
+            if not query_list:
+                continue
+            embeddings = self._embed_texts(list(query_list))
+            # Compute centroid
+            stack = np.stack(embeddings, axis=0)
+            mean_vec = np.mean(stack, axis=0)
+            norm = float(np.linalg.norm(mean_vec))
+            if norm:
+                mean_vec = mean_vec / norm
+            else:
+                mean_vec = np.zeros_like(mean_vec)
+            centroids[category] = mean_vec
+
+        self.__class__._cached_centroids[key] = centroids
+        return centroids
 
     def _embed_texts(
         self, texts: Sequence[str], urls: Optional[Sequence[str]] = None
@@ -368,122 +449,28 @@ class EmbeddingArticleFilter:
             : self._config.max_article_length
         ]
 
-    def _score_against_queries(
+    def _score_against_centroids(
         self,
         article_vector: Sequence[float],
-        query_vectors: Sequence[Sequence[float]],
-    ) -> Tuple[Optional[int], float]:
-        """Return the index and score of the best matching query."""
-        best_idx: Optional[int] = None
+        centroids: Dict[str, np.ndarray],
+    ) -> Tuple[Optional[str], float]:
+        """Return the category and score of the best matching centroid."""
+        best_cat: Optional[str] = None
         best_score = float("-inf")
-        for idx, query_vector in enumerate(query_vectors):
-            score = self._dot(article_vector, query_vector)
+
+        for category, centroid in centroids.items():
+            score = self._dot(article_vector, centroid)
             if score > best_score:
-                best_idx = idx
+                best_cat = category
                 best_score = score
-        if best_idx is None:
+
+        if best_cat is None:
             return None, float("nan")
-        return best_idx, best_score
+        return best_cat, best_score
 
     @staticmethod
     def _dot(left: Sequence[float], right: Sequence[float]) -> float:
         return sum(lft * rght for lft, rght in zip(left, right))
-
-    def _apply_clustering(
-        self,
-        items: List[_ScoredArticle],
-        threshold: float,
-        *,
-        rng: Optional[random.Random] = None,
-    ) -> List[MutableArticle]:
-        working_threshold = threshold
-        rng = rng or random.Random()
-        remaining = list(range(len(items)))
-        kernels: List[EmbeddingArticleFilter._ScoredArticle] = []
-        cluster_index = 0
-
-        while remaining:
-            seed_position = rng.randrange(len(remaining))
-            seed_index = remaining.pop(seed_position)
-            cluster_indices = [seed_index]
-            seed_vector = items[seed_index].vector
-
-            updated_remaining: List[int] = []
-            for index in remaining:
-                similarity = self._cosine(seed_vector, items[index].vector)
-                if similarity >= working_threshold:
-                    cluster_indices.append(index)
-                else:
-                    updated_remaining.append(index)
-            remaining = updated_remaining
-
-            cluster_members = [items[idx] for idx in cluster_indices]
-            seed_url = str(items[seed_index].article.get("url") or "")
-            logger.debug(
-                "Cluster %d seeded with %s (%d members)",
-                cluster_index + 1,
-                seed_url,
-                len(cluster_members),
-            )
-            centroid = self._cluster_centroid(
-                [member.vector for member in cluster_members]
-            )
-            kernel = self._select_kernel(cluster_members, centroid)
-            others = [member for member in cluster_members if member is not kernel]
-            max_others = max(0, self._config.max_cluster_size - 1)
-            kernel.article["other_urls"] = self._build_other_urls(
-                kernel, others, limit=max_others
-            )
-            kernels.append(kernel)
-            cluster_index += 1
-
-        kernels.sort(key=lambda item: item.score, reverse=True)
-        logger.info(
-            "Clustering produced %d kernels from %d articles",
-            len(kernels),
-            len(items),
-        )
-        return [item.article for item in kernels]
-
-    def _cluster_centroid(self, vectors: Sequence[np.ndarray]) -> np.ndarray:
-        stack = np.stack(vectors, axis=0)
-        centroid = np.mean(stack, axis=0)
-        norm = float(np.linalg.norm(centroid))
-        if norm:
-            return centroid / norm
-        return np.zeros_like(centroid)
-
-    def _select_kernel(
-        self,
-        members: Sequence[_ScoredArticle],
-        centroid: np.ndarray,
-    ) -> _ScoredArticle:
-        best_item = members[0]
-        best_cosine = self._cosine(best_item.vector, centroid)
-
-        for candidate in members[1:]:
-            cosine = self._cosine(candidate.vector, centroid)
-            if cosine > best_cosine + 1e-12:
-                best_item = candidate
-                best_cosine = cosine
-                continue
-            if abs(cosine - best_cosine) > 1e-12:
-                continue
-
-            if candidate.score > best_item.score + 1e-12:
-                best_item = candidate
-                best_cosine = cosine
-                continue
-            if abs(candidate.score - best_item.score) > 1e-12:
-                continue
-
-            current_url = str(best_item.article.get("url") or "")
-            candidate_url = str(candidate.article.get("url") or "")
-            if candidate_url < current_url:
-                best_item = candidate
-                best_cosine = cosine
-
-        return best_item
 
     def _build_other_urls(
         self,

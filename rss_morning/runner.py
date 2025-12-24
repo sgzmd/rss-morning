@@ -30,6 +30,7 @@ class RunConfig:
     summary: bool
     pre_filter: bool = False
     pre_filter_embeddings_path: Optional[str] = None
+    pre_filter_queries_file: Optional[str] = None
     email_to: Optional[str] = None
     email_from: Optional[str] = None
     email_subject: Optional[str] = None
@@ -291,6 +292,7 @@ def execute(config: RunConfig) -> RunResult:
 
         filter_layer = EmbeddingArticleFilter(
             query_embeddings_path=config.pre_filter_embeddings_path,
+            queries_file=config.pre_filter_queries_file,
             config=emb_config,
             session_factory=session_factory,
         )
