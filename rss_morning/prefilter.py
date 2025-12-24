@@ -21,7 +21,7 @@ from typing import (
 import numpy as np
 from openai import OpenAI
 
-from .embeddings import EmbeddingBackend, OpenAIEmbeddingBackend
+from .embeddings import EmbeddingBackend, FastEmbedBackend, OpenAIEmbeddingBackend
 from . import db
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,8 @@ def load_queries(queries_path: Optional[str] = None) -> Tuple[str, ...]:
 class _EmbeddingConfig:
     """Configuration for embedding lookups."""
 
-    model: str = "text-embedding-3-small"
+    model: str = "intfloat/multilingual-e5-large"
+    provider: str = "fastembed"
     batch_size: int = 16
     threshold: float = 0.5
     max_article_length: int = 5000
@@ -117,6 +118,11 @@ class EmbeddingArticleFilter:
         self._queries: Tuple[str, ...] = loaded_queries
         if backend is not None:
             self._backend = backend
+        elif self._config.provider == "fastembed":
+            self._backend = FastEmbedBackend(
+                model_name=self._config.model,
+                batch_size=self._config.batch_size,
+            )
         else:
             resolved_client = client or OpenAI()
             self._backend = OpenAIEmbeddingBackend(

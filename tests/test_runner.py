@@ -184,11 +184,13 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
             def __init__(
                 self,
                 model=None,
+                provider=None,
                 batch_size=None,
                 threshold=None,
                 max_article_length=None,
             ):
                 self.model = model
+                self.provider = provider
                 self.batch_size = batch_size
                 self.threshold = threshold
 

@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
+import dataclasses
+import pprint
 from .config import parse_app_config, parse_env_config
 from .runner import RunConfig, execute
 
@@ -130,7 +132,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             concurrency=app_config.concurrency,
             database_enabled=app_config.database.enabled,
             database_connection_string=app_config.database.connection_string,
+            embedding_provider=app_config.embeddings.provider,
+            embedding_model=app_config.embeddings.model,
         )
+
+        config_dict = dataclasses.asdict(config)
+        if config_dict.get("database_connection_string"):
+            config_dict["database_connection_string"] = "***MASKED***"
+
+        logger.info("Active Configuration:\n%s", pprint.pformat(config_dict))
 
         result = execute(config)
     except ValueError as exc:

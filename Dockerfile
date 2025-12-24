@@ -1,4 +1,4 @@
-FROM python:3.14-slim AS base
+FROM python:3.12-slim AS base
 
 ARG QUERIES_FILE=queries.txt
 ARG OPENAI_API_KEY
@@ -22,15 +22,11 @@ COPY requirements.txt .
 
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# Pre-download the embedding model
+# RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='intfloat/multilingual-e5-large')"
+
+ENV FASTEMBED_CACHE_PATH=/app/data/fastembed_cache
+
 COPY . .
-
-RUN : "${OPENAI_API_KEY:?OPENAI_API_KEY build arg required}" && \
-    if [ -f "$QUERIES_FILE" ]; then \
-    OPENAI_API_KEY="${OPENAI_API_KEY}" python -m rss_morning.prefilter_cli --output query_embeddings.json --queries-file "$QUERIES_FILE"; \
-    else \
-    OPENAI_API_KEY="${OPENAI_API_KEY}" python -m rss_morning.prefilter_cli --output query_embeddings.json --queries-file queries.example.txt; \
-    fi
-
-COPY query_embeddings.json .
 
 ENTRYPOINT ["python", "main.py"]

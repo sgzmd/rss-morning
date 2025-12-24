@@ -21,6 +21,12 @@ class PreFilterConfig:
 
 
 @dataclass
+class EmbeddingsConfig:
+    provider: str = "fastembed"
+    model: str = "intfloat/multilingual-e5-large"
+
+
+@dataclass
 class EmailConfig:
     to_addr: Optional[str] = None
     from_addr: Optional[str] = None
@@ -47,6 +53,7 @@ class AppConfig:
     max_age_hours: Optional[float] = None
     summary: bool = False
     pre_filter: PreFilterConfig = field(default_factory=PreFilterConfig)
+    embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
@@ -177,6 +184,19 @@ def parse_app_config(path: str) -> AppConfig:
         if ct_node is not None and ct_node.text:
             pre_filter.cluster_threshold = float(ct_node.text)
 
+        ct_node = pf_node.find("cluster-threshold")
+        if ct_node is not None and ct_node.text:
+            pre_filter.cluster_threshold = float(ct_node.text)
+
+    # Embeddings
+    emb_node = root.find("embeddings")
+    embeddings_config = EmbeddingsConfig()
+    if emb_node is not None:
+        embeddings_config.provider = emb_node.findtext("provider", "fastembed")
+        embeddings_config.model = emb_node.findtext(
+            "model", "intfloat/multilingual-e5-large"
+        )
+
     # Email
     email_node = root.find("email")
     email = EmailConfig()
@@ -219,6 +239,7 @@ def parse_app_config(path: str) -> AppConfig:
         max_age_hours=max_age_hours,
         summary=summary,
         pre_filter=pre_filter,
+        embeddings=embeddings_config,
         email=email,
         logging=logging_config,
         database=db_config,

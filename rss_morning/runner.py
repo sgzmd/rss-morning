@@ -42,6 +42,8 @@ class RunConfig:
     concurrency: int = 10
     database_enabled: bool = False
     database_connection_string: Optional[str] = None
+    embedding_provider: str = "fastembed"
+    embedding_model: str = "intfloat/multilingual-e5-large"
 
 
 @dataclass
@@ -272,7 +274,8 @@ def execute(config: RunConfig) -> RunResult:
         # Create a config object with the runtime settings.
         emb_config_cls = type(EmbeddingArticleFilter.CONFIG)
         emb_config = emb_config_cls(
-            model=EmbeddingArticleFilter.CONFIG.model,
+            model=config.embedding_model,
+            provider=config.embedding_provider,
             batch_size=EmbeddingArticleFilter.CONFIG.batch_size,
             threshold=EmbeddingArticleFilter.CONFIG.threshold,
             max_article_length=config.max_article_length,

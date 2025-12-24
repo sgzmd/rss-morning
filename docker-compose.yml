@@ -8,3 +8,8 @@ services:
         OPENAI_API_KEY: ${OPENAI_API_KEY?Set OPENAI_API_KEY before building}
     image: rss-morning:local
     restart: "no"
+    volumes:
+      - fastembed_cache:/app/data/fastembed_cache
+
+volumes:
+  fastembed_cache:

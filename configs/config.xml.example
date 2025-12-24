@@ -12,6 +12,11 @@
         <embeddings-path>../query_embeddings.json</embeddings-path>
         <cluster-threshold>0.8</cluster-threshold>
     </pre-filter>
+    <embeddings>
+        <provider>fastembed</provider>
+        <model>intfloat/multilingual-e5-large</model>
+    </embeddings>
+    <email>
     <email>
         <to>user@example.com</to>
         <from>mailer@example.com</from>
