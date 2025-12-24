@@ -145,8 +145,34 @@ def test_fetch_article_content_defaults_to_newspaper(monkeypatch):
 
 def test_truncate_text(monkeypatch):
     articles_module, _ = _install_article_dependencies(monkeypatch)
-    text = "x" * 1050
+    # "x" encodes to 1 token in cl100k_base usually, but let's just assert on behavior.
+    # Actually, "x" might be part of a larger token if repeated, or single tokens.
+    # 'x' is 1 token. 'x'*1050 should be 1050 tokens.
+    # Let's use a sentence to be more realistic? Or just rely on token count check.
+    # To properly test, we need to know the tokenization.
+    # "hello world " is 2 tokens? No.
+    # Let's import tiktoken here to verify expected behavior or just trust the mock/implementation?
+    # We should probably not mock tiktoken in unit tests unless we want to avoid dependency,
+    # but we added it as dependency.
 
-    truncated = articles_module.truncate_text(text, limit=100)
+    # We'll use a string that we know will be truncated.
+    original_text = "word " * 1000
+    limit_tokens = 300
 
-    assert len(truncated) == 100
+    truncated = articles_module.truncate_text(original_text, limit=limit_tokens)
+
+    # Verify it is shorter than original
+    assert len(truncated) < len(original_text)
+
+    # Verify it's roughly the right size (word + space is often 1-2 tokens)
+    # Let's actually verify using the same encoder if possible, or just check basic property.
+    # Ideally we should see if we can import tiktoken in the test environment if not mocked out
+    # But since we are modifying articles.py to import it, we don't mock it out in _install_article_dependencies
+    # unless we explicitly do so?
+    # _install_article_dependencies only mocks 'newspaper'. It imports rss_morning.articles.
+    # So rss_morning.articles will import real tiktoken.
+
+    import tiktoken
+
+    enc = tiktoken.get_encoding("cl100k_base")
+    assert len(enc.encode(truncated)) == limit_tokens

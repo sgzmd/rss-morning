@@ -10,6 +10,8 @@ from newspaper import Article, Config
 from newspaper.article import ArticleException
 import trafilatura
 
+import tiktoken
+
 logger = logging.getLogger(__name__)
 
 
@@ -91,9 +93,11 @@ def _fetch_with_newspaper(url: str, timeout: int) -> ArticleContent:
     return ArticleContent(text=text, image=image)
 
 
-def truncate_text(value: str, limit: int = 1000) -> str:
-    """Limit text length to the given number of characters."""
-    if len(value) <= limit:
+def truncate_text(value: str, limit: int = 300) -> str:
+    """Limit text length to the given number of tokens."""
+    encoder = tiktoken.get_encoding("cl100k_base")
+    tokens = encoder.encode(value)
+    if len(tokens) <= limit:
         return value
-    logger.debug("Truncating article text to %d characters", limit)
-    return value[:limit]
+    logger.debug("Truncating article text from %d to %d tokens", len(tokens), limit)
+    return encoder.decode(tokens[:limit])
