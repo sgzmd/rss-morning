@@ -19,3 +19,6 @@ mylog.txt
 # Configs
 configs/*.xml
 !configs/*.xml.example
+*.db
+.*
+*.opml 

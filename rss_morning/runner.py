@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import concurrent.futures
 from typing import Any, List, Optional
 
 from .articles import fetch_article_content, truncate_text
@@ -14,6 +15,7 @@ from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
 from .summaries import generate_summary
+from . import db
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,10 @@ class RunConfig:
     load_articles_path: Optional[str] = None
     max_article_length: int = 5000
     system_prompt: Optional[str] = None
+    extractor: str = "newspaper"
+    concurrency: int = 10
+    database_enabled: bool = False
+    database_connection_string: Optional[str] = None
 
 
 @dataclass
@@ -81,7 +87,7 @@ def _save_articles_to_file(path: str, articles: List[dict]) -> None:
     logger.info("Saved %d articles to %s", len(serialisable), location)
 
 
-def _collect_entries(config: RunConfig) -> List[dict]:
+def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
     feeds = parse_feeds_config(config.feeds_file)
     if not feeds:
         raise RuntimeError("No feeds found in the configuration.")
@@ -95,21 +101,32 @@ def _collect_entries(config: RunConfig) -> List[dict]:
 
     selected_entries = []
     any_entries_fetched = False
-    for feed in feeds:
+
+    def process_feed(feed):
         try:
             entries = fetch_feed_entries(feed)
+            if not entries:
+                logger.info("No entries retrieved for feed %s", feed.url)
+                return []
+
+            per_feed_entries = select_recent_entries(entries, config.limit, cutoff)
+            logger.info(
+                "Selected %d entries for feed %s", len(per_feed_entries), feed.url
+            )
+            return per_feed_entries
         except Exception:
             logger.exception("Failed to process feed %s", feed.url)
-            continue
+            return []
 
-        if not entries:
-            logger.info("No entries retrieved for feed %s", feed.url)
-            continue
-
-        any_entries_fetched = True
-        per_feed_entries = select_recent_entries(entries, config.limit, cutoff)
-        logger.info("Selected %d entries for feed %s", len(per_feed_entries), feed.url)
-        selected_entries.extend(per_feed_entries)
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=config.concurrency
+    ) as executor:
+        future_to_feed = {executor.submit(process_feed, feed): feed for feed in feeds}
+        for future in concurrent.futures.as_completed(future_to_feed):
+            entries = future.result()
+            if entries:
+                any_entries_fetched = True
+                selected_entries.extend(entries)
 
     if not any_entries_fetched:
         raise RuntimeError("No entries were retrieved from the configured feeds.")
@@ -129,24 +146,60 @@ def _collect_entries(config: RunConfig) -> List[dict]:
     logger.info("Fetching article text for %d selected entries", len(unique_entries))
 
     output = []
-    for entry in unique_entries:
-        content = fetch_article_content(entry.link)
-        payload = {
-            "url": entry.link,
-            "category": entry.category,
-            "title": entry.title,
-            "summary": entry.summary or "",
-        }
-        if content.text:
-            payload["text"] = truncate_text(content.text)
-        else:
-            logger.info(
-                "Article text unavailable; including metadata only: %s", entry.link
-            )
-        if content.image:
-            payload["image"] = content.image
 
-        output.append(payload)
+    def process_entry(entry):
+        try:
+            if session_factory:
+                with session_factory() as session:
+                    cached = db.get_article(session, entry.link)
+                    if cached:
+                        logger.debug("Cache hit for %s", entry.link)
+                        return {
+                            "url": cached["url"],
+                            "category": entry.category,
+                            "title": cached["title"],
+                            "summary": cached["summary"] or entry.summary or "",
+                            "text": cached["text"],
+                            "image": cached["image"],
+                        }
+
+            content = fetch_article_content(entry.link, extractor=config.extractor)
+            payload = {
+                "url": entry.link,
+                "category": entry.category,
+                "title": entry.title,
+                "summary": entry.summary or "",
+            }
+            if content.text:
+                payload["text"] = truncate_text(
+                    content.text, limit=config.max_article_length
+                )
+            else:
+                logger.info(
+                    "Article text unavailable; including metadata only: %s", entry.link
+                )
+            if content.image:
+                payload["image"] = content.image
+
+            if session_factory:
+                with session_factory() as session:
+                    db.upsert_article(session, payload)
+
+            return payload
+        except Exception:
+            logger.exception("Failed to process article content for %s", entry.link)
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=config.concurrency
+    ) as executor:
+        future_to_entry = {
+            executor.submit(process_entry, entry): entry for entry in unique_entries
+        }
+        for future in concurrent.futures.as_completed(future_to_entry):
+            res = future.result()
+            if res:
+                output.append(res)
 
     logger.info("Completed processing. Outputting %d articles as JSON.", len(output))
     return output
@@ -192,10 +245,21 @@ def _build_default_email_subject() -> str:
 
 def execute(config: RunConfig) -> RunResult:
     """Run the application logic and return the result payload."""
+    session_factory = None
+    if config.database_enabled:
+        if not config.database_connection_string:
+            logger.warning(
+                "Database enabled but no connection string provided. Caching disabled."
+            )
+        else:
+            engine = db.init_engine(config.database_connection_string)
+            if engine:
+                session_factory = db.get_session_factory(engine)
+
     if config.load_articles_path:
         articles = _load_articles_from_file(config.load_articles_path)
     else:
-        articles = _collect_entries(config)
+        articles = _collect_entries(config, session_factory=session_factory)
 
     if config.save_articles_path:
         _save_articles_to_file(config.save_articles_path, articles)
@@ -217,6 +281,7 @@ def execute(config: RunConfig) -> RunResult:
         filter_layer = EmbeddingArticleFilter(
             query_embeddings_path=config.pre_filter_embeddings_path,
             config=emb_config,
+            session_factory=session_factory,
         )
         filtered_articles = filter_layer.filter(
             list(articles), cluster_threshold=config.cluster_threshold

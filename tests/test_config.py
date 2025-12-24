@@ -49,3 +49,28 @@ def test_parse_feeds_config_missing_body_raises(tmp_path):
 
     with pytest.raises(ValueError):
         parse_feeds_config(str(opml))
+
+
+def test_parse_app_config_database(tmp_path):
+    from rss_morning.config import parse_app_config
+
+    config_file = tmp_path / "config.xml"
+    config_file.write_text(
+        """
+        <config>
+            <feeds>feeds.xml</feeds>
+            <limit>5</limit>
+            <database>
+                <enabled>true</enabled>
+                <connection-string>sqlite:///test.db</connection-string>
+            </database>
+        </config>
+        """
+    )
+
+    # Create dummy feeds.xml to satisfy parser
+    (tmp_path / "feeds.xml").write_text("<opml><body></body></opml>")
+
+    config = parse_app_config(str(config_file))
+    assert config.database.enabled is True
+    assert config.database.connection_string == "sqlite:///test.db"

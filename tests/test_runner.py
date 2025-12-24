@@ -34,11 +34,11 @@ def test_execute_standard_flow(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url: ArticleContent(
+        lambda url, **kwargs: ArticleContent(
             text="article text", image="https://img.example.com"
         ),
     )
-    monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
     config = RunConfig(
@@ -74,9 +74,9 @@ def test_execute_summary_flow(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url: ArticleContent(text=None, image=article_image),
+        lambda url, **kwargs: ArticleContent(text=None, image=article_image),
     )
-    monkeypatch.setattr(runner, "truncate_text", lambda text: text)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: text)
 
     summary_payload = {"summaries": [{"url": "https://example.com"}]}
 
@@ -129,9 +129,9 @@ def test_execute_uses_custom_email_subject(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url: ArticleContent(text="article text", image=None),
+        lambda url, **kwargs: ArticleContent(text="article text", image=None),
     )
-    monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: "trimmed")
 
     captured = {}
 
@@ -168,9 +168,9 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url: ArticleContent(text="article text", image=None),
+        lambda url, **kwargs: ArticleContent(text="article text", image=None),
     )
-    monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
     capture = {}
@@ -244,9 +244,9 @@ def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url: ArticleContent(text="article text", image=None),
+        lambda url, **kwargs: ArticleContent(text="article text", image=None),
     )
-    monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
     class FailingFilter:
@@ -313,9 +313,9 @@ def test_execute_save_articles_writes_file(monkeypatch, tmp_path):
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url: ArticleContent(text="article text", image=None),
+        lambda url, **kwargs: ArticleContent(text="article text", image=None),
     )
-    monkeypatch.setattr(runner, "truncate_text", lambda text: "trimmed")
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
     save_path = tmp_path / "fetched.json"
@@ -387,9 +387,9 @@ def test_execute_limit_applies_per_feed(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url: ArticleContent(text=None, image=None),
+        lambda url, **kwargs: ArticleContent(text=None, image=None),
     )
-    monkeypatch.setattr(runner, "truncate_text", lambda text: text)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: text)
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
     calls = []
@@ -456,9 +456,9 @@ def test_execute_raises_when_no_entries(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url: ArticleContent(text="text", image=None),
+        lambda url, **kwargs: ArticleContent(text="text", image=None),
     )
-    monkeypatch.setattr(runner, "truncate_text", lambda text: text)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: text)
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
     config = RunConfig(
@@ -473,3 +473,58 @@ def test_execute_raises_when_no_entries(monkeypatch):
 
     with pytest.raises(RuntimeError):
         execute(config)
+
+
+def test_execute_with_database_caching(monkeypatch, tmp_path):
+    """Verify that articles are cached and retrieved from the database."""
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_feed_entries",
+        lambda feed: [_feed_entry("https://example.com/db")],
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
+
+    # Mocking fetch to ensure it's called only once
+    fetch_calls = []
+
+    def fake_fetch(url, **kwargs):
+        fetch_calls.append(url)
+        return ArticleContent(text="Fetched Text", image="fetched.jpg")
+
+    monkeypatch.setattr(runner, "fetch_article_content", fake_fetch)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: text)
+    monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
+
+    db_path = tmp_path / "test_rss.db"
+    conn_str = f"sqlite:///{db_path}"
+
+    config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=5,
+        max_age_hours=None,
+        summary=False,
+        email_to=None,
+        database_enabled=True,
+        database_connection_string=conn_str,
+    )
+
+    # First run: Should fetch and cache
+    result1 = execute(config)
+    payload1 = json.loads(result1.output_text)
+
+    assert len(fetch_calls) == 1
+    assert payload1[0]["text"] == "Fetched Text"
+
+    # Second run: Should use cache
+    fetch_calls.clear()
+
+    result2 = execute(config)
+    payload2 = json.loads(result2.output_text)
+
+    assert len(fetch_calls) == 0
+    assert payload2[0]["text"] == "Fetched Text"

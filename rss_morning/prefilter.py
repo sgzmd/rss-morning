@@ -22,6 +22,7 @@ import numpy as np
 from openai import OpenAI
 
 from .embeddings import EmbeddingBackend, OpenAIEmbeddingBackend
+from . import db
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +94,10 @@ class EmbeddingArticleFilter:
         queries_file: Optional[str] = None,
         queries: Optional[Sequence[str]] = None,
         config: Optional[_EmbeddingConfig] = None,
+        session_factory=None,
     ):
         self._config = config or self.CONFIG
+        self._session_factory = session_factory
         self._query_embeddings_override: Optional[List[List[float]]] = None
         if backend is not None and client is not None:
             logger.info(
@@ -153,7 +156,8 @@ class EmbeddingArticleFilter:
                 return materialized
 
             article_texts = [self._compose_article_text(item) for item in materialized]
-            raw_vectors = self._embed_texts(article_texts)
+            article_urls = [str(item.get("url")) for item in materialized]
+            raw_vectors = self._embed_texts(article_texts, urls=article_urls)
             article_vectors: List[np.ndarray] = []
             for vector in raw_vectors or []:
                 arr = np.asarray(vector, dtype=float)
@@ -232,9 +236,73 @@ class EmbeddingArticleFilter:
         self.__class__._cached_query_embeddings[key] = embeddings
         return embeddings
 
-    def _embed_texts(self, texts: Sequence[str]) -> List[List[float]]:
+    def _embed_texts(
+        self, texts: Sequence[str], urls: Optional[Sequence[str]] = None
+    ) -> List[List[float]]:
         """Generate normalised embedding vectors for the given texts."""
-        return self._backend.embed(texts)
+        if not self._session_factory or not urls:
+            return self._backend.embed(texts)
+
+        backend_key = self._config.model
+        with self._session_factory() as session:
+            cached = db.get_embeddings(session, list(urls), backend_key)
+
+        # Determine which texts need embedding
+        missing_indices = []
+        missing_texts = []
+        ordered_vectors: List[Optional[List[float]]] = [None] * len(texts)
+
+        for idx, (text, url) in enumerate(zip(texts, urls)):
+            if url in cached:
+                # Vectors in DB are bytes (BLOB)
+                # Assuming vectors are stored as bytes. Wait, how do we store them?
+                # Usually purely binary or specific format.
+                # Let's check db.py. It uses LargeBinary.
+                # We need to serialize/deserialize.
+                # Let's use json for simplicity in serialization if db.py didn't specify.
+                # Re-checking db.py plan: "vector (BLOB)".
+                # I should use json.dumps/loads for simplicity or struct.pack for efficiency.
+                # Given strictness, let's assume we store them as JSON string encoded to bytes for now
+                # or just modify db to use JSON/Text if I can, OR handle serialization here.
+                # Let's update `db.py` or handle it here.
+                # Handling here: JSON string -> bytes.
+                try:
+                    ordered_vectors[idx] = json.loads(cached[url].decode("utf-8"))
+                except Exception:
+                    logger.warning("Failed to decode vector for %s, re-embedding", url)
+                    missing_indices.append(idx)
+                    missing_texts.append(text)
+            else:
+                missing_indices.append(idx)
+                missing_texts.append(text)
+
+        if missing_texts:
+            logger.info("Computing embeddings for %d new articles", len(missing_texts))
+            new_vectors = self._backend.embed(missing_texts)
+
+            to_upsert = {}
+            for i, vector in enumerate(new_vectors):
+                original_idx = missing_indices[i]
+                ordered_vectors[original_idx] = vector
+                url = urls[original_idx]
+                to_upsert[url] = json.dumps(vector).encode("utf-8")
+
+            with self._session_factory() as session:
+                db.upsert_embeddings(session, to_upsert, backend_key)
+
+        # Ensure correct return type (all floats)
+        final_vectors = []
+        for v in ordered_vectors:
+            if v is None:
+                # Should not happen unless backend failed and we didn't handle it
+                # If backend.embed returns results, v is filled.
+                # If backend failed it raises.
+                # So v should be filled.
+                # If missing_texts was empty, v filled from cache.
+                pass
+            final_vectors.append(v)  # type: ignore
+
+        return final_vectors  # type: ignore
 
     def _load_query_embeddings(self, path: Path) -> Optional[List[List[float]]]:
         try:

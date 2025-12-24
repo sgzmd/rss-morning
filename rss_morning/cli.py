@@ -126,6 +126,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             load_articles_path=args.load_articles,
             max_article_length=app_config.max_article_length,
             system_prompt=app_config.prompt,
+            extractor=app_config.extractor,
+            concurrency=app_config.concurrency,
+            database_enabled=app_config.database.enabled,
+            database_connection_string=app_config.database.connection_string,
         )
 
         result = execute(config)

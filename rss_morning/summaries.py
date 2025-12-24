@@ -144,7 +144,8 @@ def generate_summary(
             contents=contents,
             config=generate_content_config,
         ):
-            response_text += chunk.text
+            if chunk.text:
+                response_text += chunk.text
 
         # Parse JSON
         parsed = json.loads(response_text)

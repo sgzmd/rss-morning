@@ -34,6 +34,12 @@ class LoggingConfig:
 
 
 @dataclass
+class DatabaseConfig:
+    enabled: bool = False
+    connection_string: Optional[str] = None
+
+
+@dataclass
 class AppConfig:
     feeds_file: str
     env_file: Optional[str]
@@ -43,8 +49,11 @@ class AppConfig:
     pre_filter: PreFilterConfig = field(default_factory=PreFilterConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)
     prompt: Optional[str] = None
     max_article_length: int = 5000
+    extractor: str = "newspaper"
+    concurrency: int = 10
 
 
 def parse_feeds_config(path: str) -> List[FeedConfig]:
@@ -185,6 +194,13 @@ def parse_app_config(path: str) -> AppConfig:
         if log_file:
             logging_config.file = _resolve_path(config_path, log_file)
 
+    # Database
+    db_node = root.find("database")
+    db_config = DatabaseConfig()
+    if db_node is not None:
+        db_config.enabled = db_node.findtext("enabled", "false").lower() == "true"
+        db_config.connection_string = db_node.findtext("connection-string")
+
     # Prompt
     prompt_node = root.find("prompt")
     prompt = (
@@ -192,6 +208,9 @@ def parse_app_config(path: str) -> AppConfig:
         if prompt_node is not None and prompt_node.text
         else None
     )
+
+    extractor = root.findtext("extractor", "newspaper")
+    concurrency = int(root.findtext("concurrency", "10"))
 
     return AppConfig(
         feeds_file=feeds_file,
@@ -202,6 +221,9 @@ def parse_app_config(path: str) -> AppConfig:
         pre_filter=pre_filter,
         email=email,
         logging=logging_config,
+        database=db_config,
         prompt=prompt,
         max_article_length=max_len,
+        extractor=extractor,
+        concurrency=concurrency,
     )

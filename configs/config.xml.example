@@ -5,6 +5,8 @@
     <limit>10</limit>
     <max-age-hours>24</max-age-hours>
     <summary>true</summary>
+    <extractor>newspaper</extractor>
+    <concurrency>10</concurrency>
     <pre-filter>
         <enabled>true</enabled>
         <embeddings-path>../query_embeddings.json</embeddings-path>
