@@ -3,7 +3,7 @@ import os
 import pytest
 from unittest.mock import MagicMock, patch
 from rss_morning import summaries
-from rss_morning.prefilter import TopicCluster
+from rss_morning.config import TopicCluster
 
 
 @pytest.fixture
@@ -28,50 +28,50 @@ def mock_topics_summaries():
 def test_generate_summary_groups_by_topic(mock_genai_client, mock_topics_summaries):
     mock_client, mock_types = mock_genai_client
 
-    # Mock TOPICS in summaries module
-    with patch("rss_morning.summaries.TOPICS", mock_topics_summaries):
-        # Setup mock response
-        # We expect one call per topic with articles.
-        # Input articles: 2 for Tech, 1 for Health
+    # Setup mock response
+    # We expect one call per topic with articles.
+    # Input articles: 2 for Tech, 1 for Health
 
-        articles = [
-            {"title": "Tech 1", "category": "Tech", "text": "Content 1"},
-            {"title": "Tech 2", "category": "Tech", "text": "Content 2"},
-            {"title": "Health 1", "category": "Health", "text": "Content 3"},
-        ]
+    articles = [
+        {"title": "Tech 1", "category": "Tech", "text": "Content 1"},
+        {"title": "Tech 2", "category": "Tech", "text": "Content 2"},
+        {"title": "Health 1", "category": "Health", "text": "Content 3"},
+    ]
 
-        # We need side_effect to return different valid JSONs
-        def side_effect(model, contents, config):
-            # check contents to guess topic? or just return generic
-            # Contents is prompt string.
-            # prompt = str(contents)
+    # We need side_effect to return different valid JSONs
+    def side_effect(model, contents, config):
+        # check contents to guess topic? or just return generic
+        # Contents is prompt string.
+        # prompt = str(contents)
 
-            return MagicMock(
-                text=json.dumps(
-                    {
-                        "valid_count": 5,
-                        "key_threats_summary": ["Threat 1", "Threat 2"],
-                        # We optionally return valid_article_ids
-                        "valid_article_ids": [0, 1],  # Indices in the batch
-                    }
-                )
+        return MagicMock(
+            text=json.dumps(
+                {
+                    "valid_count": 5,
+                    "key_threats_summary": ["Threat 1", "Threat 2"],
+                    # We optionally return valid_article_ids
+                    "valid_article_ids": [0, 1],  # Indices in the batch
+                }
             )
+        )
 
-        mock_client.models.generate_content.side_effect = side_effect
+    mock_client.models.generate_content.side_effect = side_effect
 
-        result_json = summaries.generate_summary(articles, "System Prompt")
-        result = json.loads(result_json)
+    result_json = summaries.generate_summary(
+        articles, "System Prompt", topics=mock_topics_summaries
+    )
+    result = json.loads(result_json)
 
-        # Should have 2 items in summaries list
-        items = result["summaries"]
-        assert len(items) == 2
+    # Should have 2 items in summaries list
+    items = result["summaries"]
+    assert len(items) == 2
 
-        tech_summary = next(i for i in items if i["topic"] == "Tech")
-        assert tech_summary["valid_count"] == 5
-        assert len(tech_summary["articles"]) == 2
+    tech_summary = next(i for i in items if i["topic"] == "Tech")
+    assert tech_summary["valid_count"] == 5
+    assert len(tech_summary["articles"]) == 2
 
-        health_summary = next(i for i in items if i["topic"] == "Health")
-        assert health_summary["key_threats"] == ["Threat 1", "Threat 2"]
+    health_summary = next(i for i in items if i["topic"] == "Health")
+    assert health_summary["key_threats"] == ["Threat 1", "Threat 2"]
 
 
 def test_generate_summary_handles_empty_input():
@@ -81,20 +81,22 @@ def test_generate_summary_handles_empty_input():
 
 def test_generate_summary_skips_empty_topics(mock_genai_client, mock_topics_summaries):
     mock_client, _ = mock_genai_client
-    with patch("rss_morning.summaries.TOPICS", mock_topics_summaries):
-        # Only Tech articles
-        articles = [
-            {"title": "Tech 1", "category": "Tech", "text": "Content 1"},
-        ]
 
-        mock_client.models.generate_content.return_value = MagicMock(
-            text=json.dumps({"valid_count": 1, "key_threats_summary": ["foo"]})
-        )
+    # Only Tech articles
+    articles = [
+        {"title": "Tech 1", "category": "Tech", "text": "Content 1"},
+    ]
 
-        result_json = summaries.generate_summary(articles, "Prompt")
-        result = json.loads(result_json)
+    mock_client.models.generate_content.return_value = MagicMock(
+        text=json.dumps({"valid_count": 1, "key_threats_summary": ["foo"]})
+    )
 
-        items = result["summaries"]
-        assert len(items) == 1
-        assert items[0]["topic"] == "Tech"
-        # Health should be skipped
+    result_json = summaries.generate_summary(
+        articles, "Prompt", topics=mock_topics_summaries
+    )
+    result = json.loads(result_json)
+
+    items = result["summaries"]
+    assert len(items) == 1
+    assert items[0]["topic"] == "Tech"
+    # Health should be skipped

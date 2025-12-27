@@ -15,7 +15,7 @@ except Exception:  # pragma: no cover - optional dependency
     genai = None
     types = None
 
-from .prefilter import TOPICS
+from .config import TopicCluster
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ def generate_summary(
     return_dict: bool = False,
     batch_size: int = 20,  # per topic batching if needed
     api_key: Optional[str] = None,
+    topics: Optional[List[TopicCluster]] = None,
 ) -> str | Tuple[str, Optional[dict]]:
     """Generate summary JSON for a list of articles, grouped by topic."""
 
@@ -54,8 +55,12 @@ def generate_summary(
 
     results_list = []
 
+    effective_topics = topics or []
+
     # Group articles by topic
-    articles_by_topic: Dict[str, List[dict]] = {topic.name: [] for topic in TOPICS}
+    articles_by_topic: Dict[str, List[dict]] = {
+        topic.name: [] for topic in effective_topics
+    }
 
     # Also handle articles that might not match any known topic (if prefilter was skipped or weirdness)
     # But usually they should have a category matches topic.name if they came from prefilter.
@@ -71,7 +76,7 @@ def generate_summary(
         else:
             # Try to find if it matches any topic ID or something, else "Other"
             found = False
-            for t in TOPICS:
+            for t in effective_topics:
                 if t.id == cat:
                     articles_by_topic[t.name].append(article)
                     found = True
@@ -80,7 +85,7 @@ def generate_summary(
                 # maybe put in a default bucket?
                 pass
 
-    for topic in TOPICS:
+    for topic in effective_topics:
         candidate_articles = articles_by_topic[topic.name]
         if not candidate_articles:
             continue
@@ -117,38 +122,22 @@ def generate_summary(
         1. **De-sensationalize:** Ignore clickbait (e.g., "Catastrophic", "Nightmare") unless technical facts support it.
         2. **Neutrality:** If an issue is "business as usual" (routine patch, minor bug), describe it calmly.
         3. **Severity:** Distinguish between "Active Exploitation" (High) and "Theoretical" (Low).
+        4. **Source Attribution:** For each bullet point, include the source article title and URL in the format: "(source: [Title](URL))".
+        5. Aim to have between 3 to 7 bullet points.
 
         Output Format (JSON):
         {{
             "valid_count": <int>,
             "key_threats_summary": [
-                "<Bullet point 1 (Neutral & Precise)>",
-                "<Bullet point 2>",
-                "<Bullet point 3>"
+                "<Bullet point (Neutral & Precise)> (source: [Title](URL))",
+                "<Bullet point (Neutral & Precise)> (source: [Title](URL))",
+                "<Bullet point (Neutral & Precise)> (source: [Title](URL))"
             ],
             "related_articles": [
                 {{ "title": text, "url": text }}
             ]
         }}
         """
-        # Added "related_articles" to Schema so we can link back? The prompt in example didn't have it,
-        # but the UI needs links.
-        # The user example prompt output format only had:
-        # { "valid_count": <int>, "key_threats_summary": [...] }
-        # If I strictly follow that, I lose the links to the actual articles in the UI.
-        # The UI template shows links.
-        # "Guidelines" implies I should probably ask for the links or at least associate them.
-        # But wait, the user example logic:
-        # `results[topic.id] = data`
-        # It doesn't seem to return the articles list in the JSON.
-        # This implies the email might ONLY contain the summary points?
-        # But the original app sent links.
-        # Let's look at the example prompt again carefully.
-        # It says "Review the valid ones".
-        # If I don't return which IDs were valid, I can't show the links to the user.
-        # I should probably enhance the prompt to return the IDs of used articles,
-        # or list the articles.
-        # I'll add `associated_article_indices` or similar to the schema so I can map back.
 
         try:
             # We use the new SDK's JSON mode

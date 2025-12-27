@@ -11,6 +11,53 @@
         <enabled>true</enabled>
         <embeddings-path>../query_embeddings.json</embeddings-path>
         <cluster-threshold>0.8</cluster-threshold>
+        <topic-clusters>
+            <topic id="A">
+                <name>Mobile Ecosystem &amp; Endpoint</name>
+                <keywords>
+                    <keyword>Android malware</keyword>
+                    <keyword>iOS jailbreak</keyword>
+                    <keyword>APK tampering</keyword>
+                    <keyword>sideloading threats</keyword>
+                </keywords>
+            </topic>
+            <topic id="B">
+                <name>Identity, Auth &amp; Social Engineering</name>
+                <keywords>
+                    <keyword>MFA bypass</keyword>
+                    <keyword>Passkey adoption</keyword>
+                    <keyword>Credential stuffing</keyword>
+                    <keyword>Deepfake scams</keyword>
+                </keywords>
+            </topic>
+            <topic id="C">
+                <name>Fraud, Abuse &amp; Trust Safety</name>
+                <keywords>
+                    <keyword>Payment fraud</keyword>
+                    <keyword>Refund scams</keyword>
+                    <keyword>GPS spoofing</keyword>
+                    <keyword>Loyalty point theft</keyword>
+                </keywords>
+            </topic>
+            <topic id="D">
+                <name>Infrastructure, Cloud &amp; Supply Chain</name>
+                <keywords>
+                    <keyword>Cloud misconfigurations</keyword>
+                    <keyword>CI/CD pipeline leaks</keyword>
+                    <keyword>Dependency confusion</keyword>
+                    <keyword>AWS breach</keyword>
+                </keywords>
+            </topic>
+            <topic id="E">
+                <name>Regional Policy (APAC)</name>
+                <keywords>
+                    <keyword>Korea privacy law</keyword>
+                    <keyword>PIPA KISA</keyword>
+                    <keyword>SIM-swap Korea</keyword>
+                    <keyword>APAC e-commerce fraud</keyword>
+                </keywords>
+            </topic>
+        </topic-clusters>
     </pre-filter>
     <embeddings>
         <provider>fastembed</provider>

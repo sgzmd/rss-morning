@@ -23,6 +23,7 @@ from openai import OpenAI
 
 from .embeddings import EmbeddingBackend, FastEmbedBackend, OpenAIEmbeddingBackend
 from . import db
+from .config import TopicCluster
 
 logger = logging.getLogger(__name__)
 
@@ -30,49 +31,6 @@ Article = Mapping[str, object]
 MutableArticle = MutableMapping[str, object]
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-
-@dataclass
-class TopicCluster:
-    id: str
-    name: str
-    keywords: List[str]
-    # We will compute this centroid based on keywords
-    anchor_embedding: Optional[np.ndarray] = None
-
-
-TOPICS = [
-    TopicCluster(
-        "A",
-        "Mobile Ecosystem & Endpoint",
-        ["Android malware", "iOS jailbreak", "APK tampering", "sideloading threats"],
-    ),
-    TopicCluster(
-        "B",
-        "Identity, Auth & Social Engineering",
-        ["MFA bypass", "Passkey adoption", "Credential stuffing", "Deepfake scams"],
-    ),
-    TopicCluster(
-        "C",
-        "Fraud, Abuse & Trust Safety",
-        ["Payment fraud", "Refund scams", "GPS spoofing", "Loyalty point theft"],
-    ),
-    TopicCluster(
-        "D",
-        "Infrastructure, Cloud & Supply Chain",
-        [
-            "Cloud misconfigurations",
-            "CI/CD pipeline leaks",
-            "Dependency confusion",
-            "AWS breach",
-        ],
-    ),
-    TopicCluster(
-        "E",
-        "Regional Policy (APAC)",
-        ["Korea privacy law", "PIPA KISA", "SIM-swap Korea", "APAC e-commerce fraud"],
-    ),
-]
 
 
 @dataclass(frozen=True)
@@ -110,9 +68,11 @@ class EmbeddingArticleFilter:
         queries: Optional[Dict[str, Sequence[str]]] = None,
         config: Optional[_EmbeddingConfig] = None,
         session_factory=None,
+        topics: Optional[List[TopicCluster]] = None,
     ):
         self._config = config or self.CONFIG
         self._session_factory = session_factory
+        self.topics = topics or []
 
         if backend is not None and client is not None:
             logger.info(
@@ -139,8 +99,12 @@ class EmbeddingArticleFilter:
 
     def _build_topic_anchors(self):
         """Creates a 'centroid' embedding for each topic based on its keywords."""
-        logger.info("Building topic anchors...")
-        for topic in TOPICS:
+        if not self.topics:
+            logger.warning("No topic clusters configured.")
+            return
+
+        logger.info("Building topic anchors for %d topics...", len(self.topics))
+        for topic in self.topics:
             if topic.anchor_embedding is not None:
                 continue
 
@@ -162,7 +126,7 @@ class EmbeddingArticleFilter:
     @property
     def queries(self) -> Dict[str, Tuple[str, ...]]:
         # partial backward compatibility
-        return {t.name: tuple(t.keywords) for t in TOPICS}
+        return {t.name: tuple(t.keywords) for t in self.topics}
 
     def filter(
         self,
@@ -217,7 +181,29 @@ class EmbeddingArticleFilter:
         news_matrix = np.vstack(news_matrix_list)  # Shape (N_valid, Embedding_Dim)
 
         # Stack topic anchors: Shape (N_topics, Embedding_Dim)
-        topic_matrix = np.vstack([t.anchor_embedding for t in TOPICS])
+        if not self.topics:
+            logger.warning("No topics loaded, cannot filter.")
+            return []
+
+        # Ensure anchors are present (should be built in init)
+        topic_matrix_list = []
+        valid_topics = []
+        for t in self.topics:
+            if t.anchor_embedding is not None and isinstance(
+                t.anchor_embedding, np.ndarray
+            ):
+                topic_matrix_list.append(t.anchor_embedding)
+                valid_topics.append(t)
+            else:
+                # Fallback if config passed object but not array?
+                # It should have been converted in _build_topic_anchors
+                pass
+
+        if not topic_matrix_list:
+            logger.warning("No valid topic anchors found.")
+            return []
+
+        topic_matrix = np.vstack(topic_matrix_list)
 
         # Cosine Similarity
         # Result Shape: (N_valid, N_topics)
@@ -232,12 +218,12 @@ class EmbeddingArticleFilter:
 
         for idx, score, topic_idx in zip(valid_indices, max_scores, best_topic_indices):
             logger.debug(
-                f"Article {article_urls[idx]} score: {score}, topic: {TOPICS[topic_idx].name}, threshold: {threshold}"
+                f"Article {article_urls[idx]} score: {score}, topic: {valid_topics[topic_idx].name}, threshold: {threshold}"
             )
 
             if score >= threshold:
                 article = materialized[idx]
-                topic = TOPICS[topic_idx]
+                topic = valid_topics[topic_idx]
 
                 article["prefilter_score"] = float(score)
                 article["category"] = topic.name  # Assign the best matching topic name
@@ -311,8 +297,9 @@ class EmbeddingArticleFilter:
 
 
 def load_queries(queries_path: Optional[str] = None) -> Dict[str, Tuple[str, ...]]:
-    """Legacy compatibility: returns queries from TOPICS."""
-    return {t.name: tuple(t.keywords) for t in TOPICS}
+    """Legacy compatibility: returns empty dict as TOPICS are now in config."""
+    logger.warning("load_queries is deprecated. Topics are loaded from config.")
+    return {}
 
 
 def export_security_query_embeddings(
@@ -322,6 +309,7 @@ def export_security_query_embeddings(
     client: Optional[OpenAI] = None,
     queries_file: Optional[str] = None,  # Ignored
     queries: Optional[Sequence[str]] = None,  # Ignored
+    topics: Optional[List[TopicCluster]] = None,
 ) -> Path:
     """Persist embeddings for the security queries to disk.
 
@@ -332,6 +320,7 @@ def export_security_query_embeddings(
     _filter_layer = EmbeddingArticleFilter(
         client=client,
         config=export_config,
+        topics=topics,
     )
 
     # We export the structure expected by the CLI or consumers?
@@ -347,11 +336,14 @@ def export_security_query_embeddings(
     # In this new design, we build anchors on init.
     # So we can export them.
 
-    for topic in TOPICS:
+    effective_topics = topics or []
+
+    for topic in effective_topics:
         query_list.append(f"{topic.name}: " + ", ".join(topic.keywords))
         embeddings.append(
             topic.anchor_embedding.tolist()
             if topic.anchor_embedding is not None
+            and hasattr(topic.anchor_embedding, "tolist")
             else []
         )
 

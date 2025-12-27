@@ -14,11 +14,23 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class TopicCluster:
+    id: str
+    name: str
+    keywords: List[str]
+    # We will compute this centroid based on keywords
+    anchor_embedding: Optional[object] = (
+        None  # Using object to avoid numpy dependency in config
+    )
+
+
+@dataclass
 class PreFilterConfig:
     enabled: bool = False
     embeddings_path: Optional[str] = None
     cluster_threshold: float = 0.8
     queries_file: Optional[str] = None
+    topic_clusters: List[TopicCluster] = field(default_factory=list)
 
 
 @dataclass
@@ -188,6 +200,25 @@ def parse_app_config(path: str) -> AppConfig:
         ct_node = pf_node.find("cluster-threshold")
         if ct_node is not None and ct_node.text:
             pre_filter.cluster_threshold = float(ct_node.text)
+
+        tc_node = pf_node.find("topic-clusters")
+        if tc_node is not None:
+            for topic_node in tc_node.findall("topic"):
+                t_id = topic_node.attrib.get("id") or topic_node.findtext("id") or ""
+                t_name = topic_node.findtext("name") or ""
+                keywords = []
+                kw_container = topic_node.find("keywords")
+                if kw_container is not None:
+                    keywords = [
+                        k.text.strip()
+                        for k in kw_container.findall("keyword")
+                        if k.text and k.text.strip()
+                    ]
+
+                if t_id and t_name and keywords:
+                    pre_filter.topic_clusters.append(
+                        TopicCluster(id=t_id, name=t_name, keywords=keywords)
+                    )
 
     # Embeddings
     emb_node = root.find("embeddings")

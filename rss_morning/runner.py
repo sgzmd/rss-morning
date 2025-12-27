@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import concurrent.futures
 from typing import Any, List, Optional
 
 from .articles import fetch_article_content, truncate_text
-from .config import parse_feeds_config
+from .config import parse_feeds_config, TopicCluster
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
 from .summaries import generate_summary
@@ -46,6 +46,7 @@ class RunConfig:
     embedding_provider: str = "fastembed"
     embedding_model: str = "intfloat/multilingual-e5-large"
     google_api_key: Optional[str] = None
+    topic_clusters: List[TopicCluster] = field(default_factory=list)
 
 
 @dataclass
@@ -296,6 +297,7 @@ def execute(config: RunConfig) -> RunResult:
             queries_file=config.pre_filter_queries_file,
             config=emb_config,
             session_factory=session_factory,
+            topics=config.topic_clusters,
         )
         filtered_articles = filter_layer.filter(
             list(articles), cluster_threshold=config.cluster_threshold
@@ -331,6 +333,7 @@ def execute(config: RunConfig) -> RunResult:
             config.system_prompt,
             return_dict=True,
             api_key=config.google_api_key,
+            topics=config.topic_clusters,
         )
         output_text = summary_output
         if summary_data is not None:

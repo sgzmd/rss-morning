@@ -137,6 +137,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             embedding_model=app_config.embeddings.model,
             google_api_key=os.environ.get("GOOGLE_API_KEY")
             or os.environ.get("GEMINI_API_KEY"),
+            topic_clusters=app_config.pre_filter.topic_clusters,
         )
 
         config_dict = dataclasses.asdict(config)
