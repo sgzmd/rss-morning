@@ -45,6 +45,7 @@ class RunConfig:
     database_connection_string: Optional[str] = None
     embedding_provider: str = "fastembed"
     embedding_model: str = "intfloat/multilingual-e5-large"
+    google_api_key: Optional[str] = None
 
 
 @dataclass
@@ -326,7 +327,10 @@ def execute(config: RunConfig) -> RunResult:
             raise ValueError("Summary requested but no system_prompt configured.")
 
         summary_output, summary_data = generate_summary(
-            articles, config.system_prompt, return_dict=True
+            articles,
+            config.system_prompt,
+            return_dict=True,
+            api_key=config.google_api_key,
         )
         output_text = summary_output
         if summary_data is not None:

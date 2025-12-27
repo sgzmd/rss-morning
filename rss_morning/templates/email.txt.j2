@@ -4,13 +4,31 @@
 {% set summaries = payload.get("summaries") or [] %}
 {% if summaries %}
 {% for item in summaries -%}
-Title: {{ (item.get("summary") or {}).get("title") or item.get("url") or "Update " ~ loop.index }}
-{% set summary = item.get("summary") or {} -%}
-{% if item.get("image") %}Image: {{ item.get("image") }}{% endif -%}
-{% if summary.get("what") %}What: {{ summary.get("what") }}{% endif -%}
-{% if summary.get("so-what") %}So What: {{ summary.get("so-what") }}{% endif -%}
-{% if summary.get("now-what") %}Now What: {{ summary.get("now-what") }}{% endif -%}
-{% if item.get("url") %}Link: {{ item.get("url") }}{% endif -%}
+--------------------------------------------------------------------------------
+Briefing: {{ item.get("topic") or "General" }}
+--------------------------------------------------------------------------------
+{{ (item.get("summary") or {}).get("title") or "Update" }}
+
+{% if item.get("valid_count") -%}
+Analyzing {{ item.get("valid_count") }} relevant items
+{% endif -%}
+
+{% if item.get("key_threats") -%}
+KEY THREATS & OBSERVATIONS
+{% for threat in item.get("key_threats") -%}
+* {{ threat | replace("- ", "") }}
+{% endfor -%}
+{% elif (item.get("summary") or {}).get("what") -%}
+Summary: {{ (item.get("summary") or {}).get("what") }}
+{% endif -%}
+
+{% set articles = item.get("articles") or [] -%}
+{% if articles -%}
+SOURCES
+{% for art in articles -%}
+* {{ art.get("title") or "Source" }}: {{ art.get("url") }}
+{% endfor -%}
+{% endif %}
 
 {% endfor -%}
 {% else %}

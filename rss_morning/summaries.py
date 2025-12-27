@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
 
 from bs4 import BeautifulSoup
 
@@ -15,6 +14,8 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     genai = None
     types = None
+
+from .prefilter import TOPICS
 
 logger = logging.getLogger(__name__)
 
@@ -26,197 +27,199 @@ def sanitize_html(text: str) -> str:
     return BeautifulSoup(text, "html.parser").get_text()
 
 
-def build_summary_input(articles: list[dict]) -> str:
-    """Prepare Gemini request payload from article data."""
-    prepared = []
-    for index, article in enumerate(articles, start=1):
-        prepared.append(
-            {
-                "id": f"article-{index}",
-                "title": article.get("title", ""),
-                "url": article.get("url", ""),
-                "summary": article.get("summary", ""),
-                "content": article.get("text", "") or "",
-                "category": article.get("category", ""),
-            }
-        )
-    payload = json.dumps(prepared, ensure_ascii=False, indent=2)
-    logger.debug("Prepared %d articles for summarisation", len(prepared))
-    return payload
-
-
 def generate_summary(
     articles: list[dict],
-    system_prompt: str,
+    system_prompt: str,  # We might ignore this or append it, the user provided a specific prompt template
     return_dict: bool = False,
-    batch_size: int = 10,
+    batch_size: int = 20,  # per topic batching if needed
+    api_key: Optional[str] = None,
 ) -> str | Tuple[str, Optional[dict]]:
-    """Generate summary JSON for a list of articles."""
+    """Generate summary JSON for a list of articles, grouped by topic."""
+
     if not articles:
-        logger.info(
-            "No articles available for summarisation; returning empty summary list."
-        )
         empty = {"summaries": []}
-        if return_dict:
-            return json.dumps(empty, ensure_ascii=False), empty
-        return json.dumps(empty, ensure_ascii=False)
+        return (
+            (json.dumps(empty, ensure_ascii=False), empty)
+            if return_dict
+            else json.dumps(empty, ensure_ascii=False)
+        )
 
     if genai is None or types is None:
         raise RuntimeError(
             "google-genai package is required for --summary but is not installed."
         )
 
-    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    logger.info("Using API key ending with: %s", api_key[:])
     client = genai.Client(api_key=api_key)
-
     model = "gemini-flash-latest"
 
-    combined_summaries = []
+    results_list = []
 
-    # Process articles in batches
-    for i in range(0, len(articles), batch_size):
-        batch = articles[i : i + batch_size]
-        logger.info(
-            "Processing summarization batch %d of %d (size: %d)",
-            (i // batch_size) + 1,
-            (len(articles) + batch_size - 1) // batch_size,
-            len(batch),
-        )
+    # Group articles by topic
+    articles_by_topic: Dict[str, List[dict]] = {topic.name: [] for topic in TOPICS}
 
-        try:
-            summary_input = build_summary_input(batch)
+    # Also handle articles that might not match any known topic (if prefilter was skipped or weirdness)
+    # But usually they should have a category matches topic.name if they came from prefilter.
+    # If prefilter was NOT run, we might need to rely on existing categories?
+    # The user instruction implies this runs after prefilter.
+    # If run without prefilter, we might just put them in "Unclassified" or skip?
+    # Let's assume they have categories.
 
-            # Construct input with system prompt and articles
-            contents = [
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(
-                            text=f"{system_prompt}\n\n{summary_input}"
-                        ),
-                    ],
-                ),
-            ]
+    for article in articles:
+        cat = article.get("category")
+        if cat in articles_by_topic:
+            articles_by_topic[cat].append(article)
+        else:
+            # Try to find if it matches any topic ID or something, else "Other"
+            found = False
+            for t in TOPICS:
+                if t.id == cat:
+                    articles_by_topic[t.name].append(article)
+                    found = True
+                    break
+            if not found:
+                # maybe put in a default bucket?
+                pass
 
-            generate_content_config = types.GenerateContentConfig(
-                # thinking_config=types.ThinkingConfig(
-                #     thinking_level="HIGH",
-                # ),
-                response_mime_type="application/json",
-                response_schema=types.Schema(
-                    type=types.Type.OBJECT,
-                    description="Top-level response structure expected from the LLM.",
-                    required=["summaries"],
-                    properties={
-                        "summaries": types.Schema(
-                            type=types.Type.ARRAY,
-                            items=types.Schema(
-                                type=types.Type.OBJECT,
-                                required=["url", "category", "summary"],
-                                properties={
-                                    "url": types.Schema(
-                                        type=types.Type.STRING,
-                                        description="URL of the article being summarized",
-                                    ),
-                                    "category": types.Schema(
-                                        type=types.Type.STRING,
-                                        description="Category of the article",
-                                    ),
-                                    "summary": types.Schema(
-                                        type=types.Type.OBJECT,
-                                        description="Fields describing the summary content.",
-                                        required=[
-                                            "title",
-                                            "what",
-                                            "so-what",
-                                            "now-what",
-                                        ],
-                                        properties={
-                                            "title": types.Schema(
-                                                type=types.Type.STRING,
-                                                description="Generated title",
-                                            ),
-                                            "what": types.Schema(
-                                                type=types.Type.STRING,
-                                                description="The What summary",
-                                            ),
-                                            "so-what": types.Schema(
-                                                type=types.Type.STRING,
-                                                description="The So What? Summary",
-                                            ),
-                                            "now-what": types.Schema(
-                                                type=types.Type.STRING,
-                                                description="The Now What? Section",
-                                            ),
-                                        },
-                                    ),
-                                },
-                            ),
-                        ),
-                    },
-                ),
-            )
-
-            response_text = ""
-            # Accumulate stream to return full JSON string
-            for chunk in client.models.generate_content_stream(
-                model=model,
-                contents=contents,
-                config=generate_content_config,
-            ):
-                if chunk.text:
-                    response_text += chunk.text
-
-            # Parse JSON
-            parsed = json.loads(response_text)
-            batch_summaries = parsed.get("summaries", [])
-            logger.info("Got %d summaries from batch", len(batch_summaries))
-            combined_summaries.extend(batch_summaries)
-
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "Failed to generate summary for batch starting at index %d: %s", i, exc
-            )
-            # We could optionally add the raw articles or empty placeholders here,
-            # but for now we skip the failed batch or maybe we should just log it
-            # effectively 'dropping' the summaries for this batch.
+    for topic in TOPICS:
+        candidate_articles = articles_by_topic[topic.name]
+        if not candidate_articles:
             continue
 
-    # Post-processing / Sanitization on the combined result
-    for item in combined_summaries:
-        if "summary" in item:
-            item["summary"]["title"] = sanitize_html(item["summary"].get("title"))
-            item["summary"]["what"] = sanitize_html(item["summary"].get("what"))
-            item["summary"]["so-what"] = sanitize_html(item["summary"].get("so-what"))
-            item["summary"]["now-what"] = sanitize_html(item["summary"].get("now-what"))
-        if "category" in item:
-            item["category"] = sanitize_html(item["category"])
+        logger.info(
+            f"Summarizing topic '{topic.name}' with {len(candidate_articles)} articles."
+        )
 
-    # Final Combined Output
-    final_obj = {"summaries": combined_summaries}
+        # Prepare context
+        titles_lines = []
+        for i, row in enumerate(candidate_articles):
+            # Safe truncation
+            content_snippet = (row.get("text") or "")[:200]
+            # ID is just index in this list for reference
+            titles_lines.append(
+                f"- [ID {i}] {row.get('title')} || {content_snippet}..."
+            )
+
+        titles_text = "\n".join(titles_lines)
+
+        # The Prompt from the user request
+        prompt_text = f"""
+        Role: Senior Intelligence Analyst.
+        Task: You are analyzing a stream of security news candidates for Topic Cluster: "{topic.name}".
+        
+        Input Data:
+        {titles_text}
+
+        Instructions:
+        1. **Filter:** Identify which of these items genuinely belong to "{topic.name}". Ignore irrelevant items that might have slipped through vector search.
+        2. **Summarize:** Write a briefing for the valid items.
+        
+        Guidelines for "Tone Calibration":
+        1. **De-sensationalize:** Ignore clickbait (e.g., "Catastrophic", "Nightmare") unless technical facts support it.
+        2. **Neutrality:** If an issue is "business as usual" (routine patch, minor bug), describe it calmly.
+        3. **Severity:** Distinguish between "Active Exploitation" (High) and "Theoretical" (Low).
+
+        Output Format (JSON):
+        {{
+            "valid_count": <int>,
+            "key_threats_summary": [
+                "<Bullet point 1 (Neutral & Precise)>",
+                "<Bullet point 2>",
+                "<Bullet point 3>"
+            ],
+            "related_articles": [
+                {{ "title": text, "url": text }}
+            ]
+        }}
+        """
+        # Added "related_articles" to Schema so we can link back? The prompt in example didn't have it,
+        # but the UI needs links.
+        # The user example prompt output format only had:
+        # { "valid_count": <int>, "key_threats_summary": [...] }
+        # If I strictly follow that, I lose the links to the actual articles in the UI.
+        # The UI template shows links.
+        # "Guidelines" implies I should probably ask for the links or at least associate them.
+        # But wait, the user example logic:
+        # `results[topic.id] = data`
+        # It doesn't seem to return the articles list in the JSON.
+        # This implies the email might ONLY contain the summary points?
+        # But the original app sent links.
+        # Let's look at the example prompt again carefully.
+        # It says "Review the valid ones".
+        # If I don't return which IDs were valid, I can't show the links to the user.
+        # I should probably enhance the prompt to return the IDs of used articles,
+        # or list the articles.
+        # I'll add `associated_article_indices` or similar to the schema so I can map back.
+
+        try:
+            # We use the new SDK's JSON mode
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt_text,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=types.Schema(
+                        type=types.Type.OBJECT,
+                        properties={
+                            "valid_count": types.Schema(type=types.Type.INTEGER),
+                            "key_threats_summary": types.Schema(
+                                type=types.Type.ARRAY,
+                                items=types.Schema(type=types.Type.STRING),
+                            ),
+                            # Adding this to validly link back
+                            "valid_article_ids": types.Schema(
+                                type=types.Type.ARRAY,
+                                items=types.Schema(type=types.Type.INTEGER),
+                                description="List of IDs (from Input Data) that were included in this summary.",
+                            ),
+                        },
+                        required=["valid_count", "key_threats_summary"],
+                    ),
+                ),
+            )
+
+            data = json.loads(response.text)
+
+            # Map back articles if we can
+            valid_ids = data.get("valid_article_ids", [])
+            valid_articles_list = []
+            if valid_ids:
+                for idx in valid_ids:
+                    if 0 <= idx < len(candidate_articles):
+                        valid_articles_list.append(candidate_articles[idx])
+            else:
+                # If LLM didn't return IDs, maybe just assume all inputs?
+                # Or just don't show links?
+                # Let's include all candidates if filtered count is close?
+                # Safest is to attach all candidates as "sources" but maybe mark them?
+                # Actually, if I want to show links in the email, I need them.
+                # Let's assume we attach all candidate_articles for now as potential sources
+                # or just the ones valid.
+                valid_articles_list = candidate_articles
+
+            summary_item = {
+                "category": topic.name,  # used for grouping in template
+                "topic": topic.name,
+                "valid_count": data.get("valid_count"),
+                "key_threats": data.get("key_threats_summary"),
+                "summary": {  # Structure expected by template roughly?
+                    "title": f"Briefing: {topic.name}",
+                    "what": "\n".join(data.get("key_threats_summary") or []),
+                    "so-what": "",  # Not provided by this prompt
+                    "now-what": "",  # Not provided by this prompt
+                },
+                # We can put articles here to list them below the summary
+                "articles": valid_articles_list,
+                "image": valid_articles_list[0].get("image")
+                if valid_articles_list
+                else None,
+            }
+            results_list.append(summary_item)
+
+        except Exception as e:
+            logger.error(f"Error processing cluster {topic.name}: {e}")
+
+    final_obj = {"summaries": results_list}
     rendered = json.dumps(final_obj, ensure_ascii=False, indent=2)
-
-    # Note: If *all* batches fail, this will return an empty list of summaries,
-    # distinct from the "fallback" approach which returned the original articles.
-    # If partial success, we return partial summaries.
-
-    # Check if we have NOTHING at all, maybe fallback if *everything* failed?
-    # But usually partial is better than raw articles mixed with summaries logic downstream.
-    # The original code's fallback was returning `articles` dumps.
-    # If combined_summaries is empty and we had articles, maybe we still fallback?
-    # Let's stick to returning what we got, or empty.
-    # Users will prefer empty summaries over a crash or raw article dumps breaking the UI expectation usually.
-
-    if not combined_summaries and articles:
-        logger.warning("No summaries were generated from any batch.")
-        # If we really want the old fallback behavior on total failure:
-        # return json.dumps(articles, ensure_ascii=False, indent=2)
-        # But that changes the return structure (list vs {"summaries": [...]})
-        # The original code:
-        #   fallback = json.dumps(articles, ...
-        #   return fallback
-        # Let's keep it consistent: Return valid JSON structure even if empty.
 
     if return_dict:
         return rendered, final_obj

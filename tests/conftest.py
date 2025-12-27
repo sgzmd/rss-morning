@@ -4,6 +4,7 @@ import pathlib
 import shutil
 import sys
 import types
+from unittest.mock import MagicMock
 import pytest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -44,10 +45,17 @@ fake_html.fromstring = lambda *_args, **_kwargs: (_ for _ in ()).throw(
 fake_lxml = types.ModuleType("lxml")
 fake_lxml.html = fake_html
 
+
+fake_sqlalchemy = types.ModuleType("sqlalchemy")
+fake_sqlalchemy.create_engine = MagicMock()
+fake_sqlalchemy.orm = types.ModuleType("sqlalchemy.orm")
+fake_sqlalchemy.orm.sessionmaker = MagicMock()
+
 _ensure_module("requests", fake_requests)
 _ensure_module("readability", fake_readability)
 _ensure_module("lxml", fake_lxml)
 _ensure_module("lxml.html", fake_html)
+_ensure_module("sqlalchemy", fake_sqlalchemy)
 
 
 @pytest.fixture(scope="session", autouse=True)

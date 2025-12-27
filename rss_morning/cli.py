@@ -135,6 +135,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             database_connection_string=app_config.database.connection_string,
             embedding_provider=app_config.embeddings.provider,
             embedding_model=app_config.embeddings.model,
+            google_api_key=os.environ.get("GOOGLE_API_KEY")
+            or os.environ.get("GEMINI_API_KEY"),
         )
 
         config_dict = dataclasses.asdict(config)

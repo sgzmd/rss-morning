@@ -80,7 +80,7 @@ def test_execute_summary_flow(monkeypatch):
 
     summary_payload = {"summaries": [{"url": "https://example.com"}]}
 
-    def fake_generate(articles, system_prompt, return_dict):
+    def fake_generate(articles, system_prompt, return_dict, api_key=None):
         return json.dumps(summary_payload), summary_payload
 
     monkeypatch.setattr(runner, "generate_summary", fake_generate)

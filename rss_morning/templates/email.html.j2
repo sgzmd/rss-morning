@@ -34,32 +34,44 @@
           {% set summaries = payload.get("summaries") or [] %}
           {% if summaries %}
             {% for item in summaries %}
-              {% set summary = item.get("summary") or {} %}
               <div class="card">
-                {% set category = item.get("category") %}
-                {% if category %}
-                  <div class="badge">{{ category }}</div>
-                {% else %}
-                  <div class="badge">Insight {{ loop.index }}</div>
+                <div class="badge">{{ item.get("topic") or item.get("category") or "Topic" }}</div>
+                <h2>{{ item.get("summary", {}).get("title") or "Briefing" }}</h2>
+                
+                {% if item.get("valid_count") %}
+                   <p style="font-size: 13px; color: #666; margin-bottom: 12px;">
+                     Analyzing {{ item.get("valid_count") }} relevant items
+                   </p>
                 {% endif %}
-                <h2>{{ summary.get("title") or "Update " ~ loop.index }}</h2>
-                {% if item.get("image") %}
-                  <div class="media">
-                    <img src="{{ item.get("image") }}" alt="{{ summary.get("title") or item.get("url") or "Summary image" }}" />
+
+                {% if item.get("key_threats") %}
+                   <div class="section-label">Key Threats & Observations</div>
+                   <ul style="padding-left: 20px; margin-top: 8px;">
+                     {% for threat in item.get("key_threats") %}
+                       <li>{{ threat | replace("- ", "") }}</li>
+                     {% endfor %}
+                   </ul>
+                {% elif item.get("summary", {}).get("what") %}
+                   {# Fallback for old format or if mapped #}
+                   <div class="section-label">Summary</div>
+                   <p>{{ item.get("summary", {}).get("what") | nl2br }}</p>
+                {% endif %}
+
+                {# List source articles if available #}
+                {% set articles = item.get("articles") or [] %}
+                {% if articles %}
+                  <div style="margin-top: 16px; border-top: 1px solid #eee; padding-top: 12px;">
+                    <div class="section-label" style="margin-bottom: 8px;">Sources</div>
+                    <ul style="list-style: none; padding: 0; margin: 0; font-size: 13px;">
+                      {% for art in articles %}
+                        <li style="margin-bottom: 6px;">
+                          <a href="{{ art.get("url") }}" target="_blank" rel="noopener">{{ art.get("title") or "Source Article" }}</a>
+                        </li>
+                      {% endfor %}
+                    </ul>
                   </div>
-                  {% if item.get("url") %}
-                    <div class="media-caption">Image from <a href="{{ item.get("url") }}" target="_blank" rel="noopener">source article</a></div>
-                  {% endif %}
                 {% endif %}
-                <div class="section-label">What</div>
-                <p>{{ summary.get("what") | nl2br or "—" }}</p>
-                <div class="section-label">So What</div>
-                <p>{{ summary.get("so-what") | nl2br or "—" }}</p>
-                <div class="section-label">Now What</div>
-                <p>{{ summary.get("now-what") | nl2br or "—" }}</p>
-                {% if item.get("url") %}
-                  <p><a href="{{ item.get("url") }}" target="_blank" rel="noopener">View Article</a></p>
-                {% endif %}
+
               </div>
             {% endfor %}
           {% else %}

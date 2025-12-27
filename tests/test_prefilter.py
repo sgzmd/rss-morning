@@ -1,143 +1,127 @@
-import numpy as np
+import pytest
+from unittest.mock import patch
 
-from rss_morning.prefilter import EmbeddingArticleFilter
+from rss_morning.prefilter import EmbeddingArticleFilter, TopicCluster
 
 
 class FakeEmbeddingBackend:
     def __init__(self, responses):
-        self._responses = {tuple(key): value for key, value in responses.items()}
+        # response map: text (or tuple of texts) -> list of vectors
+        # For simplicity, we assume single text queries for anchors
+        self._responses = responses
         self.calls = []
 
     def embed(self, texts):
-        key = tuple(texts)
-        self.calls.append(key)
-        if key not in self._responses:
-            raise AssertionError(f"No fake embedding configured for {key!r}")
-        return [list(vector) for vector in self._responses[key]]
+        # texts is a list of strings
+        self.calls.append(texts)
+        results = []
+        for text in texts:
+            # We allow partial matching or exact key matching
+            if text in self._responses:
+                results.append(self._responses[text])
+            else:
+                # fallback or error
+                # Try to look for a key that contains this text?
+                # tailored for tests
+                found = False
+                for k, v in self._responses.items():
+                    if k == text:
+                        results.append(v)
+                        found = True
+                        break
+                if not found:
+                    # Return zeros or raise
+                    raise AssertionError(f"No fake embedding configured for {text!r}")
+        return results
 
 
-def test_filter_uses_embedding_backend_with_categories():
-    # Centroid for "Category A" will be [1.0, 0.0]
-    # Centroid for "Category B" will be [0.0, 1.0]
-
-    backend = FakeEmbeddingBackend(
-        {
-            ("cat A query",): [[1.0, 0.0]],
-            ("cat B query",): [[0.0, 1.0]],
-            ("Article A", "Article B"): [[1.0, 0.0], [0.0, 1.0]],
-        }
-    )
-    filt = EmbeddingArticleFilter(
-        backend=backend,
-        queries={"Category A": ("cat A query",), "Category B": ("cat B query",)},
-    )
-
-    articles = [
-        {"title": "Article A", "url": "https://example.com/a"},
-        {"title": "Article B", "url": "https://example.com/b"},
+@pytest.fixture
+def mock_topics():
+    # Use a small set of topics for testing to avoid huge mocks
+    return [
+        TopicCluster("T1", "Topic A", ["keyword1"]),
+        TopicCluster("T2", "Topic B", ["keyword2"]),
     ]
 
-    filtered = filt.filter(articles)
 
-    assert len(filtered) == 2
-    # Article A should match Category A
-    a_art = next(a for a in filtered if a["title"] == "Article A")
-    assert a_art["category"] == "Category A"
-    assert a_art["prefilter_score"] == 1.0
+def test_filter_assigns_topics(mock_topics):
+    # Mock TOPICS in the module
+    with patch("rss_morning.prefilter.TOPICS", mock_topics):
+        # Prepare backend responses
+        # 1. Anchors
+        # Topic A query: "Topic A: keyword1"
+        # Topic B query: "Topic B: keyword2"
 
-    # Article B should match Category B
-    b_art = next(a for a in filtered if a["title"] == "Article B")
-    assert b_art["category"] == "Category B"
-    assert b_art["prefilter_score"] == 1.0
+        # 2. Articles
+        # Article 1 matches Topic A
+        # Article 2 matches Topic B
 
+        anchor_a = [1.0, 0.0]
+        anchor_b = [0.0, 1.0]
 
-def test_filter_enforces_max_cluster_size():
-    # 6 articles matching Category A
-    # Centroid A: [1.0, 0.0]
-    # Articles with decreasing similarity to [1.0, 0.0]
-    # We'll use 1D approx on [1.0, 0.0] vs close vectors
+        # Article embeddings
+        # Art1 -> [1.0, 0.0] (perfect match A)
+        # Art2 -> [0.0, 1.0] (perfect match B)
 
-    # Let's say we have vectors:
-    # 1. [1.0, 0.0] (Score 1.0)
-    # 2. [0.99, 0.01ish] (Score 0.99)
-    # ...
-    # We mock them directly
+        backend = FakeEmbeddingBackend(
+            {
+                "Topic A: keyword1": anchor_a,
+                "Topic B: keyword2": anchor_b,
+                "Title A\nSummary A": anchor_a,
+                "Title B\nSummary B": anchor_b,
+            }
+        )
 
-    titles = [f"Art{i}" for i in range(10)]
-    vectors = []
-    # Create vectors with score = 1.0 - i*0.01
-    for i in range(10):
-        # We cheat and just say score will be X.
-        # But we need dot product.
-        val = 1.0 - (i * 0.01)
-        # Vector = [val, sqrt(1-val^2)]
-        y = np.sqrt(1 - val**2)
-        vectors.append([val, y])
+        # Init filter (will build anchors)
+        filt = EmbeddingArticleFilter(backend=backend)
 
-    backend = FakeEmbeddingBackend(
-        {
-            ("query",): [[1.0, 0.0]],
-            tuple(titles): vectors,
-        }
-    )
+        articles = [
+            {"title": "Title A", "summary": "Summary A", "url": "http://a.com"},
+            {"title": "Title B", "summary": "Summary B", "url": "http://b.com"},
+        ]
 
-    config = type(EmbeddingArticleFilter.CONFIG)(max_cluster_size=3)
+        filtered = filt.filter(articles, cluster_threshold=0.9)
 
-    filt = EmbeddingArticleFilter(
-        backend=backend, queries={"Category A": ("query",)}, config=config
-    )
+        assert len(filtered) == 2
 
-    articles = [{"title": t, "url": f"http://{t}"} for t in titles]
+        a_art = next(a for a in filtered if a["title"] == "Title A")
+        assert a_art["category"] == "Topic A"
+        assert a_art["prefilter_score"] >= 0.99
 
-    filtered = filt.filter(articles)
-
-    # Should only keep top 3
-    assert len(filtered) == 3
-    assert [a["title"] for a in filtered] == ["Art0", "Art1", "Art2"]
-
-    # Check that Top 1 has 'other_urls' populated
-    top_art = filtered[0]
-    assert len(top_art["other_urls"]) == 2  # The other 2 kept articles
-    assert top_art["other_urls"][0]["url"] == "http://Art1"
-
-    # Others should have empty other_urls because we only attach to Kernel?
-    # Wait, my implementation attached to Kernel, but returned all kept items.
-    # So Art1 and Art2 are in the list.
-    assert filtered[1]["other_urls"] == []
+        b_art = next(a for a in filtered if a["title"] == "Title B")
+        assert b_art["category"] == "Topic B"
 
 
-def test_filter_discards_below_threshold():
-    backend = FakeEmbeddingBackend(
-        {
-            ("query",): [[1.0, 0.0]],
-            ("Article Bad",): [[0.0, 1.0]],  # Orthogonal, score 0
-        }
-    )
+def test_filter_threshold(mock_topics):
+    with patch("rss_morning.prefilter.TOPICS", mock_topics):
+        anchor_a = [1.0, 0.0]
+        anchor_b = [0.0, 1.0]
 
-    config = type(EmbeddingArticleFilter.CONFIG)(threshold=0.5)
+        # Article totally unrelated: [0.0, 0.0] (or orthogonal [0.7, 0.7] to both if we used higher dims,
+        # but here [0,0] is invalid, let's use [0.707, 0.707] which is 45 deg to both.
+        # Cosine with [1,0] is 0.707. If threshold is 0.8, it should fail.
 
-    filt = EmbeddingArticleFilter(
-        backend=backend, queries={"Category A": ("query",)}, config=config
-    )
+        backend = FakeEmbeddingBackend(
+            {
+                "Topic A: keyword1": anchor_a,
+                "Topic B: keyword2": anchor_b,
+                "Title Weak\nSummary Weak": [0.707, 0.707],
+            }
+        )
 
-    filtered = filt.filter([{"title": "Article Bad", "url": "bad"}])
-    assert len(filtered) == 0
+        filt = EmbeddingArticleFilter(backend=backend)
 
+        articles = [
+            {
+                "title": "Title Weak",
+                "summary": "Summary Weak",
+                "url": "http://weak.com",
+            },
+        ]
 
-def test_compose_article_text_truncates_long_content():
-    """Verify that article content is truncated to the configured limit."""
-    long_text = "x" * 10000
-    article = {"title": "Title", "summary": "Summary", "text": long_text}
+        filtered = filt.filter(articles, cluster_threshold=0.8)
+        assert len(filtered) == 0
 
-    # Default limit (5000)
-    backend = FakeEmbeddingBackend({})
-    filt = EmbeddingArticleFilter(backend=backend)
-    composed = filt._compose_article_text(article)
-    assert len(composed) == 5000
-
-    # Custom limit via config
-    config_cls = type(EmbeddingArticleFilter.CONFIG)
-    custom_config = config_cls(max_article_length=100)
-    filt_custom = EmbeddingArticleFilter(config=custom_config, backend=backend)
-    composed_custom = filt_custom._compose_article_text(article)
-    assert len(composed_custom) == 100
+        # If we lower threshold, it should pass
+        filtered_loose = filt.filter(articles, cluster_threshold=0.6)
+        assert len(filtered_loose) == 1
