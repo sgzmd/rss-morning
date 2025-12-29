@@ -125,6 +125,61 @@ def test_generate_summary_logging(mock_genai_client):
 
         # Verify request logging - getting the actual call arguments might be verbose
         # so just checking if we logged something that looks like our payload
-        request_calls = [args[0] for args, _ in mock_logger.debug.call_args_list]
-        assert any("Gemini request payload: %s" in str(arg) for arg in request_calls)
-        assert any("Gemini response text: %s" in str(arg) for arg in request_calls)
+        requests_calls = [args[0] for args, _ in mock_logger.debug.call_args_list]
+        assert any("Gemini request payload: %s" in str(arg) for arg in requests_calls)
+        assert any("Gemini response text: %s" in str(arg) for arg in requests_calls)
+
+
+def test_generate_summary_extracts_exec_summary(mock_genai_client):
+    mock_client, mock_types = mock_genai_client
+
+    # Mock response with exec-summary
+    mock_client.models.generate_content_stream.return_value = [
+        MagicMock(
+            text=json.dumps(
+                {
+                    "exec-summary": "This is an executive summary.",
+                    "summaries": [
+                        {
+                            "url": "http://example.com/1",
+                            "category": "Tech",
+                            "summary": {
+                                "title": "T",
+                                "what": "W",
+                                "so-what": "S",
+                                "now-what": "N",
+                            },
+                        }
+                    ],
+                }
+            )
+        )
+    ]
+
+    articles = [{"url": "http://example.com/1", "title": "Title 1"}]
+    result_json = summaries.generate_summary(articles, "System Prompt")
+    result = json.loads(result_json)
+
+    assert "exec_summary" in result
+    assert result["exec_summary"] == "This is an executive summary."
+
+
+def test_generate_summary_dry_run(mock_genai_client):
+    mock_client, _ = mock_genai_client
+    articles = [{"url": "http://example.com/1", "title": "Title 1"}]
+
+    with patch("rss_morning.summaries.logger") as mock_logger:
+        result_json, result_dict = summaries.generate_summary(
+            articles, "System Prompt", dry_run=True, return_dict=True
+        )
+
+        # Should return mock response
+        assert result_dict.get("dry_run") is True
+
+        # Should verify logs indicate dry run
+        logs = [str(args[0]) for args, _ in mock_logger.info.call_args_list]
+        assert any("DRY RUN: Prepared payload" in log for log in logs)
+        assert any("DRY RUN: skipping API call" in log for log in logs)
+
+        # Should NOT have called the API
+        mock_client.models.generate_content_stream.assert_not_called()

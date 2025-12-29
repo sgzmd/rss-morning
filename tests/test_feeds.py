@@ -8,10 +8,23 @@ from rss_morning.models import FeedConfig, FeedEntry
 
 
 def _reload_feeds_with_stub(monkeypatch, entries):
-    stub_module = types.SimpleNamespace(
-        parse=lambda url: types.SimpleNamespace(entries=entries),
+    # Stub feedparser
+    stub_feedparser = types.SimpleNamespace(
+        parse=lambda content: types.SimpleNamespace(entries=entries),
     )
-    monkeypatch.setitem(sys.modules, "feedparser", stub_module)
+    monkeypatch.setitem(sys.modules, "feedparser", stub_feedparser)
+
+    # Stub requests
+    mock_response = types.SimpleNamespace(
+        content=b"mock content",
+        raise_for_status=lambda: None,
+    )
+    stub_requests = types.SimpleNamespace(
+        get=lambda url, timeout=None: mock_response,
+        RequestException=Exception,
+    )
+    monkeypatch.setitem(sys.modules, "requests", stub_requests)
+
     sys.modules.pop("rss_morning.feeds", None)
     return importlib.import_module("rss_morning.feeds")
 
@@ -99,3 +112,35 @@ def test_select_recent_entries_deduplicates_and_applies_cutoff(monkeypatch):
     )
 
     assert [entry.link for entry in selected] == ["1"]
+
+
+def test_fetch_feed_entries_handles_request_exception(monkeypatch):
+    # Setup stub that raises RequestException
+    _ = types.SimpleNamespace()
+
+    # We need a proper exception class that looks like requests.RequestException
+    class MockRequestException(Exception):
+        pass
+
+    stub_requests = types.SimpleNamespace(
+        get=lambda url, timeout=None: (_ for _ in ()).throw(
+            MockRequestException("Timeout")
+        ),
+        RequestException=MockRequestException,
+    )
+
+    monkeypatch.setitem(sys.modules, "requests", stub_requests)
+
+    # Feedparser stub shouldn't matter as it won't be reached, but we provide it for import safety
+    stub_feedparser = types.SimpleNamespace(parse=lambda *args: None)
+    monkeypatch.setitem(sys.modules, "feedparser", stub_feedparser)
+
+    sys.modules.pop("rss_morning.feeds", None)
+    feeds_module = importlib.import_module("rss_morning.feeds")
+
+    feed = FeedConfig(
+        category="Cat", title="Feed Title", url="https://timeout.example.com"
+    )
+    results = feeds_module.fetch_feed_entries(feed)
+
+    assert results == []

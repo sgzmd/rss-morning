@@ -1,6 +1,13 @@
 {% if fallback %}
 {{ fallback }}
 {% elif is_summary %}
+{% if payload.get("exec_summary") %}
+Executive Summary:
+{{ payload.get("exec_summary") }}
+
+----------------------------------------
+
+{% endif %}
 {% set summaries = payload.get("summaries") or [] %}
 {% if summaries %}
 {% for item in summaries -%}

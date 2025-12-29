@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Iterable, List, Optional
 
 import feedparser
+import requests
 from bs4 import BeautifulSoup
 import re
 
@@ -26,7 +27,15 @@ def to_datetime(value: Optional[time.struct_time]) -> datetime:
 def fetch_feed_entries(feed: FeedConfig) -> List[FeedEntry]:
     """Fetch entries from a single RSS feed definition."""
     logger.info("Fetching feed '%s' (%s)", feed.title, feed.url)
-    parsed = feedparser.parse(feed.url)
+    try:
+        response = requests.get(feed.url, timeout=10.0)
+        response.raise_for_status()
+        content = response.content
+    except requests.RequestException as e:
+        logger.warning("Failed to fetch feed '%s' (%s): %s", feed.title, feed.url, e)
+        return []
+
+    parsed = feedparser.parse(content)
     entries: List[FeedEntry] = []
 
     for entry in parsed.entries:

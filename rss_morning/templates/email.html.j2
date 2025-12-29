@@ -31,6 +31,14 @@
         {% if fallback %}
           <pre>{{ fallback }}</pre>
         {% elif is_summary %}
+          {% if payload.get("exec_summary") %}
+            <div class="card" style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 20px; margin-bottom: 24px;">
+              <div class="section-label" style="color: #1f2937; font-size: 14px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Executive Summary</div>
+              <p style="font-size: 16px; line-height: 1.7; color: #374151; margin: 0; font-family: Georgia, 'Times New Roman', serif;">
+                {{ payload.get("exec_summary") | nl2br }}
+              </p>
+            </div>
+          {% endif %}
           {% set summaries = payload.get("summaries") or [] %}
           {% if summaries %}
             {% for item in summaries %}
@@ -43,6 +51,11 @@
                   <div class="badge">Insight {{ loop.index }}</div>
                 {% endif %}
                 <h2>{{ summary.get("title") or "Update " ~ loop.index }}</h2>
+                {% if summary.get("rank-reasoning") %}
+                  <p style="font-style: italic; color: #666; font-size: 0.9em; margin-top: -8px; margin-bottom: 12px;">
+                    <strong>Why it matters:</strong> {{ summary.get("rank-reasoning") }}
+                  </p>
+                {% endif %}
                 {% if item.get("image") %}
                   <div class="media">
                     <img src="{{ item.get("image") }}" alt="{{ summary.get("title") or item.get("url") or "Summary image" }}" />

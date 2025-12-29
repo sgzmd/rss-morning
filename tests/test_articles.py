@@ -176,3 +176,7 @@ def test_truncate_text(monkeypatch):
 
     enc = tiktoken.get_encoding("cl100k_base")
     assert len(enc.encode(truncated)) == limit_tokens
+
+    # Verify default is 100
+    truncated_default = articles_module.truncate_text(original_text)
+    assert len(enc.encode(truncated_default)) == 100

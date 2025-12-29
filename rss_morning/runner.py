@@ -37,14 +37,15 @@ class RunConfig:
     cluster_threshold: float = 0.84
     save_articles_path: Optional[str] = None
     load_articles_path: Optional[str] = None
-    max_article_length: int = 5000
+    max_article_length: int = 100
     system_prompt: Optional[str] = None
     extractor: str = "newspaper"
-    concurrency: int = 10
+    concurrency: int = 20
     database_enabled: bool = False
     database_connection_string: Optional[str] = None
     embedding_provider: str = "fastembed"
     embedding_model: str = "intfloat/multilingual-e5-large"
+    llm_dry_run: bool = False
 
 
 @dataclass
@@ -162,7 +163,9 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                             "category": entry.category,
                             "title": cached["title"],
                             "summary": cached["summary"] or entry.summary or "",
-                            "text": cached["text"],
+                            "text": truncate_text(
+                                cached["text"], limit=config.max_article_length
+                            ),
                             "image": cached["image"],
                             "published": cached["published"].isoformat()
                             if cached.get("published")
@@ -326,9 +329,19 @@ def execute(config: RunConfig) -> RunResult:
             raise ValueError("Summary requested but no system_prompt configured.")
 
         summary_output, summary_data = generate_summary(
-            articles, config.system_prompt, return_dict=True
+            articles,
+            config.system_prompt,
+            return_dict=True,
+            dry_run=config.llm_dry_run,
         )
         output_text = summary_output
+
+        if config.llm_dry_run:
+            logger.info("LLM dry run completed. Exiting without sending email.")
+            return RunResult(
+                output_text=output_text, email_payload=None, is_summary=True
+            )
+
         if summary_data is not None:
             summary_data = _attach_summary_images(summary_data, articles)
             if isinstance(summary_data, dict) and "summaries" in summary_data:

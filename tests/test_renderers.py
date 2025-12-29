@@ -85,3 +85,33 @@ def test_build_email_html_handles_fallback():
         payload="raw text", is_summary=False, fallback="raw text"
     )
     assert "<pre>raw text</pre>" in html
+
+
+def test_build_email_html_includes_exec_summary():
+    payload = {
+        "exec_summary": "Top level summary.",
+        "summaries": [
+            {
+                "url": "https://example.com/a",
+                "summary": {
+                    "title": "Title",
+                    "what": "Thing",
+                },
+            }
+        ],
+    }
+
+    html = renderers.build_email_html(payload, is_summary=True)
+    assert "Top level summary." in html
+    assert "Executive Summary" in html
+
+
+def test_build_email_text_includes_exec_summary():
+    payload = {
+        "exec_summary": "Top level summary.",
+        "summaries": [],
+    }
+
+    text = renderers.build_email_text(payload, is_summary=True)
+    assert "Executive Summary:" in text
+    assert "Top level summary." in text

@@ -49,7 +49,8 @@ def generate_summary(
     articles: list[dict],
     system_prompt: str,
     return_dict: bool = False,
-    batch_size: int = 10,
+    batch_size: int = 100,
+    dry_run: bool = False,
 ) -> str | Tuple[str, Optional[dict]]:
     """Generate summary JSON for a list of articles."""
     if not articles:
@@ -73,6 +74,7 @@ def generate_summary(
     model = "gemini-flash-latest"
 
     combined_summaries = []
+    exec_summaries = []
 
     # Process articles in batches
     for i in range(0, len(articles), batch_size):
@@ -90,6 +92,15 @@ def generate_summary(
             # Construct input with system prompt and articles
             input_text = f"{system_prompt}\n\n{summary_input}"
             logger.debug("Gemini request payload: %s", input_text)
+
+            if dry_run:
+                logger.info(
+                    "DRY RUN: Prepared payload for batch %d: %s",
+                    (i // batch_size) + 1,
+                    input_text,
+                )
+                continue
+
             contents = [
                 types.Content(
                     role="user",
@@ -109,6 +120,10 @@ def generate_summary(
                     description="Top-level response structure expected from the LLM.",
                     required=["summaries"],
                     properties={
+                        "exec-summary": types.Schema(
+                            type=types.Type.STRING,
+                            description="Executive summary of the articles",
+                        ),
                         "summaries": types.Schema(
                             type=types.Type.ARRAY,
                             items=types.Schema(
@@ -128,6 +143,7 @@ def generate_summary(
                                         description="Fields describing the summary content.",
                                         required=[
                                             "title",
+                                            "rank-reasoning",
                                             "what",
                                             "so-what",
                                             "now-what",
@@ -136,6 +152,10 @@ def generate_summary(
                                             "title": types.Schema(
                                                 type=types.Type.STRING,
                                                 description="Generated title",
+                                            ),
+                                            "rank-reasoning": types.Schema(
+                                                type=types.Type.STRING,
+                                                description="Why this article was ranked highly",
                                             ),
                                             "what": types.Schema(
                                                 type=types.Type.STRING,
@@ -173,6 +193,10 @@ def generate_summary(
             # Parse JSON
             parsed = json.loads(response_text)
             batch_summaries = parsed.get("summaries", [])
+            exec_summary = parsed.get("exec-summary")
+            if exec_summary:
+                exec_summaries.append(exec_summary)
+
             logger.info("Got %d summaries from batch", len(batch_summaries))
             combined_summaries.extend(batch_summaries)
 
@@ -197,6 +221,9 @@ def generate_summary(
 
     # Final Combined Output
     final_obj = {"summaries": combined_summaries}
+    if exec_summaries:
+        final_obj["exec_summary"] = "\n\n".join(exec_summaries)
+
     rendered = json.dumps(final_obj, ensure_ascii=False, indent=2)
 
     # Note: If *all* batches fail, this will return an empty list of summaries,
@@ -209,6 +236,13 @@ def generate_summary(
     # If combined_summaries is empty and we had articles, maybe we still fallback?
     # Let's stick to returning what we got, or empty.
     # Users will prefer empty summaries over a crash or raw article dumps breaking the UI expectation usually.
+
+    if dry_run:
+        logger.info("DRY RUN: skipping API call.")
+        mock_resp = {"dry_run": True}
+        if return_dict:
+            return json.dumps(mock_resp), mock_resp
+        return json.dumps(mock_resp)
 
     if not combined_summaries and articles:
         logger.warning("No summaries were generated from any batch.")

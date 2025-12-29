@@ -51,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Load pre-fetched articles from PATH instead of fetching feeds.",
     )
+    parser.add_argument(
+        "--llm-dry-run",
+        action="store_true",
+        help="Prepare and log the LLM request without sending it to the API.",
+    )
 
     return parser
 
@@ -135,6 +140,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             database_connection_string=app_config.database.connection_string,
             embedding_provider=app_config.embeddings.provider,
             embedding_model=app_config.embeddings.model,
+            llm_dry_run=args.llm_dry_run,
         )
 
         config_dict = dataclasses.asdict(config)

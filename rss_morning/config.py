@@ -59,7 +59,7 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     prompt: Optional[str] = None
-    max_article_length: int = 5000
+    max_article_length: int = 100
     extractor: str = "newspaper"
     concurrency: int = 10
 
@@ -170,7 +170,7 @@ def parse_app_config(path: str) -> AppConfig:
     )
 
     summary = root.findtext("summary", "false").lower() == "true"
-    max_len = int(root.findtext("max-article-length", "5000"))
+    max_len = int(root.findtext("max-article-length", "100"))
 
     # Pre-filter
     pf_node = root.find("pre-filter")

@@ -80,7 +80,7 @@ def test_execute_summary_flow(monkeypatch):
 
     summary_payload = {"summaries": [{"url": "https://example.com"}]}
 
-    def fake_generate(articles, system_prompt, return_dict):
+    def fake_generate(articles, system_prompt, return_dict, **kwargs):
         return json.dumps(summary_payload), summary_payload
 
     monkeypatch.setattr(runner, "generate_summary", fake_generate)
@@ -530,3 +530,75 @@ def test_execute_with_database_caching(monkeypatch, tmp_path):
 
     assert len(fetch_calls) == 0
     assert payload2[0]["text"] == "Fetched Text"
+
+
+def test_execute_truncates_cached_content(monkeypatch, tmp_path):
+    """Verify that entries served from cache are also truncated."""
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_feed_entries",
+        lambda feed: [_feed_entry("https://example.com/db-trunc")],
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
+
+    # 1. First run stores a long string
+    long_text = "This is a very long text that should be truncated." * 20
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url, **kwargs: ArticleContent(text=long_text, image=None),
+    )
+    # On first run, we allow it to be stored full length (mocking truncate to no-op for storage simulation)
+    # OR we simulate that it WAS stored with old logic (long text).
+    # To simulate old storage, we can manually insert into DB or just allow truncate to return full text on first run.
+    # Let's say existing DB has long text.
+    # We'll rely on the fact that we can seed the DB or just run twice.
+    # If we run with a large limit first, then small limit second.
+
+    db_path = tmp_path / "test_rss_trunc.db"
+    conn_str = f"sqlite:///{db_path}"
+
+    config_large = RunConfig(
+        feeds_file="feeds.xml",
+        limit=1,
+        max_age_hours=None,
+        summary=False,
+        email_to=None,
+        database_enabled=True,
+        database_connection_string=conn_str,
+        max_article_length=10000,  # Large limit
+    )
+
+    # Use a real truncate or mock that respects limit?
+    # runner.truncate_text is imported. Let's mock it to behave "real-ish" or simply return full text if limit is high.
+    monkeypatch.setattr(
+        runner,
+        "truncate_text",
+        lambda text, limit=100: text[:limit] if text else text,
+    )
+
+    execute(config_large)
+
+    # 2. Second run with small limit should return truncated text from cache
+    config_small = RunConfig(
+        feeds_file="feeds.xml",
+        limit=1,
+        max_age_hours=None,
+        summary=False,
+        email_to=None,
+        database_enabled=True,
+        database_connection_string=conn_str,
+        max_article_length=10,  # Small limit
+    )
+
+    result = execute(config_small)
+    payload = json.loads(result.output_text)
+
+    # Should be truncated to 10 chars
+    assert len(payload[0]["text"]) == 10
+    assert payload[0]["text"] == long_text[:10]

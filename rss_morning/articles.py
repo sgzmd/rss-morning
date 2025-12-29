@@ -93,7 +93,7 @@ def _fetch_with_newspaper(url: str, timeout: int) -> ArticleContent:
     return ArticleContent(text=text, image=image)
 
 
-def truncate_text(value: str, limit: int = 300) -> str:
+def truncate_text(value: str, limit: int = 100) -> str:
     """Limit text length to the given number of tokens."""
     encoder = tiktoken.get_encoding("cl100k_base")
     tokens = encoder.encode(value)
