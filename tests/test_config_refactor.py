@@ -25,12 +25,15 @@ def test_parse_app_config(tmp_path):
     env_file = tmp_path / "env.xml"
     log_file = tmp_path / "app.log"
 
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("System Prompt content", encoding="utf-8")
+
     # Create dummy sibling files
     feeds_file.touch()
     env_file.touch()
 
     config_file.write_text(
-        textwrap.dedent("""
+        textwrap.dedent(f"""
             <config>
                 <feeds>feeds.xml</feeds>
                 <env>env.xml</env>
@@ -46,7 +49,7 @@ def test_parse_app_config(tmp_path):
                     <level>DEBUG</level>
                     <file>app.log</file>
                 </logging>
-                <prompt><![CDATA[System Prompt content]]></prompt>
+                <prompt file="{prompt_file.name}" />
             </config>
         """),
         encoding="utf-8",

@@ -74,3 +74,62 @@ def test_parse_app_config_database(tmp_path):
     config = parse_app_config(str(config_file))
     assert config.database.enabled is True
     assert config.database.connection_string == "sqlite:///test.db"
+
+
+def test_parse_app_config_prompt_loader(tmp_path):
+    from rss_morning.config import parse_app_config
+
+    config_file = tmp_path / "config.xml"
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_content = "Please summarize this."
+    prompt_file.write_text(prompt_content, encoding="utf-8")
+
+    config_file.write_text(
+        f"""
+        <config>
+            <feeds>feeds.xml</feeds>
+            <prompt file="{prompt_file.name}" />
+        </config>
+        """
+    )
+
+    (tmp_path / "feeds.xml").write_text("<opml><body></body></opml>")
+
+    config = parse_app_config(str(config_file))
+    assert config.prompt == prompt_content
+
+
+def test_parse_app_config_prompt_loader_missing_file_raises(tmp_path):
+    from rss_morning.config import parse_app_config
+
+    config_file = tmp_path / "config.xml"
+    config_file.write_text(
+        """
+        <config>
+            <feeds>feeds.xml</feeds>
+            <prompt file="missing.txt" />
+        </config>
+        """
+    )
+    (tmp_path / "feeds.xml").write_text("<opml><body></body></opml>")
+
+    with pytest.raises(ValueError, match="Prompt file not found"):
+        parse_app_config(str(config_file))
+
+
+def test_parse_app_config_prompt_missing_file_attr_raises(tmp_path):
+    from rss_morning.config import parse_app_config
+
+    config_file = tmp_path / "config.xml"
+    config_file.write_text(
+        """
+        <config>
+            <feeds>feeds.xml</feeds>
+            <prompt>Some inline text</prompt>
+        </config>
+        """
+    )
+    (tmp_path / "feeds.xml").write_text("<opml><body></body></opml>")
+
+    with pytest.raises(ValueError, match="Prompt element must have a 'file' attribute"):
+        parse_app_config(str(config_file))

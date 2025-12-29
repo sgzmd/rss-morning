@@ -104,3 +104,27 @@ def test_generate_summary_partial_failure(mock_genai_client):
 def test_generate_summary_empty_input():
     result = summaries.generate_summary([], "Prompt")
     assert json.loads(result) == {"summaries": []}
+
+
+def test_generate_summary_logging(mock_genai_client):
+    mock_client, mock_types = mock_genai_client
+
+    # Setup mock response
+    mock_client.models.generate_content_stream.return_value = [
+        MagicMock(text=json.dumps({"summaries": []}))
+    ]
+
+    articles = [{"url": "http://example.com/1", "title": "Title 1"}]
+
+    with patch("rss_morning.summaries.logger") as mock_logger:
+        summaries.generate_summary(articles, "System Prompt")
+
+        # Check if debug was called
+        # We expect at least two calls: one for request, one for response
+        assert mock_logger.debug.call_count >= 2
+
+        # Verify request logging - getting the actual call arguments might be verbose
+        # so just checking if we logged something that looks like our payload
+        request_calls = [args[0] for args, _ in mock_logger.debug.call_args_list]
+        assert any("Gemini request payload: %s" in str(arg) for arg in request_calls)
+        assert any("Gemini response text: %s" in str(arg) for arg in request_calls)

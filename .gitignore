@@ -3,7 +3,7 @@ feeds.xml
 out.json
 prompt.md
 __pycache__
-venv
+*venv
 docker-compose-private.yml
 docker-compose.override.yml
 rss-morning-*.log
@@ -17,7 +17,7 @@ logs/
 mylog.txt
 
 # Configs
-configs/*.xml
+configs/*
 !configs/*.xml.example
 *.db
 .*

@@ -88,13 +88,13 @@ def generate_summary(
             summary_input = build_summary_input(batch)
 
             # Construct input with system prompt and articles
+            input_text = f"{system_prompt}\n\n{summary_input}"
+            logger.debug("Gemini request payload: %s", input_text)
             contents = [
                 types.Content(
                     role="user",
                     parts=[
-                        types.Part.from_text(
-                            text=f"{system_prompt}\n\n{summary_input}"
-                        ),
+                        types.Part.from_text(text=input_text),
                     ],
                 ),
             ]
@@ -167,6 +167,8 @@ def generate_summary(
             ):
                 if chunk.text:
                     response_text += chunk.text
+
+            logger.debug("Gemini response text: %s", response_text)
 
             # Parse JSON
             parsed = json.loads(response_text)

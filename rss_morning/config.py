@@ -224,11 +224,17 @@ def parse_app_config(path: str) -> AppConfig:
 
     # Prompt
     prompt_node = root.find("prompt")
-    prompt = (
-        prompt_node.text.strip()
-        if prompt_node is not None and prompt_node.text
-        else None
-    )
+    prompt = None
+    if prompt_node is not None:
+        prompt_file = prompt_node.attrib.get("file")
+        if not prompt_file:
+            raise ValueError("Prompt element must have a 'file' attribute.")
+
+        full_prompt_path = _resolve_path(config_path, prompt_file)
+        try:
+            prompt = Path(full_prompt_path).read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            raise ValueError(f"Prompt file not found: {full_prompt_path}")
 
     extractor = root.findtext("extractor", "newspaper")
     concurrency = int(root.findtext("concurrency", "10"))
