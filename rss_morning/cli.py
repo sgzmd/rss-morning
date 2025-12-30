@@ -56,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Prepare and log the LLM request without sending it to the API.",
     )
+    parser.add_argument(
+        "--send-email-from-json",
+        metavar="PATH",
+        help="Send an email using the JSON payload from PATH, bypassing other processing.",
+    )
 
     return parser
 
@@ -117,7 +122,6 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         configure_logging(log_level, log_file)
 
-        # Create RunConfig
         config = RunConfig(
             feeds_file=app_config.feeds_file,
             limit=app_config.limit,
@@ -142,6 +146,22 @@ def main(argv: Optional[List[str]] = None) -> int:
             embedding_model=app_config.embeddings.model,
             llm_dry_run=args.llm_dry_run,
         )
+
+        if args.send_email_from_json:
+            import json
+            from . import emailing
+
+            with open(args.send_email_from_json, encoding="utf-8") as f:
+                payload = json.load(f)
+
+            emailing.send_email_report(
+                payload=payload,
+                is_summary=True,  # Assuming JSON dump is a summary payload
+                to_address=config.email_to,
+                from_address=config.email_from,
+                subject=config.email_subject,
+            )
+            return 0
 
         config_dict = dataclasses.asdict(config)
         config_dict["prompt"] = "***MASKED***"

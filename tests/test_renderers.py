@@ -22,8 +22,8 @@ def test_build_email_html_for_summary_payload():
 
     assert "API and Data Security" in html
     assert "Impact" in html
-    assert "View Article" in html
-    assert '<img src="https://example.com/image.jpg"' in html
+    assert "Read Source Intelligence" in html
+    assert 'src="https://example.com/image.jpg"' in html
 
 
 def test_build_email_text_for_articles_list():
@@ -76,7 +76,7 @@ def test_build_email_html_includes_article_image():
 
     html = renderers.build_email_html(payload, is_summary=False)
 
-    assert '<img src="https://example.com/hero.jpg"' in html
+    assert 'src="https://example.com/hero.jpg"' in html
     assert "Visual Story" in html
 
 
@@ -84,7 +84,8 @@ def test_build_email_html_handles_fallback():
     html = renderers.build_email_html(
         payload="raw text", is_summary=False, fallback="raw text"
     )
-    assert "<pre>raw text</pre>" in html
+    assert "raw text" in html
+    assert "<pre" in html
 
 
 def test_build_email_html_includes_exec_summary():

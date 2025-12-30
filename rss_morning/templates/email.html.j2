@@ -1,119 +1,240 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>RSS Morning Briefing</title>
-    <style>
-      body { font-family: Arial, sans-serif; background-color: #f5f5f5; color: #1a1a1a; margin: 0; padding: 24px; }
-      .container { max-width: 720px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-      header { background-color: #1f2937; color: #ffffff; padding: 24px; }
-      header h1 { margin: 0; font-size: 24px; }
-      .content { padding: 24px; }
-      .card { border-bottom: 1px solid #e5e7eb; padding: 16px 0; }
-      .card:last-child { border-bottom: none; }
-      .badge { display: inline-block; background-color: #2563eb; color: #ffffff; padding: 4px 8px; border-radius: 999px; font-size: 12px; margin-bottom: 12px; }
-      h2 { font-size: 20px; margin: 0 0 12px 0; }
-      p { margin: 8px 0; line-height: 1.6; }
-      a { color: #2563eb; text-decoration: none; }
-      footer { padding: 16px 24px; font-size: 12px; color: #6b7280; background-color: #f3f4f6; }
-      .section-label { font-weight: bold; color: #374151; text-transform: uppercase; font-size: 12px; letter-spacing: 0.08em; margin-bottom: 6px; }
-      .media { margin: 16px 0; border-radius: 12px; overflow: hidden; box-shadow: 0 12px 24px rgba(15,23,42,0.15); display: flex; justify-content: center; }
-      .media img { width: auto; max-width: 100%; height: auto; max-height: 400px; display: block; border: 0; }
-      .media-caption { font-size: 12px; color: #6b7280; text-align: right; margin-top: 6px; }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <header>
-        <h1>RSS Morning Briefing</h1>
-      </header>
-      <div class="content">
-        {% if fallback %}
-          <pre>{{ fallback }}</pre>
-        {% elif is_summary %}
-          {% if payload.get("exec_summary") %}
-            <div class="card" style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 20px; margin-bottom: 24px;">
-              <div class="section-label" style="color: #1f2937; font-size: 14px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Executive Summary</div>
-              <p style="font-size: 16px; line-height: 1.7; color: #374151; margin: 0; font-family: Georgia, 'Times New Roman', serif;">
-                {{ payload.get("exec_summary") | nl2br }}
-              </p>
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Sentinel - Security Brief Email</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Noto+Serif:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+<style>
+    body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        font-family: 'Inter', sans-serif;
+        margin: 0;
+        padding: 32px 0;
+    }
+    .dark body {
+        /* Default colors */
+    }
+    a { text-decoration: none; }
+    @media only screen and (max-width: 600px) {
+        .content-wrapper {
+            padding-left: 12px !important;
+            padding-right: 12px !important;
+        }
+        .card-padding {
+            padding-left: 20px !important;
+            padding-right: 20px !important;
+        }
+        .impact-box {
+            padding: 0 !important;
+        }
+        /* Allow full width images on mobile if needed */
+        .desktop-thumbnail {
+            display: none !important;
+        }
+        .mobile-thumbnail {
+            display: block !important;
+            width: 100% !important;
+            height: auto !important;
+            margin-bottom: 20px !important;
+        }
+        
+        /* Mobile Specific Header Adjustments for stacking */
+        .header-flex {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 8px !important;
+        }
+        .header-flex > div {
+            text-align: left !important;
+            width: 100% !important;
+        }
+    }
+</style>
+</head>
+<body style="font-family: 'Inter', sans-serif; margin: 0; padding: 0; min-height: 100vh">
+<div style="width: 100%; min-height: 100vh; padding: 32px 0">
+    <div class="content-wrapper" style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 16px; box-sizing: border-box">
+    
+<!-- Unified Header & Executive Summary Card -->
+<div style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); border-top: 4px solid #0052cc; margin-bottom: 24px; overflow: hidden">
+    <!-- Header Section -->
+    <div class="card-padding" style="padding: 24px 24px 0 24px">
+        <div class="header-flex" style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+            <div>
+                <h1 style="font-size: 24px; font-weight: 700; letter-spacing: -0.025em;  text-transform: uppercase; margin: 0">RSS Intelligence</h1>
+                <p style="font-size: 12px; font-weight: 600;  margin: 4px 0 0 0; letter-spacing: 0.1em; text-transform: uppercase">The Sentinel Digest</p>
             </div>
-          {% endif %}
-          {% set summaries = payload.get("summaries") or [] %}
-          {% if summaries %}
-            {% for item in summaries %}
-              {% set summary = item.get("summary") or {} %}
-              <div class="card">
-                {% set category = item.get("category") %}
-                {% if category %}
-                  <div class="badge">{{ category }}</div>
-                {% else %}
-                  <div class="badge">Insight {{ loop.index }}</div>
-                {% endif %}
-                <h2>{{ summary.get("title") or "Update " ~ loop.index }}</h2>
-                {% if summary.get("rank-reasoning") %}
-                  <p style="font-style: italic; color: #666; font-size: 0.9em; margin-top: -8px; margin-bottom: 12px;">
-                    <strong>Why it matters:</strong> {{ summary.get("rank-reasoning") }}
-                  </p>
-                {% endif %}
-                {% if item.get("image") %}
-                  <div class="media">
-                    <img src="{{ item.get("image") }}" alt="{{ summary.get("title") or item.get("url") or "Summary image" }}" />
-                  </div>
-                  {% if item.get("url") %}
-                    <div class="media-caption">Image from <a href="{{ item.get("url") }}" target="_blank" rel="noopener">source article</a></div>
-                  {% endif %}
-                {% endif %}
-                <div class="section-label">What</div>
-                <p>{{ summary.get("what") | nl2br or "—" }}</p>
-                <div class="section-label">So What</div>
-                <p>{{ summary.get("so-what") | nl2br or "—" }}</p>
-                <div class="section-label">Now What</div>
-                <p>{{ summary.get("now-what") | nl2br or "—" }}</p>
-                {% if item.get("url") %}
-                  <p><a href="{{ item.get("url") }}" target="_blank" rel="noopener">View Article</a></p>
-                {% endif %}
-              </div>
-            {% endfor %}
-          {% else %}
-            <p>No relevant articles identified.</p>
-          {% endif %}
-        {% else %}
-          {% set articles = payload %}
-          {% if articles %}
-            {% for article in articles %}
-              <div class="card">
-                {% if article.get("category") %}
-                  <div class="badge">{{ article.get("category") }}</div>
-                {% endif %}
-                <h2>{{ article.get("title") or article.get("url") or "Untitled Article" }}</h2>
-                {% if article.get("image") %}
-                  <div class="media">
-                    <img src="{{ article.get("image") }}" alt="{{ article.get("title") or "Article image" }}" />
-                  </div>
-                  {% if article.get("url") %}
-                    <div class="media-caption">Image from <a href="{{ article.get("url") }}" target="_blank" rel="noopener">source article</a></div>
-                  {% endif %}
-                {% endif %}
-                <div class="section-label">Summary</div>
-                <p>{{ article.get("summary") | nl2br or "—" }}</p>
-                {% if article.get("text") %}
-                  <div class="section-label">Excerpt</div>
-                  <p>{{ article.get("text") | nl2br }}</p>
-                {% endif %}
-                {% if article.get("url") %}
-                  <p><a href="{{ article.get("url") }}" target="_blank" rel="noopener">Read Full Article</a></p>
-                {% endif %}
-              </div>
-            {% endfor %}
-          {% else %}
-            <p>No articles retrieved.</p>
-          {% endif %}
-        {% endif %}
-      </div>
-      <footer>
-        Generated automatically by rss-morning.
-      </footer>
+            <div style="text-align: right">
+                <p style="font-size: 14px;  margin: 0">{{ date }}</p>
+                <p style="font-size: 12px;  margin: 2px 0 0 0">Prepared for <span style="font-weight: 600; ">You</span></p>
+            </div>
+        </div>
     </div>
-  </body>
+
+    <!-- Executive Summary Section (only if not fallback/summary list) -->
+    {% if is_summary and not fallback and payload.get("exec_summary") %}
+    <div class="card-padding" style="padding: 16px 24px 24px 24px">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
+             <!-- Icon removed per user feedback -->
+             <h2 style="font-size: 11px; font-weight: 700; letter-spacing: 0.15em;  text-transform: uppercase; margin: 0; line-height: 1">Executive Summary</h2>
+        </div>
+        <div>
+            <!-- Reduced font size to 15px -->
+            <!-- Reduced font size to 15px -->
+            <div style="font-family: 'Noto Serif', Georgia, serif; font-size: 15px; line-height: 1.6; margin: 0">
+                {{ payload.get("exec_summary") | markdown }}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if fallback %}
+    <pre style="background- padding: 24px; border-radius: 8px; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); overflow-x: auto; font-size: 14px; font-family: monospace;  margin: 0">{{ fallback }}</pre>
+{% else %}
+    {% if not is_summary %}
+        {% set articles = payload %}
+        {% for article in articles %}
+        <article style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); overflow: hidden; margin-bottom: 24px">
+            <div class="card-padding" style="padding: 24px 24px 8px 24px">
+                {% if article.get("image") %}
+                <!-- Mobile Full Width Thumbnail -->
+                <div class="mobile-thumbnail" style="display: none; width: 100%; margin-bottom: 16px">
+                    <img alt="{{ article.get('title') }}" src="{{ article.get('image') }}" style="width: 100%; height: auto; border-radius: 8px; display: block" />
+                </div>
+                {% endif %}
+                
+                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px">
+                    <div style="flex: 1">
+                        <h2 style="font-size: 20px; font-weight: 700;  line-height: 1.25; margin: 0 0 8px 0">
+                            {{ article.get("title") or article.get("url") }}
+                        </h2>
+                    </div>
+                    {% if article.get("image") %}
+                    <!-- Desktop Thumbnail -->
+                    <div class="desktop-thumbnail" style="display: block; flex-shrink: 0">
+                        <div style="width: 100px; height: 100px; border-radius: 8px; background- overflow: hidden">
+                            <img alt="{{ article.get('title') }}" src="{{ article.get('image') }}" style="width: 100%; height: 100%; object-fit: cover; display: block" />
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if article.get("summary") %}
+                    <div style="font-size: 16px;  line-height: 1.5; margin-bottom: 24px">
+                        {{ article.get("summary") | nl2br }}
+                    </div>
+                {% endif %}
+                
+                {% if article.get("text") and not article.get("summary") %}
+                    <div style="font-size: 16px;  line-height: 1.5; margin-bottom: 24px">
+                        {{ article.get("text") | nl2br }}
+                    </div>
+                {% endif %}
+            </div>
+            
+            <div class="card-padding" style="padding: 0 24px 24px 24px">
+                {% if article.get("url") %}
+                    <a href="{{ article.get('url') }}" style="display: inline-block;  font-weight: 500; font-size: 14px; text-decoration: none; border: 1px solid rgba(0, 82, 204, 0.3); border-radius: 4px; padding: 6px 12px; ">
+                        Read Full Article &#8599;
+                    </a>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    {% else %}
+        <!-- Executive Summary is now in the main header card -->
+
+        {% for item in payload.get("summaries", []) %}
+            {% set summary = item.get("summary", {}) %}
+            <article style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); overflow: hidden; margin-bottom: 24px">
+                <!-- Header Section -->
+                <div class="card-padding" style="padding: 24px 24px 8px 24px">
+                    {% if item.get("image") %}
+                    <!-- Mobile Thumbnail -->
+                    <div class="mobile-thumbnail" style="display: none; width: 100%; margin-bottom: 16px">
+                        <img alt="{{ summary.get('title') }}" src="{{ item.get('image') }}" style="width: 100%; height: auto; border-radius: 8px; display: block" />
+                    </div>
+                    {% endif %}
+
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px">
+                        <div style="flex: 1">
+                            <span style="display: inline-block; padding: 4px 8px; border-radius: 6px; background-  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 12px">
+                                {{ item.get("category", "General") }}
+                            </span>
+                            <h2 style="font-size: 20px; font-weight: 700;  line-height: 1.3; margin: 0 0 12px 0">
+                                {{ summary.get("title") }}
+                            </h2>
+                            {% if summary.get("rank-reasoning") %}
+                            <!-- "Why it matters" - Modernized: Standard font, distinguished by color only -->
+                            <p style="font-size: 16px;  margin: 0 0 16px 0; line-height: 1.5">
+                                <strong >Why it matters:</strong> {{ summary.get("rank-reasoning") }}
+                            </p>
+                            {% endif %}
+                        </div>
+                        {% if item.get("image") %}
+                        <!-- Desktop Thumbnail -->
+                        <div class="desktop-thumbnail" style="display: block; flex-shrink: 0">
+                            <div style="width: 100px; height: 100px; border-radius: 8px; background- overflow: hidden">
+                                <img alt="{{ summary.get('title') }}" src="{{ item.get('image') }}" style="width: 100%; height: 100%; object-fit: cover; display: block" />
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- WHAT Section - Unified Body Text -->
+                    <div style="font-size: 16px;  line-height: 1.6; margin-bottom: 24px">
+                        {{ summary.get("what") | nl2br }}
+                    </div>
+                </div>
+
+                <!-- IMPACT & ACTION - Clean Modern Layout -->
+                <div class="card-padding" style="padding: 0 24px 24px 24px">
+                    <!-- Key Takeaways Container -->
+                    <div class="impact-box">
+                        <!-- Impact -->
+                        <div style="margin-bottom: 16px">
+                            <h4 style="font-size: 11px; font-weight: 700;  text-transform: uppercase; margin: 0 0 4px 0; letter-spacing: 0.05em">Impact</h4>
+                            <p style="font-size: 15px;  line-height: 1.5; margin: 0">
+                                {{ summary.get("so-what") | nl2br }}
+                            </p>
+                        </div>
+                        
+                        <!-- Action Item -->
+                        <div>
+                            <h4 style="font-size: 11px; font-weight: 700;  text-transform: uppercase; margin: 0 0 4px 0; letter-spacing: 0.05em">Action Item</h4>
+                            <p style="font-size: 15px; font-weight: 500; ff; line-height: 1.5; margin: 0">
+                                {{ summary.get("now-what") | nl2br }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer Section -->
+                <div class="card-padding" style="padding: 0 24px 24px 24px">
+                    {% if item.get("url") %}
+                    <a href="{{ item.get('url') }}" style="display: inline-block; background-  font-weight: 600; font-size: 14px; text-decoration: none; border-radius: 4px; padding: 10px 16px; text-align: center">
+                        Read Source Intelligence
+                    </a>
+                    {% endif %}
+                </div>
+            </article>
+        {% endfor %}
+    {% endif %}
+{% endif %}
+
+<!-- Footer Module -->
+<footer style="text-align: center; padding: 24px 0; border-top: 1px solid #e5e7eb; margin-top: 16px">
+    <p style="font-size: 12px;  margin: 0 0 8px 0">Daily RSS Digest | Internal Use Only</p>
+    <p style="font-size: 12px;  margin: 0">
+        &copy; 2025 Coupang Security Team. All rights reserved. <br/>
+        This message contains confidential information.
+    </p>
+</footer>
+
+    </div><!-- End content-wrapper -->
+</div><!-- End background wrapper -->
+</body>
 </html>
