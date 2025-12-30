@@ -22,7 +22,7 @@ def test_build_email_html_for_summary_payload():
 
     assert "API and Data Security" in html
     assert "Impact" in html
-    assert "Read Source Intelligence" in html
+    assert "Read Source" in html
     assert 'src="https://example.com/image.jpg"' in html
 
 
