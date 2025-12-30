@@ -121,8 +121,11 @@ def generate_summary(
                     required=["summaries"],
                     properties={
                         "exec-summary": types.Schema(
-                            type=types.Type.STRING,
-                            description="Executive summary of the articles",
+                            type=types.Type.ARRAY,
+                            items=types.Schema(
+                                type=types.Type.STRING,
+                                description="Executive summary of the articles",
+                            ),
                         ),
                         "summaries": types.Schema(
                             type=types.Type.ARRAY,
@@ -195,7 +198,7 @@ def generate_summary(
             batch_summaries = parsed.get("summaries", [])
             exec_summary = parsed.get("exec-summary")
             if exec_summary:
-                exec_summaries.append(exec_summary)
+                exec_summaries.extend(exec_summary)
 
             logger.info("Got %d summaries from batch", len(batch_summaries))
             combined_summaries.extend(batch_summaries)
@@ -222,7 +225,7 @@ def generate_summary(
     # Final Combined Output
     final_obj = {"summaries": combined_summaries}
     if exec_summaries:
-        final_obj["exec_summary"] = "\n\n".join(exec_summaries)
+        final_obj["exec_summary"] = "\n".join(exec_summaries)
 
     rendered = json.dumps(final_obj, ensure_ascii=False, indent=2)
 

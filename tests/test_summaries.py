@@ -138,7 +138,7 @@ def test_generate_summary_extracts_exec_summary(mock_genai_client):
         MagicMock(
             text=json.dumps(
                 {
-                    "exec-summary": "This is an executive summary.",
+                    "exec-summary": ["- Point 1", "- Point 2"],
                     "summaries": [
                         {
                             "url": "http://example.com/1",
@@ -161,7 +161,7 @@ def test_generate_summary_extracts_exec_summary(mock_genai_client):
     result = json.loads(result_json)
 
     assert "exec_summary" in result
-    assert result["exec_summary"] == "This is an executive summary."
+    assert result["exec_summary"] == "- Point 1\n- Point 2"
 
 
 def test_generate_summary_dry_run(mock_genai_client):

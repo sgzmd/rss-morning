@@ -6,6 +6,7 @@ from importlib import resources
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
+from urllib.parse import urlparse
 
 _ENV: Environment | None = None
 
@@ -15,6 +16,20 @@ def _nl2br(value: str | None) -> Markup:
     if not value:
         return Markup("")
     return Markup("<br>".join(escape(value).splitlines()))
+
+
+def _extract_domain(value: str | None) -> str:
+    """Extract domain from URL."""
+    if not value:
+        return ""
+    try:
+        parsed = urlparse(value)
+        domain = parsed.netloc
+        if domain.startswith("www."):
+            domain = domain[4:]
+        return domain
+    except Exception:
+        return value or ""
 
 
 def _render_markdown(value: str | None) -> Markup:
@@ -61,5 +76,6 @@ def get_environment() -> Environment:
             lstrip_blocks=True,
         )
         _ENV.filters["nl2br"] = _nl2br
+        _ENV.filters["domain"] = _extract_domain
         _ENV.filters["markdown"] = _render_markdown
     return _ENV

@@ -166,7 +166,7 @@
                         <!-- Content -->
                         <div style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
                             {% if is_summary %}
-                            {{ article.get("what") | nl2br }}
+                            {{ article.get("what") | markdown }}
                             {% else %}
                             {{ (article.get("summary") or article.get("text")) | nl2br }}
                             {% endif %}
@@ -178,26 +178,24 @@
                             <strong
                                 style="font-size: 12px; color: #666666; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 4px;">Impact</strong>
                             <div style="font-size: 16px; line-height: 1.6; color: #333333;">{{ article.get("so-what") |
-                                nl2br }}</div>
+                                markdown }}</div>
                         </div>
                         <div>
                             <strong
                                 style="font-size: 12px; color: #666666; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 4px;">Action
                                 Item</strong>
                             <div style="font-size: 16px; line-height: 1.6; color: #333333;">{{ article.get("now-what") |
-                                nl2br }}</div>
+                                markdown }}</div>
                         </div>
                         {% endif %}
 
                         <!-- Read More Link -->
-                        {% if url %}
                         <div style="margin-top: 12px;">
                             <a href="{{ url }}"
                                 style="font-size: 14px; font-weight: 600; color: #0052cc; text-decoration: none;">
-                                Read Source &#8594;
+                                Read more on {{ url | domain }} &#8594;
                             </a>
                         </div>
-                        {% endif %}
 
                         <!-- Separator between articles -->
                         {% if not loop.last %}

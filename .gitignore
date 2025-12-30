@@ -23,3 +23,9 @@ configs/*
 .*
 *.opml 
 configs/queries.json
+gemini-response.json
+playground
+preview.html
+rss.log
+tmp/
+verify_email.py

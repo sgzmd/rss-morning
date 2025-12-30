@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urljoin
 
 from newspaper import Article, Config
 from newspaper.article import ArticleException
@@ -30,9 +31,14 @@ def fetch_article_content(
     logger.debug("Downloading article content from %s using %s", url, extractor)
 
     if extractor == "trafilatura":
-        return _fetch_with_trafilatura(url)
+        content = _fetch_with_trafilatura(url)
+    else:
+        content = _fetch_with_newspaper(url, timeout)
 
-    return _fetch_with_newspaper(url, timeout)
+    if content.image:
+        content.image = urljoin(url, content.image)
+
+    return content
 
 
 def _fetch_with_trafilatura(url: str) -> ArticleContent:
