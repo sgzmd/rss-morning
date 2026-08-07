@@ -5,14 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Optional, Tuple
 
 from bs4 import BeautifulSoup
 
 try:
     from google import genai
     from google.genai import types
-except Exception:  # pragma: no cover - optional dependency
+except ImportError:  # pragma: no cover - optional dependency
     genai = None
     types = None
 
@@ -51,7 +50,7 @@ def generate_summary(
     return_dict: bool = False,
     batch_size: int = 100,
     dry_run: bool = False,
-) -> str | Tuple[str, Optional[dict]]:
+) -> str | tuple[str, dict | None]:
     """Generate summary JSON for a list of articles."""
     if not articles:
         logger.info(

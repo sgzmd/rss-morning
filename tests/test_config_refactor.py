@@ -1,5 +1,6 @@
 import textwrap
-from rss_morning.config import parse_app_config, parse_env_config, AppConfig
+
+from rss_morning.config import AppConfig, parse_app_config, parse_env_config
 
 
 def test_parse_env_config(tmp_path):

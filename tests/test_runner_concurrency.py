@@ -1,9 +1,10 @@
 import time
 from datetime import datetime, timezone
-from rss_morning.models import FeedConfig, FeedEntry
+
+from rss_morning import runner
 from rss_morning.articles import ArticleContent
+from rss_morning.models import FeedConfig, FeedEntry
 from rss_morning.runner import RunConfig, execute
-import rss_morning.runner as runner
 
 
 def test_execute_runs_in_parallel(monkeypatch):

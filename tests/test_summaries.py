@@ -1,23 +1,26 @@
 import json
 import os
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from rss_morning import summaries
 
 
 @pytest.fixture
 def mock_genai_client():
-    with patch("rss_morning.summaries.genai") as mock_genai:
+    with (
+        patch("rss_morning.summaries.genai") as mock_genai,
+        patch("rss_morning.summaries.types") as _mock_types,
+    ):
         mock_client = MagicMock()
         mock_genai.Client.return_value = mock_client
-        # Ensure 'types' is also mocked as it's used for config
-        with patch("rss_morning.summaries.types") as mock_types:
-            with patch.dict(os.environ, {"GOOGLE_API_KEY": "dummy-key"}):
-                yield mock_client, mock_types
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "dummy-key"}):
+            yield mock_client, _mock_types
 
 
 def test_generate_summary_batching(mock_genai_client):
-    mock_client, mock_types = mock_genai_client
+    mock_client, _ = mock_genai_client
 
     # Setup mock response chunks
     def side_effect(model, contents, config):
@@ -55,7 +58,7 @@ def test_generate_summary_batching(mock_genai_client):
 
 
 def test_generate_summary_partial_failure(mock_genai_client):
-    mock_client, mock_types = mock_genai_client
+    mock_client, _ = mock_genai_client
 
     # 3 batches of 1
     articles = [
@@ -107,7 +110,7 @@ def test_generate_summary_empty_input():
 
 
 def test_generate_summary_logging(mock_genai_client):
-    mock_client, mock_types = mock_genai_client
+    mock_client, _ = mock_genai_client
 
     # Setup mock response
     mock_client.models.generate_content_stream.return_value = [
@@ -131,7 +134,7 @@ def test_generate_summary_logging(mock_genai_client):
 
 
 def test_generate_summary_extracts_exec_summary(mock_genai_client):
-    mock_client, mock_types = mock_genai_client
+    mock_client, _ = mock_genai_client
 
     # Mock response with exec-summary
     mock_client.models.generate_content_stream.return_value = [
@@ -169,7 +172,7 @@ def test_generate_summary_dry_run(mock_genai_client):
     articles = [{"url": "http://example.com/1", "title": "Title 1"}]
 
     with patch("rss_morning.summaries.logger") as mock_logger:
-        result_json, result_dict = summaries.generate_summary(
+        _result_json, result_dict = summaries.generate_summary(
             articles, "System Prompt", dry_run=True, return_dict=True
         )
 

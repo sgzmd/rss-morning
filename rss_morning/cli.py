@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 import os
-from pathlib import Path
-from typing import List, Optional
-
-import dataclasses
 import pprint
+from pathlib import Path
+
 from .config import parse_app_config, parse_env_config
 from .runner import RunConfig, execute
 
@@ -65,11 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def configure_logging(level_name: str, log_file: Optional[str] = None) -> None:
+def configure_logging(level_name: str, log_file: str | None = None) -> None:
     """Initialise logging according to options."""
     log_level = getattr(logging, level_name.upper(), None)
     if not isinstance(log_level, int):
-        raise ValueError(f"Unsupported log level: {level_name}")
+        raise TypeError(f"Unsupported log level: {level_name}")
 
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -102,7 +101,7 @@ def configure_logging(level_name: str, log_file: Optional[str] = None) -> None:
         )
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -153,6 +152,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         if args.send_email_from_json:
             import json
+
             from . import emailing
 
             with open(args.send_email_from_json, encoding="utf-8") as f:
@@ -180,7 +180,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (RuntimeError, FileNotFoundError) as exc:
         logger.error("%s", exc)
         return 1
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Unexpected error during execution.")
         return 1
 

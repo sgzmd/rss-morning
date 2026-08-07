@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 
 from .models import FeedConfig
@@ -16,9 +15,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PreFilterConfig:
     enabled: bool = False
-    embeddings_path: Optional[str] = None
+    embeddings_path: str | None = None
     cluster_threshold: float = 0.8
-    queries_file: Optional[str] = None
+    queries_file: str | None = None
 
 
 @dataclass
@@ -29,50 +28,50 @@ class EmbeddingsConfig:
 
 @dataclass
 class EmailConfig:
-    to_addr: Optional[str] = None
-    from_addr: Optional[str] = None
-    subject: Optional[str] = None
+    to_addr: str | None = None
+    from_addr: str | None = None
+    subject: str | None = None
 
 
 @dataclass
 class LoggingConfig:
     level: str = "INFO"
-    file: Optional[str] = None
+    file: str | None = None
 
 
 @dataclass
 class DatabaseConfig:
     enabled: bool = False
-    connection_string: Optional[str] = None
+    connection_string: str | None = None
 
 
 @dataclass
 class AppConfig:
     feeds_file: str
-    env_file: Optional[str]
+    env_file: str | None
     limit: int = 10
-    max_age_hours: Optional[float] = None
+    max_age_hours: float | None = None
     summary: bool = False
     pre_filter: PreFilterConfig = field(default_factory=PreFilterConfig)
     embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
-    prompt: Optional[str] = None
+    prompt: str | None = None
     max_article_length: int = 100
     extractor: str = "newspaper"
     concurrency: int = 10
 
 
-def parse_feeds_config(path: str) -> List[FeedConfig]:
+def parse_feeds_config(path: str) -> list[FeedConfig]:
     """Parse the OPML configuration file and return feed definitions."""
     logger.info("Loading feed configuration from %s", path)
     tree = ET.parse(path)
     root = tree.getroot()
     body = root.find("body")
-    feeds: List[FeedConfig] = []
+    feeds: list[FeedConfig] = []
 
-    def walk(outline: ET.Element, current_category: Optional[str]) -> None:
+    def walk(outline: ET.Element, current_category: str | None) -> None:
         title = outline.attrib.get("title") or outline.attrib.get("text")
         feed_url = outline.attrib.get("xmlUrl")
         outline_type = outline.attrib.get("type")
@@ -113,7 +112,7 @@ def _resolve_path(base_path: Path, target_path: str) -> str:
     return str((base_path.parent / target).resolve())
 
 
-def parse_env_config(path: str) -> Dict[str, str]:
+def parse_env_config(path: str) -> dict[str, str]:
     """Parse environment variables from XML."""
     env_vars = {}
     if not path:

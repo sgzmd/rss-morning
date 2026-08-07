@@ -67,7 +67,7 @@ def test_fetch_article_content_returns_text_and_image(monkeypatch):
 def test_fetch_article_content_handles_download_errors(monkeypatch):
     (
         articles_module,
-        article_exception,
+        _,
     ) = _install_article_dependencies(
         monkeypatch, download_error=Exception("download boom")
     )

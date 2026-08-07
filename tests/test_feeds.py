@@ -2,7 +2,7 @@ import importlib
 import sys
 import time
 import types
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from rss_morning.models import FeedConfig, FeedEntry
 

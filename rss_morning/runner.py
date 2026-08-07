@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import concurrent.futures
-from typing import Any, List, Optional
+from typing import Any
 
+from . import db
 from .articles import fetch_article_content, truncate_text
 from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
 from .summaries import generate_summary
-from . import db
 
 logger = logging.getLogger(__name__)
 
@@ -26,23 +26,23 @@ class RunConfig:
 
     feeds_file: str
     limit: int
-    max_age_hours: Optional[float]
+    max_age_hours: float | None
     summary: bool
     pre_filter: bool = False
-    pre_filter_embeddings_path: Optional[str] = None
-    pre_filter_queries_file: Optional[str] = None
-    email_to: Optional[str] = None
-    email_from: Optional[str] = None
-    email_subject: Optional[str] = None
+    pre_filter_embeddings_path: str | None = None
+    pre_filter_queries_file: str | None = None
+    email_to: str | None = None
+    email_from: str | None = None
+    email_subject: str | None = None
     cluster_threshold: float = 0.84
-    save_articles_path: Optional[str] = None
-    load_articles_path: Optional[str] = None
+    save_articles_path: str | None = None
+    load_articles_path: str | None = None
     max_article_length: int = 100
-    system_prompt: Optional[str] = None
+    system_prompt: str | None = None
     extractor: str = "newspaper"
     concurrency: int = 20
     database_enabled: bool = False
-    database_connection_string: Optional[str] = None
+    database_connection_string: str | None = None
     embedding_provider: str = "fastembed"
     embedding_model: str = "intfloat/multilingual-e5-large"
     llm_dry_run: bool = False
@@ -57,7 +57,7 @@ class RunResult:
     is_summary: bool
 
 
-def _load_articles_from_file(path: str) -> List[dict]:
+def _load_articles_from_file(path: str) -> list[dict]:
     location = Path(path)
     try:
         payload = json.loads(location.read_text(encoding="utf-8"))
@@ -67,19 +67,19 @@ def _load_articles_from_file(path: str) -> List[dict]:
         raise RuntimeError(f"Article snapshot is not valid JSON: {location}") from exc
 
     if not isinstance(payload, list):
-        raise RuntimeError("Article snapshot must contain a JSON array.")
+        raise TypeError("Article snapshot must contain a JSON array.")
 
-    articles: List[dict] = []
+    articles: list[dict] = []
     for item in payload:
         if not isinstance(item, dict):
-            raise RuntimeError("Article snapshot must contain objects only.")
+            raise TypeError("Article snapshot must contain objects only.")
         articles.append(dict(item))
 
     logger.info("Loaded %d articles from %s", len(articles), location)
     return articles
 
 
-def _save_articles_to_file(path: str, articles: List[dict]) -> None:
+def _save_articles_to_file(path: str, articles: list[dict]) -> None:
     location = Path(path)
     if location.parent and not location.parent.exists():
         location.parent.mkdir(parents=True, exist_ok=True)
@@ -91,12 +91,12 @@ def _save_articles_to_file(path: str, articles: List[dict]) -> None:
     logger.info("Saved %d articles to %s", len(serialisable), location)
 
 
-def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
+def _collect_entries(config: RunConfig, session_factory=None) -> list[dict]:
     feeds = parse_feeds_config(config.feeds_file)
     if not feeds:
         raise RuntimeError("No feeds found in the configuration.")
 
-    cutoff: Optional[datetime] = None
+    cutoff: datetime | None = None
     if config.max_age_hours is not None:
         if config.max_age_hours <= 0:
             raise ValueError("--max-age-hours must be positive.")
@@ -219,7 +219,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
     return output
 
 
-def _attach_summary_images(summary_payload: Any, source_articles: List[dict]) -> Any:
+def _attach_summary_images(summary_payload: Any, source_articles: list[dict]) -> Any:
     """Populate missing image fields in summary payload using original articles."""
     if not isinstance(summary_payload, dict):
         return summary_payload

@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
-from typing import List, Protocol, Sequence
-
-from openai import OpenAI
-from fastembed import TextEmbedding
-from tqdm import tqdm
-import sys
 import logging
+import math
+import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Protocol
+
+from fastembed import TextEmbedding
+from openai import OpenAI
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
 
-def normalise_vector(vector: Sequence[float]) -> List[float]:
+def normalise_vector(vector: Sequence[float]) -> list[float]:
     """Return the L2-normalised form of the vector."""
     norm = math.sqrt(sum(component * component for component in vector))
     if norm == 0:
@@ -26,7 +27,7 @@ def normalise_vector(vector: Sequence[float]) -> List[float]:
 class EmbeddingBackend(Protocol):
     """Minimal protocol for embedding providers."""
 
-    def embed(self, texts: Sequence[str]) -> List[List[float]]:
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """Return embeddings for the provided texts."""
 
 
@@ -38,7 +39,7 @@ class OpenAIEmbeddingBackend:
     model: str
     batch_size: int
 
-    def embed(self, texts: Sequence[str]) -> List[List[float]]:
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
             return []
 
@@ -46,7 +47,7 @@ class OpenAIEmbeddingBackend:
         if embeddings_api is None:
             raise RuntimeError("OpenAI client does not expose embeddings API")
 
-        vectors: List[List[float]] = []
+        vectors: list[list[float]] = []
         for start in range(0, len(texts), self.batch_size):
             batch = texts[start : start + self.batch_size]
             response = embeddings_api.create(model=self.model, input=batch)
@@ -67,7 +68,7 @@ class FastEmbedBackend:
         # The model is downloaded automatically if needed
         self._model = TextEmbedding(model_name=self.model_name)
 
-    def embed(self, texts: Sequence[str]) -> List[List[float]]:
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
             return []
 

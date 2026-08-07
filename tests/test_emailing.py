@@ -1,6 +1,5 @@
 import types
 
-
 from rss_morning import emailing
 
 

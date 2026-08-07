@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from importlib import resources
+from urllib.parse import urlparse
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
-from urllib.parse import urlparse
 
 _ENV: Environment | None = None
 
@@ -25,10 +25,9 @@ def _extract_domain(value: str | None) -> str:
     try:
         parsed = urlparse(value)
         domain = parsed.netloc
-        if domain.startswith("www."):
-            domain = domain[4:]
+        domain = domain.removeprefix("www.")
         return domain
-    except Exception:
+    except (AttributeError, TypeError):
         return value or ""
 
 
@@ -38,8 +37,8 @@ def _render_markdown(value: str | None) -> Markup:
         return Markup("")
 
     # Import locally to avoiding hard dependency if filter isn't used
-    from markdown_it import MarkdownIt
     import bleach
+    from markdown_it import MarkdownIt
 
     md = MarkdownIt("commonmark", {"breaks": True, "html": False})
     html = md.render(value)

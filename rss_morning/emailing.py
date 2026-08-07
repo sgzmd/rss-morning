@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 from .renderers import build_email_html, build_email_text
 
@@ -20,8 +20,8 @@ def send_email_report(
     payload: Any,
     is_summary: bool,
     to_address: str,
-    from_address: Optional[str] = None,
-    subject: Optional[str] = None,
+    from_address: str | None = None,
+    subject: str | None = None,
 ) -> None:
     """Send the prepared report via Resend."""
     if resend is None:
@@ -44,7 +44,7 @@ def send_email_report(
         )
         return
 
-    fallback_text: Optional[str]
+    fallback_text: str | None
     if isinstance(payload, str):
         fallback_text = payload
     elif isinstance(payload, (list, dict)):

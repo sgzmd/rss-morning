@@ -4,6 +4,7 @@ import pathlib
 import shutil
 import sys
 import types
+
 import pytest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent

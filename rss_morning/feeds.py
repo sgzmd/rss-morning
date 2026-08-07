@@ -3,28 +3,28 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
+from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Iterable, List, Optional
 
 import feedparser
 import requests
 from bs4 import BeautifulSoup
-import re
 
 from .models import FeedConfig, FeedEntry
 
 logger = logging.getLogger(__name__)
 
 
-def to_datetime(value: Optional[time.struct_time]) -> datetime:
+def to_datetime(value: time.struct_time | None) -> datetime:
     """Convert feedparser timestamps to timezone-aware datetimes."""
     if value is None:
         return datetime.min.replace(tzinfo=timezone.utc)
     return datetime.fromtimestamp(time.mktime(value), tz=timezone.utc)
 
 
-def fetch_feed_entries(feed: FeedConfig) -> List[FeedEntry]:
+def fetch_feed_entries(feed: FeedConfig) -> list[FeedEntry]:
     """Fetch entries from a single RSS feed definition."""
     logger.info("Fetching feed '%s' (%s)", feed.title, feed.url)
     try:
@@ -36,7 +36,7 @@ def fetch_feed_entries(feed: FeedConfig) -> List[FeedEntry]:
         return []
 
     parsed = feedparser.parse(content)
-    entries: List[FeedEntry] = []
+    entries: list[FeedEntry] = []
 
     for entry in parsed.entries:
         link = getattr(entry, "link", None)
@@ -93,12 +93,12 @@ def _strip_html(raw_value: str) -> str:
 def select_recent_entries(
     entries: Iterable[FeedEntry],
     limit: int,
-    cutoff: Optional[datetime] = None,
-) -> List[FeedEntry]:
+    cutoff: datetime | None = None,
+) -> list[FeedEntry]:
     """Return the newest unique entries respecting limit and optional cutoff."""
     sorted_entries = sorted(entries, key=lambda item: item.published, reverse=True)
     seen_links = set()
-    unique_entries: List[FeedEntry] = []
+    unique_entries: list[FeedEntry] = []
 
     for entry in sorted_entries:
         if cutoff and entry.published < cutoff:

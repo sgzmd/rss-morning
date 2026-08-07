@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -24,4 +23,4 @@ class FeedEntry:
     category: str
     title: str
     published: datetime
-    summary: Optional[str] = None
+    summary: str | None = None

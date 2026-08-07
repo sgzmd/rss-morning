@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
 from sqlalchemy import (
     Column,
@@ -50,7 +49,7 @@ class EmbeddingModel(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
-def init_engine(connection_string: Optional[str]) -> Optional[Engine]:
+def init_engine(connection_string: str | None) -> Engine | None:
     """Initialize the database engine."""
     if not connection_string:
         return None
@@ -66,7 +65,7 @@ def get_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine)
 
 
-def get_article(session: Session, url: str) -> Optional[dict]:
+def get_article(session: Session, url: str) -> dict | None:
     """Retrieve an article from the cache."""
     stmt = select(ArticleModel).where(ArticleModel.url == url)
     result = session.execute(stmt).scalar_one_or_none()
@@ -129,8 +128,8 @@ def upsert_article(session: Session, data: dict) -> None:
 
 
 def get_embeddings(
-    session: Session, urls: List[str], backend_key: str
-) -> Dict[str, bytes]:
+    session: Session, urls: list[str], backend_key: str
+) -> dict[str, bytes]:
     """Batch retrieve embeddings for a list of URLs and a specific backend."""
     if not urls:
         return {}
@@ -144,7 +143,7 @@ def get_embeddings(
 
 
 def upsert_embeddings(
-    session: Session, data: Dict[str, bytes], backend_key: str
+    session: Session, data: dict[str, bytes], backend_key: str
 ) -> None:
     """Batch insert embeddings."""
     if not data:

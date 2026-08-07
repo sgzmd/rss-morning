@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-from typing import List, Optional
 
 from .prefilter import (
     EmbeddingArticleFilter,
@@ -56,7 +55,7 @@ def configure_logging() -> None:
     )
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -70,7 +69,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         export_security_query_embeddings(args.output, config=config, queries=queries)
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Failed to export query embeddings.")
         return 1
 

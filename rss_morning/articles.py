@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import urljoin
 
+import tiktoken
+import trafilatura
 from newspaper import Article, Config
 from newspaper.article import ArticleException
-import trafilatura
-
-import tiktoken
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +18,8 @@ logger = logging.getLogger(__name__)
 class ArticleContent:
     """Structured content retrieved from an article."""
 
-    text: Optional[str]
-    image: Optional[str]
+    text: str | None
+    image: str | None
 
 
 def fetch_article_content(
@@ -63,11 +61,10 @@ def _fetch_with_trafilatura(url: str) -> ArticleContent:
 
         return ArticleContent(text=text, image=image)
 
-    except Exception as exc:
+    except Exception:  # noqa: BLE001, BLE002 - trafilatura may raise various exceptions
         logger.warning(
-            "Unexpected error while processing article %s with trafilatura: %s",
+            "Unexpected error while processing article %s with trafilatura",
             url,
-            exc,
         )
         return ArticleContent(text=None, image=None)
 

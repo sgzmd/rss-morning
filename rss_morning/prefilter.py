@@ -5,24 +5,16 @@ from __future__ import annotations
 import json
 import logging
 import random
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Sequence,
-    Tuple,
-    Dict,
-)
+from typing import ClassVar
 
 import numpy as np
 from openai import OpenAI
 
-from .embeddings import EmbeddingBackend, FastEmbedBackend, OpenAIEmbeddingBackend
 from . import db
+from .embeddings import EmbeddingBackend, FastEmbedBackend, OpenAIEmbeddingBackend
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +27,7 @@ DEFAULT_QUERIES_FILE = PROJECT_ROOT / "queries.txt"
 EXAMPLE_QUERIES_FILE = PROJECT_ROOT / "queries.example.txt"
 
 
-def _load_queries_from_path(path: Path) -> Dict[str, Tuple[str, ...]]:
+def _load_queries_from_path(path: Path) -> dict[str, tuple[str, ...]]:
     if not path.is_file():
         raise FileNotFoundError(path)
 
@@ -56,8 +48,7 @@ def _load_queries_from_path(path: Path) -> Dict[str, Tuple[str, ...]]:
                     "General": tuple(str(x).strip() for x in data if str(x).strip())
                 }
         except json.JSONDecodeError:
-            pass  # Fallthrough to text handling or raise? Better to fail if .json extension.
-            raise
+            pass  # Fallthrough to text handling
 
     lines = [
         line.strip()
@@ -67,7 +58,7 @@ def _load_queries_from_path(path: Path) -> Dict[str, Tuple[str, ...]]:
     return {"General": tuple(lines)}
 
 
-def load_queries(queries_path: Optional[str] = None) -> Dict[str, Tuple[str, ...]]:
+def load_queries(queries_path: str | None = None) -> dict[str, tuple[str, ...]]:
     """Load security queries from a file, falling back to the example file.
 
     Returns a dictionary mapping category names to tuples of query strings.
@@ -109,11 +100,14 @@ class _EmbeddingConfig:
 class EmbeddingArticleFilter:
     """Embedding-powered article filter that keeps security-relevant content."""
 
-    CONFIG = _EmbeddingConfig()
-    CONFIG = _EmbeddingConfig()
-    DEFAULT_QUERIES: Dict[str, Tuple[str, ...]] = load_queries()
-    _cached_query_embeddings: Dict[Tuple[Tuple[str, ...], str], List[List[float]]] = {}
-    _cached_centroids: Dict[Tuple[Tuple[str, ...], ...], Dict[str, np.ndarray]] = {}
+    CONFIG: ClassVar[_EmbeddingConfig] = _EmbeddingConfig()
+    DEFAULT_QUERIES: ClassVar[dict[str, tuple[str, ...]]] = load_queries()
+    _cached_query_embeddings: ClassVar[
+        dict[tuple[tuple[str, ...], str], list[list[float]]]
+    ] = {}
+    _cached_centroids: ClassVar[
+        dict[tuple[tuple[str, ...], ...], dict[str, np.ndarray]]
+    ] = {}
 
     @dataclass
     class _ScoredArticle:
@@ -124,19 +118,19 @@ class EmbeddingArticleFilter:
 
     def __init__(
         self,
-        client: Optional[OpenAI] = None,
+        client: OpenAI | None = None,
         *,
-        backend: Optional[EmbeddingBackend] = None,
-        query_embeddings_path: Optional[str] = None,
-        queries_file: Optional[str] = None,
-        queries: Optional[Dict[str, Sequence[str]]] = None,
-        config: Optional[_EmbeddingConfig] = None,
+        backend: EmbeddingBackend | None = None,
+        query_embeddings_path: str | None = None,
+        queries_file: str | None = None,
+        queries: dict[str, Sequence[str]] | None = None,
+        config: _EmbeddingConfig | None = None,
         session_factory=None,
     ):
         self._config = config or self.CONFIG
         self._session_factory = session_factory
         # Not fully supported with centroids yet, might need refactor or removal
-        self._query_embeddings_override: Optional[List[List[float]]] = None
+        self._query_embeddings_override: list[list[float]] | None = None
 
         if backend is not None and client is not None:
             logger.info(
@@ -153,7 +147,7 @@ class EmbeddingArticleFilter:
         else:
             loaded_queries = self.DEFAULT_QUERIES
 
-        self._queries: Dict[str, Tuple[str, ...]] = loaded_queries
+        self._queries: dict[str, tuple[str, ...]] = loaded_queries
         if backend is not None:
             self._backend = backend
         elif self._config.provider == "fastembed":
@@ -173,16 +167,16 @@ class EmbeddingArticleFilter:
         # If we need it back, we need to restructure the cache format.
 
     @property
-    def queries(self) -> Dict[str, Tuple[str, ...]]:
+    def queries(self) -> dict[str, tuple[str, ...]]:
         return self._queries
 
     def filter(
         self,
         articles: Iterable[Article],
         *,
-        cluster_threshold: Optional[float] = None,
-        rng: Optional[random.Random] = None,
-    ) -> List[MutableArticle]:
+        cluster_threshold: float | None = None,
+        rng: random.Random | None = None,
+    ) -> list[MutableArticle]:
         """Return the list of articles that pass the embedding filter."""
         materialized = [dict(article) for article in articles]
         if not materialized:
@@ -198,7 +192,7 @@ class EmbeddingArticleFilter:
             article_texts = [self._compose_article_text(item) for item in materialized]
             article_urls = [str(item.get("url")) for item in materialized]
             raw_vectors = self._embed_texts(article_texts, urls=article_urls)
-            article_vectors: List[np.ndarray] = []
+            article_vectors: list[np.ndarray] = []
             for vector in raw_vectors or []:
                 arr = np.asarray(vector, dtype=float)
                 norm = float(np.linalg.norm(arr))
@@ -218,8 +212,8 @@ class EmbeddingArticleFilter:
 
             threshold = self._config.threshold
             # We will group scored items by category
-            scored_by_category: Dict[
-                str, List[EmbeddingArticleFilter._ScoredArticle]
+            scored_by_category: dict[
+                str, list[EmbeddingArticleFilter._ScoredArticle]
             ] = {}
 
             for original, vector in zip(materialized, article_vectors):
@@ -242,7 +236,7 @@ class EmbeddingArticleFilter:
             retained = []
             max_size = self._config.max_cluster_size
 
-            for category, items in scored_by_category.items():
+            for items in scored_by_category.values():
                 # Sort descending by score
                 items.sort(key=lambda x: x.score, reverse=True)
 
@@ -290,13 +284,13 @@ class EmbeddingArticleFilter:
                 len(scored_by_category),
             )
             return retained
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception(
                 "Embedding pre-filter encountered an error; returning all articles."
             )
             return materialized
 
-    def _get_category_centroids(self) -> Dict[str, np.ndarray]:
+    def _get_category_centroids(self) -> dict[str, np.ndarray]:
         """Fetch and cache centroids for the security query categories."""
         # Use a tuple of sorted items as a stable key for caching
         queries_key = tuple(sorted((k, tuple(v)) for k, v in self._queries.items()))
@@ -325,8 +319,8 @@ class EmbeddingArticleFilter:
         return centroids
 
     def _embed_texts(
-        self, texts: Sequence[str], urls: Optional[Sequence[str]] = None
-    ) -> List[List[float]]:
+        self, texts: Sequence[str], urls: Sequence[str] | None = None
+    ) -> list[list[float]]:
         """Generate normalised embedding vectors for the given texts."""
         if not self._session_factory or not urls:
             return self._backend.embed(texts)
@@ -338,7 +332,7 @@ class EmbeddingArticleFilter:
         # Determine which texts need embedding
         missing_indices = []
         missing_texts = []
-        ordered_vectors: List[Optional[List[float]]] = [None] * len(texts)
+        ordered_vectors: list[list[float] | None] = [None] * len(texts)
 
         for idx, (text, url) in enumerate(zip(texts, urls)):
             if url in cached:
@@ -356,7 +350,7 @@ class EmbeddingArticleFilter:
                 # Handling here: JSON string -> bytes.
                 try:
                     ordered_vectors[idx] = json.loads(cached[url].decode("utf-8"))
-                except Exception:
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     logger.warning("Failed to decode vector for %s, re-embedding", url)
                     missing_indices.append(idx)
                     missing_texts.append(text)
@@ -392,7 +386,7 @@ class EmbeddingArticleFilter:
 
         return final_vectors  # type: ignore
 
-    def _load_query_embeddings(self, path: Path) -> Optional[List[List[float]]]:
+    def _load_query_embeddings(self, path: Path) -> list[list[float]] | None:
         try:
             payload = json.loads(path.read_text())
         except FileNotFoundError:
@@ -452,10 +446,10 @@ class EmbeddingArticleFilter:
     def _score_against_centroids(
         self,
         article_vector: Sequence[float],
-        centroids: Dict[str, np.ndarray],
-    ) -> Tuple[Optional[str], float]:
+        centroids: dict[str, np.ndarray],
+    ) -> tuple[str | None, float]:
         """Return the category and score of the best matching centroid."""
-        best_cat: Optional[str] = None
+        best_cat: str | None = None
         best_score = float("-inf")
 
         for category, centroid in centroids.items():
@@ -476,8 +470,8 @@ class EmbeddingArticleFilter:
         self,
         kernel: _ScoredArticle,
         others: Sequence[_ScoredArticle],
-        limit: Optional[int] = None,
-    ) -> List[Dict[str, object]]:
+        limit: int | None = None,
+    ) -> list[dict[str, object]]:
         if not others:
             return []
 
@@ -513,10 +507,10 @@ class EmbeddingArticleFilter:
 def export_security_query_embeddings(
     output_path: str,
     *,
-    config: Optional[_EmbeddingConfig] = None,
-    client: Optional[OpenAI] = None,
-    queries_file: Optional[str] = None,
-    queries: Optional[Sequence[str]] = None,
+    config: _EmbeddingConfig | None = None,
+    client: OpenAI | None = None,
+    queries_file: str | None = None,
+    queries: Sequence[str] | None = None,
 ) -> Path:
     """Persist embeddings for the security queries to disk."""
     export_config = config or EmbeddingArticleFilter.CONFIG

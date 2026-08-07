@@ -1,5 +1,6 @@
 from unittest.mock import patch
-from rss_morning.articles import fetch_article_content, ArticleContent
+
+from rss_morning.articles import ArticleContent, fetch_article_content
 
 
 @patch("rss_morning.articles._fetch_with_newspaper")

@@ -2,7 +2,7 @@ import logging
 from types import SimpleNamespace
 
 from rss_morning import cli
-from rss_morning.config import AppConfig, LoggingConfig, PreFilterConfig, EmailConfig
+from rss_morning.config import AppConfig, EmailConfig, LoggingConfig, PreFilterConfig
 
 
 def test_configure_logging_defaults_to_console_only(monkeypatch, tmp_path):

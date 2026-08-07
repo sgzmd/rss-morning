@@ -1,14 +1,13 @@
-import requests.adapters  # noqa: F401
-
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
+import requests.adapters  # noqa: F401
 
+from rss_morning import runner
 from rss_morning.articles import ArticleContent
 from rss_morning.models import FeedConfig, FeedEntry
 from rss_morning.runner import RunConfig, execute
-import rss_morning.runner as runner
 
 
 def _feed_entry(link: str) -> FeedEntry:

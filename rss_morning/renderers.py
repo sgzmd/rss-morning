@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from datetime import timezone
 from typing import Any
 
 from .templating import get_environment
@@ -14,7 +15,7 @@ def build_email_html(
     """Render the HTML email body using the Jinja2 template."""
     env = get_environment()
     template = env.get_template("email.html.j2")
-    today = datetime.date.today().strftime("%B %d, %Y")
+    today = datetime.datetime.now(timezone.utc).date().strftime("%B %d, %Y")
     return template.render(
         payload=payload, is_summary=is_summary, fallback=fallback, date=today
     )
