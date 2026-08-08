@@ -13,6 +13,11 @@ repos:
     hooks:
     -   id: pytest
         name: pytest
-        entry: ./venv/bin/python -m pytest
+        entry: python -m pytest
+        language: system
+        pass_filenames: false
+    -   id: mypy
+        name: mypy
+        entry: python -m mypy rss_morning main.py
         language: system
         pass_filenames: false

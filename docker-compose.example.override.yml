@@ -1,15 +1,11 @@
-version: "3.9"
-
 services:
   rss-morning:
-    # Override the default command to customise scheduling, limits, or notification settings.
-    command: >
-      -n 10
-      --max-age-hours 24
-      --summary
-      --email-to alerts@example.com
-      --email-from no-reply@example.com
-      --log-level INFO
+    command: --config /app/configs/config.xml
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./feeds.xml:/app/feeds.xml:ro
+      - ./prompt.md:/app/prompt.md:ro
+      - ./queries.txt:/app/queries.txt:ro
     environment:
       RESEND_API_KEY: ""
       RESEND_FROM_EMAIL: "no-reply@example.com"

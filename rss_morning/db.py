@@ -164,7 +164,6 @@ def upsert_embeddings(
     for url, vector in data.items():
         if url in existing_objs:
             existing_objs[url].vector = vector
-            # existing_objs[url].created_at = datetime.now(timezone.utc) # Keep original creation time? Or update? Let's keep original.
         else:
             new_embedding = EmbeddingModel(
                 url=url,

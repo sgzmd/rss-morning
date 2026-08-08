@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover
 def send_email_report(
     payload: Any,
     is_summary: bool,
-    to_address: str,
+    to_address: Optional[str],
     from_address: Optional[str] = None,
     subject: Optional[str] = None,
 ) -> None:

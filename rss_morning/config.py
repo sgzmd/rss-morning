@@ -115,7 +115,7 @@ def _resolve_path(base_path: Path, target_path: str) -> str:
 
 def parse_env_config(path: str) -> Dict[str, str]:
     """Parse environment variables from XML."""
-    env_vars = {}
+    env_vars: Dict[str, str] = {}
     if not path:
         return env_vars
 

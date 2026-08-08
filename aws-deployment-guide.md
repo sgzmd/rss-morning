@@ -1,125 +1,121 @@
-# AWS Deployment Guide for rss-morning
+# AWS deployment guide
 
-## Executive Summary
-This document outlines the strategy to deploy `rss-morning` to Amazon Web Services (AWS).
-Given the application's nature—a batch process that fetches RSS feeds, summarizes them, and emails a report—the recommended architecture is **AWS ECS Fargate (Run Task)** triggered by **Amazon EventBridge Scheduler**.
+RSS Morning is a finite batch process, so a scheduled ECS Fargate task is a
+reasonable deployment shape: EventBridge Scheduler starts the task, ECS pulls the
+image from ECR, the task reads configuration from a mounted filesystem, and logs
+are collected from stderr by the `awslogs` driver.
 
-## 1. Required Application Changes
-Before deployment, the following changes must be applied to the codebase to ensure security and observability.
+This guide describes infrastructure but does not deploy it. Validate the task in a
+non-production AWS account before scheduling it.
 
-### 1.1. Security: Create `.dockerignore`
-**Critical**: The current repository lacks a `.dockerignore` file. Without it, the `COPY . .` command in the Dockerfile copies sensitive local files (like `configs/*.xml`, `venv`, or `.git` history) into the container.
+## Prerequisites
 
-**Action**: Create a `.dockerignore` file in the project root:
+- An AWS account and authenticated AWS CLI
+- Docker and permission to create ECR, ECS, EventBridge, IAM, CloudWatch Logs, and
+  either EFS or another controlled configuration-delivery mechanism
+- A VPC path that permits outbound HTTPS to configured feeds and enabled APIs
+- Runtime credentials only for the stages enabled in `config.xml`:
+  `GOOGLE_API_KEY`/`GEMINI_API_KEY`, `OPENAI_API_KEY`, and/or `RESEND_API_KEY`
+
+The repository image intentionally excludes private configuration, feeds, prompts,
+and environment XML. Do not pass credentials as Docker build arguments or bake
+them into an image.
+
+## Runtime files and persistence
+
+The container entry point is `python main.py`; supply the current config-first
+argument explicitly:
+
 ```text
-.git
-.gitignore
-.dockerignore
-venv/
-__pycache__/
-*.pyc
-*.pyo
-dist/
-build/
-*.egg-info/
-logs/
-configs/*.xml
-!configs/*.xml.example
-docker-compose.override.yml
-query_embeddings.json
-prefiltered.json
-articles.json
-mylog.txt
+--config /app/runtime/config.xml
 ```
 
-### 1.2. Security: Remove Secrets from Build Usage
-**Critical**: The `Dockerfile` currently accepts `ARG OPENAI_API_KEY`. Passing secrets as build args persists them in the container layer history, which is a security vulnerability.
-**Action**: Modify `Dockerfile`:
-- Remove `ARG OPENAI_API_KEY`
-- Remove the `RUN` block that executes `rss_morning.prefilter_cli`.
-- Allow the application to generate embeddings at **runtime** (which it already supports if `query_embeddings.json` is missing).
+Provision `/app/runtime` as a read-only EFS access point containing, at minimum:
 
-### 1.3. Observability: Cloud-Friendly Logging
-**Recommendation**: The application currently defaults to logging to a file in `main.py`. In dockerized environments, it is best practice to log to `stdout/stderr` so that AWS CloudWatch (via awslogs driver) can capture them.
-**Action**: Modify `main.py` to detect if `config.logging.file` is untargeted or checks an environment variable (e.g., `RSS_MORNING_LOG_STDOUT=1`) to prevent adding the default FileHandler.
+- `config.xml`
+- its referenced OPML feed file
+- its prompt file when summaries are enabled
+- its query file when pre-filtering is enabled
 
-## 2. Architecture Overview
+All relative paths in `config.xml` resolve from that file's directory. Prefer ECS
+secret injection for credentials instead of an environment XML file.
 
-```mermaid
-flowchart LR
-    Scheduler(EventBridge Scheduler) -- "Triggers (Cron)" --> ECS(ECS Task Fargate)
-    ECS -- "Pulls Image" --> ECR(Amazon ECR)
-    ECS -- "Reads Config" --> SSM(Secrets Manager / SSM)
-    ECS -- "Fetches Feeds" --> Internet((Internet))
-    ECS -- "Sends Email" --> Resend((Resend API))
-```
+The container filesystem is ephemeral. If database caching is enabled, use a
+durable SQLAlchemy connection string such as an appropriately managed database;
+do not rely on a container-local SQLite file. FastEmbed can require a model
+download and substantial disk/memory. Either provide a persistent writable cache
+at `FASTEMBED_CACHE_PATH` or select the OpenAI embedding provider deliberately.
 
-- **Amazon ECR**: Hosting the Docker container image.
-- **AWS ECS (Fargate)**: Serverless compute to run the container. Zero maintenance of underlying servers.
-- **EventBridge Scheduler**: Triggers the task every morning (e.g., 07:00 AM UTC).
-- **Secrets Manager**: Safely stores `OPENAI_API_KEY` and `RESEND_API_KEY`.
-- **Public Subnet**: The task will run in a public subnet to allow easy access to RSS feeds (outbound internet) and ECR.
+## Build and publish
 
-## 3. Deployment Steps
+Create the repository once:
 
-### Step 1: Preparation
-1.  Apply the changes listed in **Section 1**.
-2.  Install AWS CLI and authenticate with your AWS account.
-
-### Step 2: Create ECR Repository
-Create a repository to store your application images.
 ```bash
-aws ecr create-repository --repository-name rss-morning
+aws ecr create-repository --repository-name rss-morning --region "$AWS_REGION"
 ```
 
-### Step 3: Build and Push Image
-Login to ECR and push your image.
+Build locally without credentials, then tag and push an immutable version:
+
 ```bash
-# Login
-aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
+AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+ECR="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+VERSION="$(git rev-parse --short HEAD)"
 
-# Build (Note: No API key needed for build anymore!)
-docker build -t rss-morning .
-
-# Tag and Push
-docker tag rss-morning:latest <account_id>.dkr.ecr.<region>.amazonaws.com/rss-morning:latest
-docker push <account_id>.dkr.ecr.<region>.amazonaws.com/rss-morning:latest
+aws ecr get-login-password --region "$AWS_REGION" \
+  | docker login --username AWS --password-stdin "$ECR"
+docker build --pull -t "rss-morning:$VERSION" .
+docker tag "rss-morning:$VERSION" "$ECR/rss-morning:$VERSION"
+docker push "$ECR/rss-morning:$VERSION"
 ```
 
-### Step 4: Infrastructure Setup (Console or Terraform)
-**4.1. Create Secrets**
-Go to AWS Systems Manager -> Parameter Store or AWS Secrets Manager.
-Create SecureStrings for:
-- `/rss-morning/OPENAI_API_KEY`
-- `/rss-morning/RESEND_API_KEY`
+Use the immutable `$VERSION` tag in the task definition rather than `latest`.
 
-**4.2. Create ECS Task Definition**
-Define how the container runs.
-- **Launch Type**: Fargate
-- **CPU/Memory**: .25 vCPU / 512 MB (adjust based on article volume)
-- **Container Definition**:
-    - Image: `<account_id>.dkr.ecr.<region>.amazonaws.com/rss-morning:latest`
-    - Environment Variables (Non-sensitive):
-        - `RSS_MORNING_LOG_STDOUT=1`
-    - Secrets (ValueFrom):
-        - `OPENAI_API_KEY`: `arn:aws:ssm:...parameter/rss-morning/OPENAI_API_KEY`
-        - `RESEND_API_KEY`: `arn:aws:ssm:...parameter/rss-morning/RESEND_API_KEY`
-    - Log Configuration: `awslogs` (Auto-configure to create a CloudWatch log group).
+## ECS task definition
 
-**4.3. Run Test Task**
-Manually run the task in the console to verify it starts, fetches feeds, and sends an email.
-- **Network**: Select your default VPC and a Public Subnet.
-- **Security Group**: Allow outbound `0.0.0.0/0` (HTTPS). Inbound can be empty.
-- **Auto-assign Public IP**: ENABLED (Required for Fargate in Public Subnet to pull images and reach internet).
+Configure the task with:
 
-### Step 5: Schedule the Job
-1.  Go to **Amazon EventBridge**.
-2.  Create a **Schedule**.
-3.  **Cron pattern**: `0 7 * * ? *` (Seven AM every day).
-4.  **Target**: AWS ECS -> Run Task.
-5.  Select the **Cluster** and **Task Definition** created above.
-6.  Select Subnets and Security Groups.
+- **Launch type:** Fargate
+- **Container image:** the immutable ECR image above
+- **Command:** `--config`, `/app/runtime/config.xml`
+- **Root filesystem:** read-only where compatible with the selected embedding and
+  database configuration
+- **EFS mount:** runtime configuration at `/app/runtime`, read-only
+- **Logging:** `awslogs` to a dedicated CloudWatch Logs group
+- **Secrets:** inject only credentials required by enabled stages from Secrets
+  Manager or SSM Parameter Store
+- **Networking:** no inbound rules; outbound HTTPS only through the chosen public
+  IP or NAT design
+- **Retries:** keep scheduler retries bounded so API or email failures cannot
+  produce an unbounded number of paid task runs
 
-## 4. Maintenance
-- **Updating Code**: Re-run Step 3 (Build & Push). The next scheduled run will pick up the `latest` tag automatically if the Task Definition is configured to do so, or strict versioning can be used by updating the Task Definition.
-- **Rotating Keys**: Update the values in Parameter Store/Secrets Manager. No redeployment required (values are read at runtime).
+Size CPU, memory, and ephemeral storage from a representative manual run. Do not
+assume the local FastEmbed model fits the smallest Fargate task size.
+
+The task role needs access only to its declared secrets, EFS access point, and log
+group. The execution role needs the normal ECR pull and log-delivery permissions.
+
+## Validate before scheduling
+
+1. Register a task-definition revision using a non-production email recipient and
+   safe API credentials.
+2. Run one task manually with the same networking, IAM roles, mounts, command, and
+   secrets intended for the schedule.
+3. Confirm the task exits successfully, JSON is written to the container log,
+   secrets and article bodies are absent from INFO logs, and only the intended
+   external calls occurred.
+4. Confirm a failed task cannot trigger uncontrolled retries or duplicate mail.
+
+Do not use `--llm-dry-run` as a complete infrastructure test: it prevents the
+Gemini request and email delivery by design.
+
+## Schedule and operate
+
+Create an EventBridge Scheduler schedule targeting `ecs:RunTask`. Give the
+scheduler role permission to run only the selected task definition and pass only
+the task roles it needs. Set the time zone explicitly, configure a bounded retry
+policy and dead-letter queue, and initially leave the schedule disabled until the
+manual validation above passes.
+
+For updates, build a new immutable image tag, register a new task-definition
+revision, manually validate it, and then point the schedule at that revision.
+Rotate secrets in Secrets Manager or Parameter Store without rebuilding the image.

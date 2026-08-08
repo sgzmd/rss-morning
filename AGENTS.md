@@ -4,7 +4,7 @@
 
 RSS Morning makes a news digest from RSS feeds. It fetches recent posts, extracts article text, optionally filters items with embeddings, optionally asks Gemini for structured summaries, prints JSON, and can send the result through Resend.
 
-Keep this file aligned with the code. `README.md` contains useful background but still shows an older command-line interface. For runtime behavior, trust the code, tests, and `python main.py --help` first.
+Keep this file and `README.md` aligned with the code. For runtime behavior, trust the code, tests, and `python main.py --help` first.
 
 ## Runtime flow
 
@@ -61,10 +61,11 @@ Before handing off a change, run checks that match its scope:
 ```bash
 ruff check .
 ruff format --check .
+mypy rss_morning main.py
 pytest
 ```
 
-The pre-commit config applies Ruff fixes, Ruff formatting, and pytest. Its local pytest path is `./venv/bin/python`, while the common environment directory in this checkout is `.venv`; do not assume the hook works without checking the interpreter path.
+The pre-commit config applies Ruff fixes and formatting, then runs pytest and mypy using the active Python environment.
 
 Tests use `pytest.ini`, set the project root on `PYTHONPATH`, and should not need live RSS, Gemini, OpenAI, or Resend access. Add or update tests when changing configuration parsing, pipeline stages, output fields, templates, or failure behavior.
 
@@ -88,7 +89,7 @@ Supported CLI options are:
 
 Most older flags shown in `README.md` no longer exist. Do not add them to scripts unless the CLI is deliberately restored.
 
-Use `--save-articles` to capture fetched article objects before filtering and summarizing. Use `--load-articles` to replay that JSON without fetching feeds or pages. This is the preferred loop for prompt and filter work. `--llm-dry-run` builds and logs the Gemini input, returns `{"dry_run": true}`, and stops before email.
+Use `--save-articles` to capture fetched article objects before filtering and summarizing. Use `--load-articles` to replay that JSON without fetching feeds or pages. This is the preferred loop for prompt and filter work. `--llm-dry-run` builds the Gemini input, logs the full input only at DEBUG, returns `{"dry_run": true}`, and stops before email.
 
 ## Configuration contract
 
@@ -130,7 +131,7 @@ Query files can be JSON or plain text:
 - Blank text lines and lines starting with `#` are ignored.
 - Without an explicit path, lookup checks `configs/queries.json`, `queries.json`, `queries.txt`, then `queries.example.txt`.
 
-Do not use `configs/config.xml.example` as a working file without fixing it. It currently has a duplicate `<email>` opening tag and an inline prompt, while the parser requires a `file` attribute.
+`configs/config.xml.example` is a template for the current configuration format. Copy it to the ignored `configs/config.xml` and update its paths and settings.
 
 ## External services and secrets
 
@@ -141,7 +142,7 @@ Do not use `configs/config.xml.example` as a working file without fixing it. It 
 
 Never commit real config files, env XML, API keys, feed lists, prompts, logs, databases, snapshots, model caches, or generated output. Most are already ignored. Treat ignored files as user data: inspect only when needed, do not rewrite them casually, and never print secrets.
 
-Security warning: `summaries.py` currently logs the full Gemini API key at INFO level because it logs `api_key[:]`. Do not repeat this pattern. Avoid running summary mode with logs that may be shared until this is fixed.
+Credentials are passed only at external service boundaries and must never be logged.
 
 ## Data contracts
 
@@ -179,9 +180,6 @@ Do not silently build new behavior around these settings; either preserve curren
 - `cluster-threshold` is parsed and passed to the filter, but current grouping does not use it.
 - `rss_morning.prefilter_cli` exports a legacy format that the runtime does not consume.
 - `<logging><file>` is parsed, but `cli.py` ignores it. Only `--log-file` currently enables file logging. `RSS_MORNING_LOG_STDOUT=1` disables file logging, despite its name; the default `StreamHandler` writes to stderr.
-- `configs/config.xml.example` is malformed and does not match the prompt parser.
-- The README, Compose override example, and AWS guide may contain old CLI usage. Check commands against `python main.py --help`.
-- The pre-commit pytest hook refers to `./venv`, not `.venv`.
 
 ## Change rules
 

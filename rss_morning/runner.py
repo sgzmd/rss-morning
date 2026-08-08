@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import concurrent.futures
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple, cast
 
 from .articles import fetch_article_content, truncate_text
 from .config import parse_feeds_config
@@ -312,7 +312,7 @@ def execute(config: RunConfig) -> RunResult:
                 len(filtered_articles),
                 len(articles),
             )
-            articles = filtered_articles
+            articles = cast(List[dict], filtered_articles)
 
     email_payload: Any = articles
     is_summary_payload = False
@@ -322,17 +322,16 @@ def execute(config: RunConfig) -> RunResult:
             logger.warning(
                 "Summary requested but no system prompt provided using default."
             )
-            # We might want to fail here or provide a hardcoded default,
-            # but for now let's assume the caller ensures it or we might need a default string.
-            # Actually, `generate_summary` expects a string now.
-            # Let's fail if it's missing to be safe, or provide a minimal one.
             raise ValueError("Summary requested but no system_prompt configured.")
 
-        summary_output, summary_data = generate_summary(
-            articles,
-            config.system_prompt,
-            return_dict=True,
-            dry_run=config.llm_dry_run,
+        summary_output, summary_data = cast(
+            Tuple[str, Optional[dict]],
+            generate_summary(
+                articles,
+                config.system_prompt,
+                return_dict=True,
+                dry_run=config.llm_dry_run,
+            ),
         )
         output_text = summary_output
 

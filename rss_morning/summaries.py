@@ -57,7 +57,7 @@ def generate_summary(
         logger.info(
             "No articles available for summarisation; returning empty summary list."
         )
-        empty = {"summaries": []}
+        empty: dict = {"summaries": []}
         if return_dict:
             return json.dumps(empty, ensure_ascii=False), empty
         return json.dumps(empty, ensure_ascii=False)
@@ -68,7 +68,6 @@ def generate_summary(
         )
 
     api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    logger.info("Using API key ending with: %s", api_key[:])
     client = genai.Client(api_key=api_key)
 
     model = "gemini-flash-latest"
@@ -95,10 +94,10 @@ def generate_summary(
 
             if dry_run:
                 logger.info(
-                    "DRY RUN: Prepared payload for batch %d: %s",
+                    "DRY RUN: Prepared payload for batch %d.",
                     (i // batch_size) + 1,
-                    input_text,
                 )
+                logger.debug("DRY RUN: Gemini request payload: %s", input_text)
                 continue
 
             contents = [
@@ -111,9 +110,6 @@ def generate_summary(
             ]
 
             generate_content_config = types.GenerateContentConfig(
-                # thinking_config=types.ThinkingConfig(
-                #     thinking_level="HIGH",
-                # ),
                 response_mime_type="application/json",
                 response_schema=types.Schema(
                     type=types.Type.OBJECT,
@@ -195,8 +191,22 @@ def generate_summary(
 
             # Parse JSON
             parsed = json.loads(response_text)
+            if not isinstance(parsed, dict):
+                raise ValueError("Gemini response must be a JSON object")
+
             batch_summaries = parsed.get("summaries", [])
+            if not isinstance(batch_summaries, list) or any(
+                not isinstance(item, dict) or not isinstance(item.get("summary"), dict)
+                for item in batch_summaries
+            ):
+                raise ValueError("Gemini summaries must be a list of summary objects")
+
             exec_summary = parsed.get("exec-summary")
+            if exec_summary is not None and (
+                not isinstance(exec_summary, list)
+                or any(not isinstance(item, str) for item in exec_summary)
+            ):
+                raise ValueError("Gemini exec-summary must be a list of strings")
             if exec_summary:
                 exec_summaries.extend(exec_summary)
 
@@ -207,9 +217,6 @@ def generate_summary(
             logger.error(
                 "Failed to generate summary for batch starting at index %d: %s", i, exc
             )
-            # We could optionally add the raw articles or empty placeholders here,
-            # but for now we skip the failed batch or maybe we should just log it
-            # effectively 'dropping' the summaries for this batch.
             continue
 
     # Post-processing / Sanitization on the combined result
@@ -223,22 +230,11 @@ def generate_summary(
             item["category"] = sanitize_html(item["category"])
 
     # Final Combined Output
-    final_obj = {"summaries": combined_summaries}
+    final_obj: dict = {"summaries": combined_summaries}
     if exec_summaries:
         final_obj["exec_summary"] = "\n".join(exec_summaries)
 
     rendered = json.dumps(final_obj, ensure_ascii=False, indent=2)
-
-    # Note: If *all* batches fail, this will return an empty list of summaries,
-    # distinct from the "fallback" approach which returned the original articles.
-    # If partial success, we return partial summaries.
-
-    # Check if we have NOTHING at all, maybe fallback if *everything* failed?
-    # But usually partial is better than raw articles mixed with summaries logic downstream.
-    # The original code's fallback was returning `articles` dumps.
-    # If combined_summaries is empty and we had articles, maybe we still fallback?
-    # Let's stick to returning what we got, or empty.
-    # Users will prefer empty summaries over a crash or raw article dumps breaking the UI expectation usually.
 
     if dry_run:
         logger.info("DRY RUN: skipping API call.")
@@ -249,13 +245,6 @@ def generate_summary(
 
     if not combined_summaries and articles:
         logger.warning("No summaries were generated from any batch.")
-        # If we really want the old fallback behavior on total failure:
-        # return json.dumps(articles, ensure_ascii=False, indent=2)
-        # But that changes the return structure (list vs {"summaries": [...]})
-        # The original code:
-        #   fallback = json.dumps(articles, ...
-        #   return fallback
-        # Let's keep it consistent: Return valid JSON structure even if empty.
 
     if return_dict:
         return rendered, final_obj
