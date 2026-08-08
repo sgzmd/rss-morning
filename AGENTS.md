@@ -2,7 +2,7 @@
 
 ## Purpose
 
-RSS Morning makes a news digest from RSS feeds. It fetches recent posts, extracts article text, optionally filters items with embeddings, optionally asks Gemini for structured summaries, prints JSON, and can send the result through Resend.
+RSS Morning makes a news digest from RSS feeds. It fetches recent posts, extracts article text, optionally filters items with embeddings, optionally asks Gemini or OpenRouter for structured summaries, prints JSON, and can send the result through Resend.
 
 Keep this file and `README.md` aligned with the code. For runtime behavior, trust the code, tests, and `python main.py --help` first.
 
@@ -19,14 +19,14 @@ main.py
      -> prefilter.py: optionally score and group articles
         -> embeddings.py: FastEmbed or OpenAI vectors
         -> db.py: optionally cache article vectors
-     -> summaries.py: optionally ask Gemini for JSON summaries
+     -> summaries.py: optionally ask Gemini or OpenRouter for JSON summaries
      -> emailing.py: optionally send rendered templates through Resend
   -> cli.py: print final JSON
 ```
 
 Feed downloads and article downloads use separate thread pools. `concurrency` controls both pools. Feed entries are limited per feed, merged, sorted by publication time, and deduplicated by URL before article pages are downloaded.
 
-One failed feed or article is logged and skipped. Pre-filter errors fail open and keep the original articles. Failed Gemini batches are logged and omitted. Email failures are logged and do not fail the run. Errors in top-level configuration or orchestration return exit code 1.
+One failed feed or article is logged and skipped. Pre-filter errors fail open and keep the original articles. Failed LLM batches are logged and omitted. Email failures are logged and do not fail the run. Errors in top-level configuration or orchestration return exit code 1.
 
 ## Main files
 
@@ -38,7 +38,7 @@ One failed feed or article is logged and skipped. Pre-filter errors fail open an
 - `rss_morning/articles.py`: Newspaper and Trafilatura extractors and token truncation.
 - `rss_morning/prefilter.py`: query loading, centroid scoring, category assignment, and grouping metadata.
 - `rss_morning/embeddings.py`: FastEmbed and OpenAI embedding backends.
-- `rss_morning/summaries.py`: Gemini batching, response schema, and text cleanup.
+- `rss_morning/summaries.py`: Gemini/OpenRouter batching, response schema, and text cleanup.
 - `rss_morning/db.py`: SQLAlchemy article and embedding cache.
 - `rss_morning/emailing.py`: Resend integration.
 - `rss_morning/renderers.py`, `rss_morning/templating.py`, `rss_morning/templates/`: HTML and text email rendering.
@@ -65,9 +65,14 @@ mypy rss_morning main.py
 pytest
 ```
 
+`make test` runs the hermetic suite. `make live-e2e` sources the ignored
+`env.fish`, checks for `OPENROUTER_API_KEY`, enables the opt-in live test, and
+runs it with streaming DEBUG logs and a long traceback. `ENV_FISH` can override
+the Fish environment file path.
+
 The pre-commit config applies Ruff fixes and formatting, then runs pytest and mypy using the active Python environment.
 
-Tests use `pytest.ini`, set the project root on `PYTHONPATH`, and should not need live RSS, Gemini, OpenAI, or Resend access. Add or update tests when changing configuration parsing, pipeline stages, output fields, templates, or failure behavior.
+Tests use `pytest.ini`, set the project root on `PYTHONPATH`, and ordinary tests should not need live RSS, Gemini, OpenRouter, OpenAI, or Resend access. The opt-in `live_e2e` test is the exception: it uses live feeds, article pages, local FastEmbed, and OpenRouter while faking only the final Resend call. It runs the application at DEBUG and leaves stderr uncaptured so `pytest -s` streams detailed progress; DEBUG output includes prompt and article content. Add or update tests when changing configuration parsing, pipeline stages, output fields, templates, or failure behavior.
 
 ## Running the app
 
@@ -89,7 +94,7 @@ Supported CLI options are:
 
 Most older flags shown in `README.md` no longer exist. Do not add them to scripts unless the CLI is deliberately restored.
 
-Use `--save-articles` to capture fetched article objects before filtering and summarizing. Use `--load-articles` to replay that JSON without fetching feeds or pages. This is the preferred loop for prompt and filter work. `--llm-dry-run` builds the Gemini input, logs the full input only at DEBUG, returns `{"dry_run": true}`, and stops before email.
+Use `--save-articles` to capture fetched article objects before filtering and summarizing. Use `--load-articles` to replay that JSON without fetching feeds or pages. This is the preferred loop for prompt and filter work. `--llm-dry-run` builds the configured LLM input, logs the full input only at DEBUG, returns `{"dry_run": true}`, and stops before email.
 
 ## Configuration contract
 
@@ -108,6 +113,7 @@ Recognized settings are:
 - `<prompt file="..."/>`: prompt file. It is required when summaries are enabled. Inline prompt text is not supported.
 - `<pre-filter>`: `enabled`, optional `queries-file`, optional `embeddings-path`, and `cluster-threshold`.
 - `<embeddings>`: `provider` and `model`. `fastembed` is the default provider. Any provider value other than `fastembed` selects OpenAI.
+- `<llm>`: summary `provider` (`gemini` or `openrouter`) and model. Defaults to Gemini with `gemini-flash-latest`.
 - `<database>`: `enabled` and a SQLAlchemy `connection-string`.
 - `<email>`: `to`, `from`, and `subject`.
 - `<logging>`: `level` and `file`.
@@ -135,7 +141,8 @@ Query files can be JSON or plain text:
 
 ## External services and secrets
 
-- Gemini summaries use `GOOGLE_API_KEY` or `GEMINI_API_KEY` and the hard-coded model `gemini-flash-latest`.
+- Gemini summaries use `GOOGLE_API_KEY` or `GEMINI_API_KEY`.
+- OpenRouter summaries use `OPENROUTER_API_KEY`.
 - OpenAI embeddings use `OPENAI_API_KEY` when the provider is not `fastembed`.
 - Resend uses `RESEND_API_KEY`. The sender comes from the XML email `from` value or `RESEND_FROM_EMAIL`.
 - FastEmbed runs locally but may download its model on first use. `FASTEMBED_CACHE_PATH` controls its cache in Docker.
@@ -162,7 +169,7 @@ The pre-filter may add `prefilter_score`, `prefilter_match`, and `other_urls`. I
 
 Without summaries, stdout is a JSON list of article dictionaries.
 
-With summaries, stdout is an object with `summaries` and, when Gemini supplies it, `exec_summary`. Each summary item contains `url`, `category`, and a nested `summary` with `title`, `rank-reasoning`, `what`, `so-what`, and `now-what`. Gemini output is stripped of HTML. The runner restores a source image when the summary item has none.
+With summaries, stdout is an object with `summaries` and, when the LLM supplies it, `exec_summary`. Each summary item contains `url`, `category`, and a nested `summary` with `title`, `rank-reasoning`, `what`, `so-what`, and `now-what`. LLM output is stripped of HTML. The runner restores a source image when the summary item has none.
 
 Email templates accept both raw article lists and summarized objects. Markdown in summary fields is rendered and sanitized before it enters the HTML email.
 

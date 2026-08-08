@@ -40,6 +40,10 @@ def test_parse_app_config(tmp_path):
                 <limit>25</limit>
                 <max-age-hours>12.5</max-age-hours>
                 <summary>true</summary>
+                <llm>
+                    <provider>openrouter</provider>
+                    <model>mistralai/mistral-nemo</model>
+                </llm>
                 <email>
                     <to>test@example.com</to>
                     <from>sender@example.com</from>
@@ -61,6 +65,8 @@ def test_parse_app_config(tmp_path):
     assert config.limit == 25
     assert config.max_age_hours == 12.5
     assert config.summary is True
+    assert config.llm.provider == "openrouter"
+    assert config.llm.model == "mistralai/mistral-nemo"
     assert config.email.to_addr == "test@example.com"
     assert config.logging.level == "DEBUG"
     # Check path resolution (should be absolute)
@@ -89,3 +95,5 @@ def test_parse_app_config_minimal(tmp_path):
     assert config.summary is False
     assert config.env_file is None
     assert config.prompt is None
+    assert config.llm.provider == "gemini"
+    assert config.llm.model == "gemini-flash-latest"

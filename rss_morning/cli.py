@@ -148,6 +148,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             database_connection_string=app_config.database.connection_string,
             embedding_provider=app_config.embeddings.provider,
             embedding_model=app_config.embeddings.model,
+            llm_provider=app_config.llm.provider,
+            llm_model=app_config.llm.model,
             llm_dry_run=args.llm_dry_run,
         )
 

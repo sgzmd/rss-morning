@@ -58,8 +58,10 @@ _ensure_module("lxml.html", fake_html)
 
 
 @pytest.fixture(autouse=True)
-def _block_external_network(monkeypatch):
+def _block_external_network(monkeypatch, request):
     """Fail tests that accidentally cross a real network boundary."""
+    if request.node.get_closest_marker("live_e2e"):
+        return
 
     def blocked(*_args, **_kwargs):
         raise RuntimeError("External network access is disabled during tests")

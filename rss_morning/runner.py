@@ -45,6 +45,8 @@ class RunConfig:
     database_connection_string: Optional[str] = None
     embedding_provider: str = "fastembed"
     embedding_model: str = "intfloat/multilingual-e5-large"
+    llm_provider: str = "gemini"
+    llm_model: str = "gemini-flash-latest"
     llm_dry_run: bool = False
 
 
@@ -331,6 +333,8 @@ def execute(config: RunConfig) -> RunResult:
                 config.system_prompt,
                 return_dict=True,
                 dry_run=config.llm_dry_run,
+                provider=config.llm_provider,
+                model=config.llm_model,
             ),
         )
         output_text = summary_output

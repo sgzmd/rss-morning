@@ -4,9 +4,9 @@ import types
 from rss_morning import emailing
 
 
-def test_send_email_report_without_resend_logs_error(caplog):
+def test_send_email_report_without_resend_logs_error(caplog, monkeypatch):
     caplog.set_level("ERROR")
-    emailing.resend = None
+    monkeypatch.setattr(emailing, "resend", None)
 
     emailing.send_email_report(
         payload=[], is_summary=False, to_address="user@example.com"

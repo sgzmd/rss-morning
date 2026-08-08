@@ -17,6 +17,11 @@
         <provider>fastembed</provider>
         <model>intfloat/multilingual-e5-large</model>
     </embeddings>
+    <llm>
+        <!-- gemini uses GOOGLE_API_KEY/GEMINI_API_KEY; openrouter uses OPENROUTER_API_KEY -->
+        <provider>gemini</provider>
+        <model>gemini-flash-latest</model>
+    </llm>
     <email>
         <to></to>
         <from></from>

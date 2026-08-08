@@ -1,8 +1,11 @@
 import json
 import logging
 import os
-import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from rss_morning import summaries
 
 
@@ -247,3 +250,59 @@ def test_generate_summary_dry_run_does_not_log_article_content_at_info(
     assert "private-article-body" not in caplog.text
     assert "private-system-prompt" not in caplog.text
     mock_client.models.generate_content_stream.assert_not_called()
+
+
+def test_generate_summary_uses_openrouter_structured_outputs(monkeypatch):
+    captured = {}
+    payload = {
+        "exec-summary": [],
+        "summaries": [
+            {
+                "url": "https://example.com/1",
+                "category": "Tech",
+                "summary": {
+                    "title": "Title",
+                    "rank-reasoning": "Relevant",
+                    "what": "What",
+                    "so-what": "Why",
+                    "now-what": "Act",
+                },
+            }
+        ],
+    }
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=json.dumps(payload))
+                    )
+                ]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured["client"] = kwargs
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(summaries, "OpenAI", FakeOpenAI)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "secret")
+
+    result = summaries.generate_summary(
+        [{"url": "https://example.com/1", "title": "Title"}],
+        "Summarise every article",
+        provider="openrouter",
+        model="mistralai/mistral-nemo",
+    )
+
+    assert json.loads(result)["summaries"][0]["url"] == "https://example.com/1"
+    assert captured["client"] == {
+        "base_url": summaries.OPENROUTER_BASE_URL,
+        "api_key": "secret",
+    }
+    assert captured["model"] == "mistralai/mistral-nemo"
+    assert captured["response_format"]["type"] == "json_schema"
+    assert captured["response_format"]["json_schema"]["strict"] is True
+    assert captured["extra_body"] == {"provider": {"require_parameters": True}}

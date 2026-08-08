@@ -28,6 +28,12 @@ class EmbeddingsConfig:
 
 
 @dataclass
+class LLMConfig:
+    provider: str = "gemini"
+    model: str = "gemini-flash-latest"
+
+
+@dataclass
 class EmailConfig:
     to_addr: Optional[str] = None
     from_addr: Optional[str] = None
@@ -55,6 +61,7 @@ class AppConfig:
     summary: bool = False
     pre_filter: PreFilterConfig = field(default_factory=PreFilterConfig)
     embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
@@ -198,6 +205,13 @@ def parse_app_config(path: str) -> AppConfig:
             "model", "intfloat/multilingual-e5-large"
         )
 
+    # Summary LLM
+    llm_node = root.find("llm")
+    llm_config = LLMConfig()
+    if llm_node is not None:
+        llm_config.provider = llm_node.findtext("provider", "gemini").strip().lower()
+        llm_config.model = llm_node.findtext("model", "gemini-flash-latest").strip()
+
     # Email
     email_node = root.find("email")
     email = EmailConfig()
@@ -247,6 +261,7 @@ def parse_app_config(path: str) -> AppConfig:
         summary=summary,
         pre_filter=pre_filter,
         embeddings=embeddings_config,
+        llm=llm_config,
         email=email,
         logging=logging_config,
         database=db_config,
