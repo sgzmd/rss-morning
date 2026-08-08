@@ -219,8 +219,10 @@ class EmbeddingArticleFilter:
                 str, List[EmbeddingArticleFilter._ScoredArticle]
             ] = {}
 
-            for original, vector in zip(materialized, article_vectors):
-                best_cat, best_score = self._score_against_centroids(vector, centroids)
+            for original, article_vector in zip(materialized, article_vectors):
+                best_cat, best_score = self._score_against_centroids(
+                    article_vector, centroids
+                )
                 if best_cat is None or best_score < threshold:
                     continue
 
@@ -230,7 +232,10 @@ class EmbeddingArticleFilter:
                 original["prefilter_match"] = best_cat
 
                 item = EmbeddingArticleFilter._ScoredArticle(
-                    score=best_score, article=original, vector=vector, category=best_cat
+                    score=best_score,
+                    article=original,
+                    vector=article_vector,
+                    category=best_cat,
                 )
                 if best_cat not in scored_by_category:
                     scored_by_category[best_cat] = []
@@ -371,7 +376,7 @@ class EmbeddingArticleFilter:
 
     def _score_against_centroids(
         self,
-        article_vector: Sequence[float],
+        article_vector: np.ndarray,
         centroids: Dict[str, np.ndarray],
     ) -> Tuple[Optional[str], float]:
         """Return the category and score of the best matching centroid."""
@@ -389,7 +394,7 @@ class EmbeddingArticleFilter:
         return best_cat, best_score
 
     @staticmethod
-    def _dot(left: Sequence[float], right: Sequence[float]) -> float:
+    def _dot(left: np.ndarray, right: np.ndarray) -> float:
         return sum(lft * rght for lft, rght in zip(left, right))
 
     def _build_other_urls(

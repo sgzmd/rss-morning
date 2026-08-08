@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Protocol, Sequence
 
 from openai import OpenAI
@@ -61,7 +61,7 @@ class FastEmbedBackend:
 
     model_name: str
     batch_size: int
-    _model: TextEmbedding = None
+    _model: TextEmbedding = field(init=False)
 
     def __post_init__(self):
         # The model is downloaded automatically if needed

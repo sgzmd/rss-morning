@@ -6,7 +6,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, cast
 
 import dataclasses
 import pprint
@@ -161,7 +161,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             emailing.send_email_report(
                 payload=payload,
                 is_summary=True,  # Assuming JSON dump is a summary payload
-                to_address=config.email_to,
+                to_address=cast(str, config.email_to),
                 from_address=config.email_from,
                 subject=config.email_subject,
             )

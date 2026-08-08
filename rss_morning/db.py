@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from sqlalchemy import (
-    Column,
     DateTime,
     LargeBinary,
     String,
@@ -16,7 +15,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +29,15 @@ class ArticleModel(Base):
 
     __tablename__ = "articles"
 
-    url = Column(String, primary_key=True)
-    title = Column(String, nullable=True)
-    content = Column(Text, nullable=True)
-    image = Column(String, nullable=True)
-    summary = Column(Text, nullable=True)
-    published = Column(DateTime, nullable=True)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    url: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    image: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    published: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
 
 
 class EmbeddingModel(Base):
@@ -44,10 +45,12 @@ class EmbeddingModel(Base):
 
     __tablename__ = "embeddings"
 
-    url = Column(String, primary_key=True)
-    backend_key = Column(String, primary_key=True)
-    vector = Column(LargeBinary, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    url: Mapped[str] = mapped_column(String, primary_key=True)
+    backend_key: Mapped[str] = mapped_column(String, primary_key=True)
+    vector: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
 
 
 def init_engine(connection_string: Optional[str]) -> Optional[Engine]:

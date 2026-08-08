@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import os
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from bs4 import BeautifulSoup
 
 try:
-    from google import genai
-    from google.genai import types
+    genai: Any = importlib.import_module("google.genai")
+    types: Any = importlib.import_module("google.genai.types")
 except Exception:  # pragma: no cover - optional dependency
     genai = None
     types = None
@@ -100,7 +101,7 @@ def generate_summary(
                 logger.debug("DRY RUN: Gemini request payload: %s", input_text)
                 continue
 
-            contents = [
+            contents: Any = [
                 types.Content(
                     role="user",
                     parts=[
