@@ -1,10 +1,9 @@
-import contextlib
 import importlib.util
 import pathlib
-import shutil
 import socket
 import sys
 import types
+
 import pytest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -67,35 +66,3 @@ def _block_external_network(monkeypatch):
 
     monkeypatch.setattr(socket, "create_connection", blocked)
     monkeypatch.setattr(socket.socket, "connect", blocked)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _ensure_prompt_file():
-    """Ensure prompt.md and feeds.xml exist for tests by copying from templates."""
-    project_root = pathlib.Path.cwd()
-
-    prompt_example = project_root / "prompt-example.md"
-    prompt_target = project_root / "prompt.md"
-    feeds_example = project_root / "feeds.example.xml"
-    feeds_target = project_root / "feeds.xml"
-
-    created_prompt = False
-    created_feeds = False
-
-    if prompt_example.exists() and not prompt_target.exists():
-        shutil.copy(prompt_example, prompt_target)
-        created_prompt = True
-
-    if feeds_example.exists() and not feeds_target.exists():
-        shutil.copy(feeds_example, feeds_target)
-        created_feeds = True
-
-    try:
-        yield
-    finally:
-        if created_prompt:
-            with contextlib.suppress(OSError):
-                prompt_target.unlink()
-        if created_feeds:
-            with contextlib.suppress(OSError):
-                feeds_target.unlink()

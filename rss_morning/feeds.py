@@ -30,12 +30,12 @@ def fetch_feed_entries(feed: FeedConfig) -> List[FeedEntry]:
     try:
         response = requests.get(feed.url, timeout=10.0)
         response.raise_for_status()
-        content = response.content
+        response_content = response.content
     except requests.RequestException as e:
         logger.warning("Failed to fetch feed '%s' (%s): %s", feed.title, feed.url, e)
         return []
 
-    parsed = feedparser.parse(content)
+    parsed = feedparser.parse(response_content)
     entries: List[FeedEntry] = []
 
     for entry in parsed.entries:
@@ -52,10 +52,10 @@ def fetch_feed_entries(feed: FeedConfig) -> List[FeedEntry]:
             if summary_detail:
                 summary = summary_detail.get("value")
         if not summary:
-            content = getattr(entry, "content", None)
-            if content:
+            entry_content = getattr(entry, "content", None)
+            if entry_content:
                 try:
-                    summary = content[0].get("value")
+                    summary = entry_content[0].get("value")
                 except (TypeError, KeyError, IndexError, AttributeError):
                     summary = None
         if summary:

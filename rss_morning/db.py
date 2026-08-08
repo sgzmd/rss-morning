@@ -58,7 +58,9 @@ def init_engine(connection_string: Optional[str]) -> Optional[Engine]:
     if not connection_string:
         return None
 
-    logger.info("Initializing database connection: %s", connection_string)
+    # Connection strings commonly contain database credentials.  Keep the
+    # operational event visible without copying secrets into logs.
+    logger.info("Initializing database connection")
     engine = create_engine(connection_string)
     Base.metadata.create_all(engine)
     return engine

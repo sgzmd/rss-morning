@@ -69,6 +69,19 @@ def test_upsert_article_ignores_invalid_publication_date(session, caplog):
     assert "Ignoring invalid publication date" in caplog.text
 
 
+def test_init_engine_does_not_log_connection_string(monkeypatch, caplog):
+    connection_string = "postgresql://user:secret@example.com/rss"
+    monkeypatch.setattr(db, "create_engine", lambda value: object())
+    monkeypatch.setattr(db.Base.metadata, "create_all", lambda engine: None)
+
+    caplog.set_level("INFO")
+    db.init_engine(connection_string)
+
+    assert "Initializing database connection" in caplog.text
+    assert connection_string not in caplog.text
+    assert "secret" not in caplog.text
+
+
 def test_upsert_and_get_embeddings(session):
     url1 = "https://example.com/1"
     url2 = "https://example.com/2"

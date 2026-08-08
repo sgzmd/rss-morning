@@ -83,6 +83,35 @@ def test_main_loads_config_and_runs(monkeypatch):
     assert run_config.system_prompt == "System Prompt"
 
 
+def test_main_does_not_log_prompt_or_database_credentials(monkeypatch, caplog):
+    monkeypatch.setattr(cli, "configure_logging", lambda level, log_file=None: None)
+    mock_app_config = AppConfig(
+        feeds_file="feeds.xml",
+        env_file=None,
+        prompt="private prompt instructions",
+    )
+    mock_app_config.database.enabled = True
+    mock_app_config.database.connection_string = (
+        "postgresql://user:secret@example.com/rss"
+    )
+    monkeypatch.setattr(cli, "parse_app_config", lambda path: mock_app_config)
+    monkeypatch.setattr(
+        cli,
+        "execute",
+        lambda config: SimpleNamespace(
+            output_text="{}", email_payload=None, is_summary=False
+        ),
+    )
+
+    caplog.set_level("INFO")
+    assert cli.main([]) == 0
+
+    assert "Active Configuration" in caplog.text
+    assert "private prompt instructions" not in caplog.text
+    assert "postgresql://user:secret@example.com/rss" not in caplog.text
+    assert "***MASKED***" in caplog.text
+
+
 def test_main_cli_overrides_logging(monkeypatch):
     captured_log_config = {}
 
