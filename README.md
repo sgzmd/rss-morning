@@ -87,8 +87,8 @@ Ordinary tests replace network, model, and email boundaries with deterministic
 fakes. An autouse test guard rejects socket connections, so an incompletely faked
 boundary fails instead of contacting a real service. The end-to-end test exercises
 real XML parsing, CLI assembly, orchestration, and JSON serialization while faking
-only feed download, article download, and email delivery. Tests do not require
-credentials or live services:
+only feed download, article download, tokenizer data, and email delivery. Tests do
+not require credentials or live services:
 
 ```bash
 ruff check .

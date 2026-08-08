@@ -57,6 +57,7 @@ def test_cli_pipeline_without_external_side_effects(monkeypatch, tmp_path, capsy
 
     monkeypatch.setattr(runner, "fetch_feed_entries", fake_fetch_feed)
     monkeypatch.setattr(runner, "fetch_article_content", fake_fetch_article)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **_kwargs: text)
     monkeypatch.setattr(cli, "configure_logging", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         runner,
