@@ -95,14 +95,15 @@ def upsert_article(session: Session, data: dict) -> None:
     stmt = select(ArticleModel).where(ArticleModel.url == url)
     existing = session.execute(stmt).scalar_one_or_none()
 
-    published_val = data.get("published")
-    if isinstance(published_val, str):
+    raw_published = data.get("published")
+    published_val: Optional[datetime] = None
+    if isinstance(raw_published, datetime):
+        published_val = raw_published
+    elif isinstance(raw_published, str):
         try:
-            published_val = datetime.fromisoformat(published_val)
+            published_val = datetime.fromisoformat(raw_published)
         except ValueError:
-            # If parsing fails, leave as None or keep existing if updating?
-            # For now, let's just log or ignore.
-            pass
+            logger.warning("Ignoring invalid publication date for %s", url)
 
     if existing:
         existing.title = data.get("title")

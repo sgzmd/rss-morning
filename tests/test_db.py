@@ -44,6 +44,31 @@ def test_upsert_and_get_article(session):
     assert cached["text"] == "Content"
 
 
+def test_upsert_article_parses_iso_publication_date(session):
+    published = "2025-03-04T05:06:07+00:00"
+
+    db.upsert_article(
+        session,
+        {"url": "https://example.com/dated", "published": published},
+    )
+
+    cached = db.get_article(session, "https://example.com/dated")
+    assert cached is not None
+    assert cached["published"].isoformat().startswith("2025-03-04T05:06:07")
+
+
+def test_upsert_article_ignores_invalid_publication_date(session, caplog):
+    db.upsert_article(
+        session,
+        {"url": "https://example.com/invalid-date", "published": "not-a-date"},
+    )
+
+    cached = db.get_article(session, "https://example.com/invalid-date")
+    assert cached is not None
+    assert cached["published"] is None
+    assert "Ignoring invalid publication date" in caplog.text
+
+
 def test_upsert_and_get_embeddings(session):
     url1 = "https://example.com/1"
     url2 = "https://example.com/2"
