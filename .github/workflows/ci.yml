@@ -26,3 +26,12 @@ jobs:
         run: pytest
         env:
           PYTHONPATH: ${{ github.workspace }}
+
+      - name: Run lint checks
+        run: ruff check .
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Run type checks
+        run: mypy rss_morning main.py

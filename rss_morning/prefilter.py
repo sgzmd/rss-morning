@@ -110,10 +110,10 @@ class EmbeddingArticleFilter:
     """Embedding-powered article filter that keeps security-relevant content."""
 
     CONFIG = _EmbeddingConfig()
-    CONFIG = _EmbeddingConfig()
     DEFAULT_QUERIES: Dict[str, Tuple[str, ...]] = load_queries()
-    _cached_query_embeddings: Dict[Tuple[Tuple[str, ...], str], List[List[float]]] = {}
-    _cached_centroids: Dict[Tuple[Tuple[str, ...], ...], Dict[str, np.ndarray]] = {}
+    _cached_centroids: Dict[
+        Tuple[Tuple[Tuple[str, Tuple[str, ...]], ...], str], Dict[str, np.ndarray]
+    ] = {}
 
     @dataclass
     class _ScoredArticle:
@@ -129,15 +129,12 @@ class EmbeddingArticleFilter:
         backend: Optional[EmbeddingBackend] = None,
         query_embeddings_path: Optional[str] = None,
         queries_file: Optional[str] = None,
-        queries: Optional[Dict[str, Sequence[str]]] = None,
+        queries: Optional[Mapping[str, Sequence[str]]] = None,
         config: Optional[_EmbeddingConfig] = None,
         session_factory=None,
     ):
         self._config = config or self.CONFIG
         self._session_factory = session_factory
-        # Not fully supported with centroids yet, might need refactor or removal
-        self._query_embeddings_override: Optional[List[List[float]]] = None
-
         if backend is not None and client is not None:
             logger.info(
                 "EmbeddingArticleFilter received both backend and client; backend takes precedence."
@@ -184,7 +181,7 @@ class EmbeddingArticleFilter:
         rng: Optional[random.Random] = None,
     ) -> List[MutableArticle]:
         """Return the list of articles that pass the embedding filter."""
-        materialized = [dict(article) for article in articles]
+        materialized: List[MutableArticle] = [dict(article) for article in articles]
         if not materialized:
             logger.info("Embedding pre-filter received no articles.")
             return []
@@ -222,8 +219,10 @@ class EmbeddingArticleFilter:
                 str, List[EmbeddingArticleFilter._ScoredArticle]
             ] = {}
 
-            for original, vector in zip(materialized, article_vectors):
-                best_cat, best_score = self._score_against_centroids(vector, centroids)
+            for original, article_vector in zip(materialized, article_vectors):
+                best_cat, best_score = self._score_against_centroids(
+                    article_vector, centroids
+                )
                 if best_cat is None or best_score < threshold:
                     continue
 
@@ -233,7 +232,10 @@ class EmbeddingArticleFilter:
                 original["prefilter_match"] = best_cat
 
                 item = EmbeddingArticleFilter._ScoredArticle(
-                    score=best_score, article=original, vector=vector, category=best_cat
+                    score=best_score,
+                    article=original,
+                    vector=article_vector,
+                    category=best_cat,
                 )
                 if best_cat not in scored_by_category:
                     scored_by_category[best_cat] = []
@@ -248,17 +250,6 @@ class EmbeddingArticleFilter:
 
                 # Keep top N
                 kept_items = items[:max_size]
-
-                # We can compute other_urls if needed, based on the kernel (top item)
-                # or just list others in the category?
-                # The prompt implies top N per cluster (implied category = cluster now).
-                # Logic from previous clustering: "Kernel" + "others".
-                # Let's treat the top 1 as kernel for metadata structure if UI needs it,
-                # but "kept_items" are all valid articles to return.
-                # If we want to maintain the "other_urls" structure for the UI to show grouping:
-                # The top article (kernel) gets "other_urls" populated with the rest of the kept N-1 articles.
-                # The other kept articles get "other_urls" = [].
-                # This matches strict clustering behavior where we show 1 item representing the cluster.
 
                 if kept_items:
                     kernel = kept_items[0]
@@ -342,18 +333,6 @@ class EmbeddingArticleFilter:
 
         for idx, (text, url) in enumerate(zip(texts, urls)):
             if url in cached:
-                # Vectors in DB are bytes (BLOB)
-                # Assuming vectors are stored as bytes. Wait, how do we store them?
-                # Usually purely binary or specific format.
-                # Let's check db.py. It uses LargeBinary.
-                # We need to serialize/deserialize.
-                # Let's use json for simplicity in serialization if db.py didn't specify.
-                # Re-checking db.py plan: "vector (BLOB)".
-                # I should use json.dumps/loads for simplicity or struct.pack for efficiency.
-                # Given strictness, let's assume we store them as JSON string encoded to bytes for now
-                # or just modify db to use JSON/Text if I can, OR handle serialization here.
-                # Let's update `db.py` or handle it here.
-                # Handling here: JSON string -> bytes.
                 try:
                     ordered_vectors[idx] = json.loads(cached[url].decode("utf-8"))
                 except Exception:
@@ -382,64 +361,10 @@ class EmbeddingArticleFilter:
         final_vectors = []
         for v in ordered_vectors:
             if v is None:
-                # Should not happen unless backend failed and we didn't handle it
-                # If backend.embed returns results, v is filled.
-                # If backend failed it raises.
-                # So v should be filled.
-                # If missing_texts was empty, v filled from cache.
                 pass
-            final_vectors.append(v)  # type: ignore
+            final_vectors.append(v)
 
         return final_vectors  # type: ignore
-
-    def _load_query_embeddings(self, path: Path) -> Optional[List[List[float]]]:
-        try:
-            payload = json.loads(path.read_text())
-        except FileNotFoundError:
-            logger.warning(
-                "Precomputed embedding file %s not found; queries will be embedded live.",
-                path,
-            )
-            return None
-        except json.JSONDecodeError:
-            logger.warning(
-                "Precomputed embedding file %s is not valid JSON; embedding live.", path
-            )
-            return None
-
-        queries = tuple(payload.get("queries") or [])
-        embeddings = payload.get("embeddings") or []
-        model = payload.get("model")
-        stored_threshold = payload.get("threshold")
-
-        if queries != self._queries:
-            logger.warning(
-                "Precomputed embeddings at %s use a different query set; embedding live.",
-                path,
-            )
-            return None
-
-        if model and model != self._config.model:
-            logger.warning(
-                "Precomputed embeddings at %s use model %s but current model is %s; embedding live.",
-                path,
-                model,
-                self._config.model,
-            )
-            return None
-
-        if stored_threshold is not None and stored_threshold != self._config.threshold:
-            logger.info(
-                "Embedding threshold in %s (%s) differs from configured threshold (%s); using configured value.",
-                path,
-                stored_threshold,
-                self._config.threshold,
-            )
-
-        logger.info(
-            "Loaded %d precomputed query embeddings from %s", len(embeddings), path
-        )
-        return embeddings
 
     def _compose_article_text(self, article: Mapping[str, object]) -> str:
         title = str(article.get("title") or "")
@@ -451,7 +376,7 @@ class EmbeddingArticleFilter:
 
     def _score_against_centroids(
         self,
-        article_vector: Sequence[float],
+        article_vector: np.ndarray,
         centroids: Dict[str, np.ndarray],
     ) -> Tuple[Optional[str], float]:
         """Return the category and score of the best matching centroid."""
@@ -469,7 +394,7 @@ class EmbeddingArticleFilter:
         return best_cat, best_score
 
     @staticmethod
-    def _dot(left: Sequence[float], right: Sequence[float]) -> float:
+    def _dot(left: np.ndarray, right: np.ndarray) -> float:
         return sum(lft * rght for lft, rght in zip(left, right))
 
     def _build_other_urls(
@@ -516,7 +441,7 @@ def export_security_query_embeddings(
     config: Optional[_EmbeddingConfig] = None,
     client: Optional[OpenAI] = None,
     queries_file: Optional[str] = None,
-    queries: Optional[Sequence[str]] = None,
+    queries: Optional[Mapping[str, Sequence[str]]] = None,
 ) -> Path:
     """Persist embeddings for the security queries to disk."""
     export_config = config or EmbeddingArticleFilter.CONFIG
@@ -529,7 +454,7 @@ def export_security_query_embeddings(
     query_list = list(filter_layer.queries)
     embeddings = filter_layer._embed_texts(query_list)
 
-    payload = {
+    payload: Dict[str, object] = {
         "model": export_config.model,
         "threshold": export_config.threshold,
         "queries": query_list,
@@ -538,7 +463,5 @@ def export_security_query_embeddings(
 
     destination = Path(output_path)
     destination.write_text(json.dumps(payload, indent=2))
-    logger.info(
-        "Exported %d query embeddings to %s", len(payload["embeddings"]), destination
-    )
+    logger.info("Exported %d query embeddings to %s", len(embeddings), destination)
     return destination

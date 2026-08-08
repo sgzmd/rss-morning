@@ -4,12 +4,13 @@
     <env>env.xml</env>
     <limit>10</limit>
     <max-age-hours>24</max-age-hours>
-    <summary>true</summary>
+    <summary>false</summary>
     <extractor>newspaper</extractor>
     <concurrency>10</concurrency>
     <pre-filter>
-        <enabled>true</enabled>
+        <enabled>false</enabled>
         <embeddings-path>../query_embeddings.json</embeddings-path>
+        <queries-file>../queries.txt</queries-file>
         <cluster-threshold>0.8</cluster-threshold>
     </pre-filter>
     <embeddings>
@@ -17,18 +18,13 @@
         <model>intfloat/multilingual-e5-large</model>
     </embeddings>
     <email>
-    <email>
-        <to>user@example.com</to>
-        <from>mailer@example.com</from>
+        <to></to>
+        <from></from>
         <subject>Morning RSS Digest</subject>
     </email>
     <logging>
         <level>INFO</level>
         <file>../logs/rss-morning.log</file>
     </logging>
-    <prompt>
-        <![CDATA[
-            Your prompt goes here.
-        ]]>
-    </prompt>
+    <prompt file="../prompt.md" />
 </config>

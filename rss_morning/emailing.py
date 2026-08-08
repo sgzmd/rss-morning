@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 from typing import Any, Optional
@@ -11,7 +12,7 @@ from .renderers import build_email_html, build_email_text
 logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover - dependency optional unless email requested
-    import resend
+    resend: Any = importlib.import_module("resend")
 except ImportError:  # pragma: no cover
     resend = None
 

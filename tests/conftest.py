@@ -2,6 +2,7 @@ import contextlib
 import importlib.util
 import pathlib
 import shutil
+import socket
 import sys
 import types
 import pytest
@@ -14,7 +15,13 @@ if str(PROJECT_ROOT) not in sys.path:
 def _ensure_module(name: str, module):
     if name in sys.modules:
         return
-    if importlib.util.find_spec(name) is None:
+    try:
+        available = importlib.util.find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        # ``find_spec("package.child")`` imports/inspects the parent.  A parent
+        # stub deliberately has no import spec, so treat the child as missing.
+        available = False
+    if not available:
         sys.modules[name] = module
 
 
@@ -42,12 +49,24 @@ fake_html.fromstring = lambda *_args, **_kwargs: (_ for _ in ()).throw(
 )
 
 fake_lxml = types.ModuleType("lxml")
+fake_lxml.__path__ = []
 fake_lxml.html = fake_html
 
 _ensure_module("requests", fake_requests)
 _ensure_module("readability", fake_readability)
 _ensure_module("lxml", fake_lxml)
 _ensure_module("lxml.html", fake_html)
+
+
+@pytest.fixture(autouse=True)
+def _block_external_network(monkeypatch):
+    """Fail tests that accidentally cross a real network boundary."""
+
+    def blocked(*_args, **_kwargs):
+        raise RuntimeError("External network access is disabled during tests")
+
+    monkeypatch.setattr(socket, "create_connection", blocked)
+    monkeypatch.setattr(socket.socket, "connect", blocked)
 
 
 @pytest.fixture(scope="session", autouse=True)

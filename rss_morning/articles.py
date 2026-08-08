@@ -48,13 +48,8 @@ def _fetch_with_trafilatura(url: str) -> ArticleContent:
             logger.warning("Trafilatura failed to download content for %s", url)
             return ArticleContent(text=None, image=None)
 
-        # Extract content; include_images=True might be needed if we want to try parsing images
-        # but trafilatura is text-focused. We can try to get metadata for image.
-        # trafilatura.extract returns a string (text) or None, or a dict if output_format="json" (but that returns JSON string)
-        # Let's use bare extract for text, and maybe extract_metadata for image.
         text = trafilatura.extract(downloaded, include_comments=False)
 
-        # For image, we can try to extract metadata
         metadata = trafilatura.extract_metadata(downloaded)
         image = metadata.image if metadata else None
 

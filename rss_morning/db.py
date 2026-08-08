@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from sqlalchemy import (
-    Column,
     DateTime,
     LargeBinary,
     String,
@@ -16,7 +15,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +29,15 @@ class ArticleModel(Base):
 
     __tablename__ = "articles"
 
-    url = Column(String, primary_key=True)
-    title = Column(String, nullable=True)
-    content = Column(Text, nullable=True)
-    image = Column(String, nullable=True)
-    summary = Column(Text, nullable=True)
-    published = Column(DateTime, nullable=True)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    url: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    image: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    published: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
 
 
 class EmbeddingModel(Base):
@@ -44,10 +45,12 @@ class EmbeddingModel(Base):
 
     __tablename__ = "embeddings"
 
-    url = Column(String, primary_key=True)
-    backend_key = Column(String, primary_key=True)
-    vector = Column(LargeBinary, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    url: Mapped[str] = mapped_column(String, primary_key=True)
+    backend_key: Mapped[str] = mapped_column(String, primary_key=True)
+    vector: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
 
 
 def init_engine(connection_string: Optional[str]) -> Optional[Engine]:
@@ -92,14 +95,15 @@ def upsert_article(session: Session, data: dict) -> None:
     stmt = select(ArticleModel).where(ArticleModel.url == url)
     existing = session.execute(stmt).scalar_one_or_none()
 
-    published_val = data.get("published")
-    if isinstance(published_val, str):
+    raw_published = data.get("published")
+    published_val: Optional[datetime] = None
+    if isinstance(raw_published, datetime):
+        published_val = raw_published
+    elif isinstance(raw_published, str):
         try:
-            published_val = datetime.fromisoformat(published_val)
+            published_val = datetime.fromisoformat(raw_published)
         except ValueError:
-            # If parsing fails, leave as None or keep existing if updating?
-            # For now, let's just log or ignore.
-            pass
+            logger.warning("Ignoring invalid publication date for %s", url)
 
     if existing:
         existing.title = data.get("title")
@@ -164,7 +168,6 @@ def upsert_embeddings(
     for url, vector in data.items():
         if url in existing_objs:
             existing_objs[url].vector = vector
-            # existing_objs[url].created_at = datetime.now(timezone.utc) # Keep original creation time? Or update? Let's keep original.
         else:
             new_embedding = EmbeddingModel(
                 url=url,
