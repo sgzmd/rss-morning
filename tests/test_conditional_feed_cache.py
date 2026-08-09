@@ -114,6 +114,23 @@ def test_304_sends_validators_and_parses_cached_body_without_transfer():
     assert client.responses == []
 
 
+@pytest.mark.parametrize(
+    "removed,expected",
+    [
+        ("etag", {"If-Modified-Since": "Wed, 01 Jan 2025 00:00:00 GMT"}),
+        ("last_modified", {"If-None-Match": '"v1"'}),
+    ],
+)
+def test_conditional_request_uses_each_available_validator(removed, expected):
+    state = cached_state()
+    state.pop(removed)
+    client = FakeClient(response(304))
+
+    feeds.fetch_feed_entries(feed_config(), http_client=client, cached_state=state)
+
+    assert client.calls[0][1]["headers"] == expected
+
+
 @pytest.mark.parametrize("bad_body", [None, b"not valid feed xml"])
 def test_304_bad_cache_makes_one_unconditional_recovery_request(bad_body):
     state = cached_state()
@@ -153,6 +170,26 @@ def test_changed_200_replaces_prior_state_with_one_atomic_database_commit(sessio
     assert commits == [True]
     assert stored[old["configured_url"]]["body"] == rss_body("Changed")
     assert stored[old["configured_url"]]["etag"] == '"v2"'
+
+
+def test_feed_database_bulk_helpers_handle_empty_invalid_and_rollback(session):
+    assert db.get_feed_http_states(session, []) == {}
+    db.upsert_feed_http_states(
+        session,
+        [{}, {"configured_url": "bad", "body": "not bytes"}],
+    )
+
+    from unittest.mock import MagicMock
+
+    failing_session = MagicMock()
+    failing_session.execute.return_value.scalars.return_value.all.return_value = []
+    failing_session.commit.side_effect = RuntimeError("commit failed")
+    with pytest.raises(RuntimeError, match="commit failed"):
+        db.upsert_feed_http_states(
+            failing_session,
+            [{"configured_url": "feed", "body": b"body"}],
+        )
+    failing_session.rollback.assert_called_once_with()
 
 
 def test_feed_state_is_bulk_read_and_written_outside_workers(monkeypatch):
@@ -211,6 +248,16 @@ def test_feed_state_is_bulk_read_and_written_outside_workers(monkeypatch):
     assert {state["configured_url"] for state in writes[0]} == {
         feed.url for feed in configured_feeds
     }
+
+    monkeypatch.setattr(
+        runner.db,
+        "upsert_feed_http_states",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("write failed")),
+    )
+    assert runner._collect_entries(
+        runner.RunConfig("feeds.xml", 1, None, False),
+        session_factory=SessionContext,
+    )
 
 
 def test_database_disabled_run_never_reads_or_writes_feed_state(monkeypatch):
@@ -272,3 +319,36 @@ def test_corrupt_cache_recovery_is_isolated_to_its_feed():
     assert [entry.title for entry in valid_entries] == ["Story"]
     assert len(corrupt_client.calls) == 2
     assert len(valid_client.calls) == 1
+
+
+def test_malformed_current_response_does_not_replace_last_good_body():
+    updates = []
+    client = FakeClient(response(200, body=b"not a feed"))
+
+    entries = feeds.fetch_feed_entries(
+        feed_config(),
+        http_client=client,
+        cached_state=cached_state(),
+        on_cache_update=updates.append,
+    )
+
+    assert entries == []
+    assert updates == []
+
+
+def test_transient_error_preserves_state_but_does_not_serve_it():
+    updates = []
+
+    class FailingClient:
+        def get(self, *_args, **_kwargs):
+            raise feeds.DownloadError("temporary")
+
+    entries = feeds.fetch_feed_entries(
+        feed_config(),
+        http_client=FailingClient(),
+        cached_state=cached_state(),
+        on_cache_update=updates.append,
+    )
+
+    assert entries == []
+    assert updates == []

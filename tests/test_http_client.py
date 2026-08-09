@@ -145,6 +145,18 @@ def test_typed_request_and_invalid_url():
         client.get("not-a-url")
 
 
+def test_caller_headers_are_forwarded_with_user_agent():
+    session = FakeSession()
+    client = make_client(session)
+
+    client.get("https://example.com", headers={"If-None-Match": '"v1"'})
+
+    assert session.calls[0][1]["headers"] == {
+        "User-Agent": "RSS-Morning/1.0",
+        "If-None-Match": '"v1"',
+    }
+
+
 def test_oversized_response_is_closed_and_raises_typed_error():
     module = http_client_module()
     response = FakeResponse(chunks=(b"1234", b"5678"))

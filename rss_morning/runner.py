@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -115,6 +116,25 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
 
     selected_entries = []
     any_entries_fetched = False
+    feed_cache_states = {}
+    feed_cache_updates = []
+    feed_cache_updates_lock = threading.Lock()
+
+    if session_factory:
+        try:
+            with session_factory() as session:
+                feed_cache_states = db.get_feed_http_states(
+                    session, [feed.url for feed in feeds]
+                )
+        except Exception:
+            logger.exception(
+                "Bulk feed HTTP cache read failed; fetching unconditionally"
+            )
+
+    def record_feed_cache_update(state):
+        with feed_cache_updates_lock:
+            feed_cache_updates.append(state)
+
     feed_http_client = HttpClient(
         connect_timeout=config.http_connect_timeout,
         read_timeout=config.http_read_timeout,
@@ -134,7 +154,12 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
 
     def process_feed(feed):
         try:
-            entries = fetch_feed_entries(feed, http_client=feed_http_client)
+            entries = fetch_feed_entries(
+                feed,
+                http_client=feed_http_client,
+                cached_state=feed_cache_states.get(feed.url),
+                on_cache_update=record_feed_cache_update if session_factory else None,
+            )
             if not entries:
                 logger.info("No entries retrieved for feed %s", feed.url)
                 return []
@@ -157,6 +182,15 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             if entries:
                 any_entries_fetched = True
                 selected_entries.extend(entries)
+
+    if session_factory and feed_cache_updates:
+        try:
+            with session_factory() as session:
+                db.upsert_feed_http_states(session, feed_cache_updates)
+        except Exception:
+            logger.exception(
+                "Bulk feed HTTP cache write failed; continuing without cache"
+            )
 
     if not any_entries_fetched:
         raise RuntimeError("No entries were retrieved from the configured feeds.")

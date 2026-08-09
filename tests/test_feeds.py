@@ -17,7 +17,12 @@ def _reload_feeds_with_stub(monkeypatch, entries):
     sys.modules.pop("rss_morning.feeds", None)
     feeds_module = importlib.import_module("rss_morning.feeds")
     feeds_module._DEFAULT_HTTP_CLIENT = types.SimpleNamespace(
-        get=lambda *_args, **_kwargs: types.SimpleNamespace(body=b"mock content")
+        get=lambda *_args, **_kwargs: types.SimpleNamespace(
+            status=200,
+            body=b"mock content",
+            final_url="https://feed.example.com",
+            headers={},
+        )
     )
     return feeds_module
 
@@ -129,7 +134,12 @@ def test_fetch_feed_entries_uses_injected_http_client(monkeypatch):
     class Client:
         def get(self, url, **kwargs):
             calls.append((url, kwargs))
-            return types.SimpleNamespace(body=b"<rss />")
+            return types.SimpleNamespace(
+                status=200,
+                body=b"<rss />",
+                final_url=url,
+                headers={},
+            )
 
     feed = FeedConfig(category="Cat", title="Feed", url="https://feed.example.com")
 

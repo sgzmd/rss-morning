@@ -53,6 +53,19 @@ class EmbeddingModel(Base):
     )
 
 
+class FeedHttpCacheModel(Base):
+    """Last successfully downloaded representation of one configured feed URL."""
+
+    __tablename__ = "feed_http_cache"
+
+    configured_url: Mapped[str] = mapped_column(String, primary_key=True)
+    final_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    etag: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_modified: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    body: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 def init_engine(connection_string: Optional[str]) -> Optional[Engine]:
     """Initialize the database engine."""
     if not connection_string:
@@ -147,6 +160,74 @@ def upsert_articles(session: Session, payloads: List[dict]) -> None:
                     summary=data.get("summary"),
                     published=published_val,
                     updated_at=datetime.now(timezone.utc),
+                )
+            )
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def get_feed_http_states(session: Session, urls: List[str]) -> Dict[str, dict]:
+    """Bulk-load conditional HTTP state by original configured feed URL."""
+    if not urls:
+        return {}
+
+    stmt = select(FeedHttpCacheModel).where(FeedHttpCacheModel.configured_url.in_(urls))
+    results = session.execute(stmt).scalars().all()
+    return {
+        row.configured_url: {
+            "configured_url": row.configured_url,
+            "final_url": row.final_url,
+            "etag": row.etag,
+            "last_modified": row.last_modified,
+            "body": row.body,
+            "fetched_at": row.fetched_at,
+        }
+        for row in results
+    }
+
+
+def upsert_feed_http_states(session: Session, states: List[dict]) -> None:
+    """Atomically insert or replace successful feed download states."""
+    valid_states = [
+        state
+        for state in states
+        if state.get("configured_url") and isinstance(state.get("body"), bytes)
+    ]
+    if not valid_states:
+        return
+
+    urls = [str(state["configured_url"]) for state in valid_states]
+    stmt = select(FeedHttpCacheModel).where(FeedHttpCacheModel.configured_url.in_(urls))
+    existing_by_url = {
+        row.configured_url: row for row in session.execute(stmt).scalars().all()
+    }
+    for state in valid_states:
+        configured_url = str(state["configured_url"])
+        final_url = state.get("final_url")
+        etag = state.get("etag")
+        last_modified = state.get("last_modified")
+        body = state["body"]
+        fetched_at = state.get("fetched_at") or datetime.now(timezone.utc)
+        existing = existing_by_url.get(configured_url)
+        if existing:
+            existing.final_url = final_url
+            existing.etag = etag
+            existing.last_modified = last_modified
+            existing.body = body
+            existing.fetched_at = fetched_at
+        else:
+            session.add(
+                FeedHttpCacheModel(
+                    configured_url=configured_url,
+                    final_url=final_url,
+                    etag=etag,
+                    last_modified=last_modified,
+                    body=body,
+                    fetched_at=fetched_at,
                 )
             )
 

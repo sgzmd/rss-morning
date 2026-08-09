@@ -101,6 +101,10 @@ timeouts, feed/article byte limits, bounded transient GET retries with backoff, 
 the maximum concurrent requests to one hostname. See the example configuration
 for the conservative defaults. Newspaper and Trafilatura parse the same supplied
 HTML, so extractor libraries do not perform additional uncontrolled downloads.
+When the database cache is enabled, successful feed responses and their ETag or
+Last-Modified validators are stored by the original configured URL. Later runs use
+conditional requests; a 304 re-parses the stored bounded body, while a missing or
+corrupt body triggers one unconditional recovery request.
 
 Environment values can be stored in the configured environment XML file:
 
