@@ -26,6 +26,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Destination file (JSON) to write query embeddings to.",
     )
     parser.add_argument(
+        "--provider",
+        default=EmbeddingArticleFilter.CONFIG.provider,
+        choices=("fastembed", "openai"),
+        help="Embedding provider identity stored in the output metadata.",
+    )
+    parser.add_argument(
         "--model",
         default=EmbeddingArticleFilter.CONFIG.model,
         help="Embedding model identifier to use.",
@@ -63,7 +69,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     configure_logging()
 
     config = _EmbeddingConfig(
-        model=args.model, batch_size=args.batch_size, threshold=args.threshold
+        provider=args.provider,
+        model=args.model,
+        batch_size=args.batch_size,
+        threshold=args.threshold,
     )
 
     queries = load_queries(args.queries_file)
@@ -74,7 +83,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger.exception("Failed to export query embeddings.")
         return 1
 
-    print(f"Wrote {len(queries)} query embeddings to {args.output}")
+    query_count = sum(len(values) for values in queries.values())
+    print(f"Wrote {query_count} query embeddings to {args.output}")
     return 0
 
 

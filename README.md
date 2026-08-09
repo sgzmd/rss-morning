@@ -231,13 +231,15 @@ failures keep the original articles, failed LLM batches are omitted, and email
 failures are logged without failing the run. Top-level configuration or pipeline
 errors return exit code 1.
 
+The pre-filter may load a compatible version-2 query-vector file from
+`pre-filter/embeddings-path`; stale or corrupt files are ignored and recomputed.
+Within each matched category, candidates are ordered by relevance and greedily
+clustered using `cluster-threshold` as cosine similarity in the inclusive `[0, 1]`
+range. Only representatives proceed to summarization, while duplicate source URLs
+and their distances remain in the representative's `other_urls` field.
+
 ## Known compatibility gaps
 
-- `pre-filter/embeddings-path` and `cluster-threshold` are parsed for compatibility,
-  but the current runtime filter does not use the precomputed query file or the
-  grouping threshold.
-- `rss_morning.prefilter_cli` writes a legacy embedding format that the runtime
-  does not consume.
 - The XML logging `file` value is parsed but only the `--log-file` CLI option
   currently enables file logging.
 - The AWS deployment guide may contain historical CLI examples; validate commands

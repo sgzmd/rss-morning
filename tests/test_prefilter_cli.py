@@ -20,7 +20,7 @@ def test_prefilter_cli_main_invokes_export(monkeypatch, tmp_path):
 
     def fake_load_queries(path):
         called["queries_file"] = path
-        return ("Q1", "Q2")
+        return {"A": ("Q1", "Q2")}
 
     monkeypatch.setattr(prefilter_cli, "load_queries", fake_load_queries)
 
@@ -43,7 +43,7 @@ def test_prefilter_cli_main_invokes_export(monkeypatch, tmp_path):
     assert called["config"].model == "fake-model"
     assert called["config"].batch_size == 4
     assert called["config"].threshold == 0.9
-    assert called["queries"] == ("Q1", "Q2")
+    assert called["queries"] == ("A",)
     assert called["queries_file"] is None
 
 

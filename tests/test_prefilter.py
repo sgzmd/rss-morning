@@ -99,10 +99,9 @@ def test_filter_enforces_max_cluster_size():
     assert len(filtered) == 3
     assert [a["title"] for a in filtered] == ["Art0", "Art1", "Art2"]
 
-    # Check that Top 1 has 'other_urls' populated
+    # Without an explicit clustering threshold, representatives remain separate.
     top_art = filtered[0]
-    assert len(top_art["other_urls"]) == 2  # The other 2 kept articles
-    assert top_art["other_urls"][0]["url"] == "http://Art1"
+    assert top_art["other_urls"] == []
 
     # Others should have empty other_urls because we only attach to Kernel?
     # Wait, my implementation attached to Kernel, but returned all kept items.
@@ -379,7 +378,7 @@ def test_export_security_query_embeddings_writes_payload(tmp_path, monkeypatch):
             pass
 
         def _embed_texts(self, texts):
-            assert texts == ["A"]
+            assert texts == ["query"]
             return [[1.0]]
 
     monkeypatch.setattr(prefilter, "EmbeddingArticleFilter", FakeFilter)
@@ -393,8 +392,10 @@ def test_export_security_query_embeddings_writes_payload(tmp_path, monkeypatch):
         == output
     )
     assert json.loads(output.read_text()) == {
+        "format_version": 2,
+        "provider": "fastembed",
         "model": "model",
-        "threshold": 0.7,
-        "queries": ["A"],
-        "embeddings": [[1.0]],
+        "preprocessing_version": prefilter.PREPROCESSING_VERSION,
+        "dimension": 1,
+        "entries": [{"category": "A", "query": "query", "vector": [1.0]}],
     }

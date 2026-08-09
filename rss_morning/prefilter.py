@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import hashlib
 import logging
+import os
 import random
+import tempfile
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +38,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_QUERIES_FILE = PROJECT_ROOT / "queries.txt"
 EXAMPLE_QUERIES_FILE = PROJECT_ROOT / "queries.example.txt"
 PREPROCESSING_VERSION = "article-text-v1"
+QUERY_EMBEDDING_FORMAT_VERSION = 2
 _CENTROID_CACHE_SIZE = 32
 
 
@@ -161,6 +164,7 @@ class EmbeddingArticleFilter:
             loaded_queries = self.DEFAULT_QUERIES
 
         self._queries: Dict[str, Tuple[str, ...]] = loaded_queries
+        self._precomputed_centroids: Optional[Dict[str, np.ndarray]] = None
         if backend is not None:
             self._backend = backend
         elif self._config.provider == "fastembed":
@@ -176,8 +180,15 @@ class EmbeddingArticleFilter:
                 batch_size=self._config.batch_size,
             )
 
-        # Removed query_embeddings_path loading for now as logic changed significantly
-        # If we need it back, we need to restructure the cache format.
+        if query_embeddings_path:
+            try:
+                self._precomputed_centroids = self._load_query_embeddings(
+                    Path(query_embeddings_path)
+                )
+            except Exception as exc:  # noqa: BLE001 - optional cache boundary
+                logger.warning(
+                    "Ignoring precomputed query embeddings (%s)", type(exc).__name__
+                )
 
     @property
     def queries(self) -> Dict[str, Tuple[str, ...]]:
@@ -191,6 +202,8 @@ class EmbeddingArticleFilter:
         rng: Optional[random.Random] = None,
     ) -> List[MutableArticle]:
         """Return the list of articles that pass the embedding filter."""
+        if cluster_threshold is not None and not 0 <= cluster_threshold <= 1:
+            raise ValueError("cluster_threshold must be between 0 and 1")
         pristine: List[MutableArticle] = [dict(article) for article in articles]
         if not pristine:
             logger.info("Embedding pre-filter received no articles.")
@@ -244,39 +257,50 @@ class EmbeddingArticleFilter:
                     scored_by_category[best_cat] = []
                 scored_by_category[best_cat].append(item)
 
-            retained = []
+            retained: List[MutableArticle] = []
             max_size = self._config.max_cluster_size
+            similarity_threshold = (
+                cluster_threshold if cluster_threshold is not None else 1.0
+            )
 
-            for category, items in scored_by_category.items():
-                # Sort descending by score
-                items.sort(key=lambda x: x.score, reverse=True)
+            for _category, items in scored_by_category.items():
+                # Exact ties prefer newer publication timestamps, then lexical URLs.
+                items.sort(key=lambda item: str(item.article.get("url") or ""))
+                items.sort(
+                    key=lambda item: str(item.article.get("published") or ""),
+                    reverse=True,
+                )
+                items.sort(key=lambda item: item.score, reverse=True)
 
-                # Keep top N
-                kept_items = items[:max_size]
+                representatives: List[EmbeddingArticleFilter._ScoredArticle] = []
+                for item in items:
+                    nearest = None
+                    nearest_similarity = float("-inf")
+                    for representative in representatives:
+                        similarity = self._cosine(item.vector, representative.vector)
+                        if similarity > nearest_similarity:
+                            nearest = representative
+                            nearest_similarity = similarity
 
-                if kept_items:
-                    kernel = kept_items[0]
-                    others = kept_items[1:]
-
-                    # Calculate distances for others
-                    other_entries = []
-                    for other in others:
-                        cosine = self._cosine(kernel.vector, other.vector)
-                        dist = max(0.0, 1.0 - cosine)
-                        other_entries.append(
+                    if (
+                        nearest is not None
+                        and nearest_similarity >= similarity_threshold
+                    ):
+                        duplicates = nearest.article["other_urls"]
+                        assert isinstance(duplicates, list)
+                        duplicates.append(
                             {
-                                "url": str(other.article.get("url") or ""),
-                                "distance": round(dist, 4),
+                                "url": str(item.article.get("url") or ""),
+                                "distance": round(
+                                    max(0.0, 1.0 - nearest_similarity), 4
+                                ),
                             }
                         )
-                        # Ensure others have empty other_urls
-                        other.article["other_urls"] = []
+                    elif len(representatives) < max_size:
+                        item.article["other_urls"] = []
+                        representatives.append(item)
 
-                    kernel.article["other_urls"] = other_entries
-
-                    # Add all kept items to retained list
-                    for item in kept_items:
-                        retained.append(item.article)
+                retained.extend(item.article for item in representatives)
 
             logger.info(
                 "Embedding pre-filter retained %d articles across %d categories",
@@ -292,6 +316,8 @@ class EmbeddingArticleFilter:
 
     def _get_category_centroids(self) -> Dict[str, np.ndarray]:
         """Fetch and cache centroids for the security query categories."""
+        if self._precomputed_centroids is not None:
+            return self._precomputed_centroids
         # Use a tuple of sorted items as a stable key for caching
         queries_key = tuple(sorted((k, tuple(v)) for k, v in self._queries.items()))
         key = (queries_key, self._backend_identity())
@@ -325,6 +351,50 @@ class EmbeddingArticleFilter:
         return ":".join(
             (self._config.provider, self._config.model, PREPROCESSING_VERSION)
         )
+
+    def _load_query_embeddings(self, path: Path) -> Dict[str, np.ndarray]:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        expected = (
+            payload.get("format_version") == QUERY_EMBEDDING_FORMAT_VERSION
+            and payload.get("provider") == self._config.provider
+            and payload.get("model") == self._config.model
+            and payload.get("preprocessing_version") == PREPROCESSING_VERSION
+        )
+        if not expected:
+            raise EmbeddingValidationError("incompatible query embedding metadata")
+        dimension = payload.get("dimension")
+        if not isinstance(dimension, int) or dimension <= 0:
+            raise EmbeddingValidationError("invalid query embedding dimension")
+        entries = payload.get("entries")
+        if not isinstance(entries, list):
+            raise EmbeddingValidationError("invalid query embedding entries")
+        expected_pairs = {
+            (category, query)
+            for category, queries in self._queries.items()
+            for query in queries
+        }
+        vectors: Dict[str, List[np.ndarray]] = {}
+        seen = set()
+        for entry in entries:
+            pair = (entry.get("category"), entry.get("query"))
+            vector = np.asarray(entry.get("vector"), dtype=float)
+            if (
+                pair in seen
+                or pair not in expected_pairs
+                or vector.shape != (dimension,)
+                or not np.all(np.isfinite(vector))
+            ):
+                raise EmbeddingValidationError("invalid query embedding entry")
+            seen.add(pair)
+            vectors.setdefault(str(pair[0]), []).append(vector)
+        if seen != expected_pairs:
+            raise EmbeddingValidationError("query embedding file is incomplete")
+        centroids = {}
+        for category, items in vectors.items():
+            mean = np.mean(np.stack(items), axis=0)
+            norm = float(np.linalg.norm(mean))
+            centroids[category] = mean / norm if norm else np.zeros_like(mean)
+        return centroids
 
     def _embed_backend(
         self, texts: Sequence[str], expected_dimension: Optional[int] = None
@@ -510,6 +580,7 @@ def export_security_query_embeddings(
     *,
     config: Optional[_EmbeddingConfig] = None,
     client: Optional[OpenAI] = None,
+    backend: Optional[EmbeddingBackend] = None,
     queries_file: Optional[str] = None,
     queries: Optional[Mapping[str, Sequence[str]]] = None,
 ) -> Path:
@@ -517,21 +588,52 @@ def export_security_query_embeddings(
     export_config = config or EmbeddingArticleFilter.CONFIG
     filter_layer = EmbeddingArticleFilter(
         client=client,
+        backend=backend,
         config=export_config,
         queries_file=queries_file,
         queries=queries,
     )
-    query_list = list(filter_layer.queries)
+    pairs = [
+        (category, query)
+        for category, query_values in filter_layer.queries.items()
+        for query in query_values
+    ]
+    query_list = [query for _category, query in pairs]
     embeddings = filter_layer._embed_texts(query_list)
+    dimension = len(embeddings[0]) if embeddings else 0
 
     payload: Dict[str, object] = {
+        "format_version": QUERY_EMBEDDING_FORMAT_VERSION,
+        "provider": export_config.provider,
         "model": export_config.model,
-        "threshold": export_config.threshold,
-        "queries": query_list,
-        "embeddings": embeddings,
+        "preprocessing_version": PREPROCESSING_VERSION,
+        "dimension": dimension,
+        "entries": [
+            {"category": category, "query": query, "vector": vector}
+            for (category, query), vector in zip(pairs, embeddings)
+        ],
     }
 
     destination = Path(output_path)
-    destination.write_text(json.dumps(payload, indent=2))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            json.dump(payload, temporary, indent=2)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, destination)
+    except Exception:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
     logger.info("Exported %d query embeddings to %s", len(embeddings), destination)
     return destination
