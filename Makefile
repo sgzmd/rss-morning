@@ -4,17 +4,30 @@ PYTEST := $(VENV)/bin/pytest
 ENV_FISH ?= env.fish
 CONFIG ?= configs/config.xml
 
-.PHONY: help test live-e2e production
+.PHONY: help test coverage check live-e2e production
 
 help:
 	@echo "Available targets:"
 	@echo "  make test        Run the hermetic test suite"
+	@echo "  make coverage    Run hermetic tests with 100% branch coverage"
+	@echo "  make check       Run lint, format, type, test, and coverage checks"
 	@echo "  make live-e2e    Run the live pipeline with detailed console logging"
 	@echo "  make production  Run the full production pipeline"
 
 test:
 	@test -x "$(PYTEST)" || { echo "Missing $(PYTEST). Create the virtual environment first." >&2; exit 2; }
 	@$(PYTEST) -m "not live_e2e"
+
+coverage:
+	@test -x "$(PYTEST)" || { echo "Missing $(PYTEST). Create the virtual environment first." >&2; exit 2; }
+	@$(PYTEST) -m "not live_e2e" --cov=rss_morning --cov=main --cov-branch --cov-report=term-missing --cov-fail-under=100
+
+check:
+	@test -x "$(VENV)/bin/ruff" || { echo "Missing development tools. Install requirements-dev.txt first." >&2; exit 2; }
+	@$(VENV)/bin/ruff check .
+	@$(VENV)/bin/ruff format --check .
+	@$(VENV)/bin/mypy rss_morning main.py
+	@$(MAKE) coverage
 
 live-e2e:
 	@test -x "$(PYTEST)" || { echo "Missing $(PYTEST). Create the virtual environment first." >&2; exit 2; }
