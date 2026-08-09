@@ -142,6 +142,35 @@ def test_generate_summary_empty_input():
     assert json.loads(result) == {"summaries": []}
 
 
+def test_generate_summary_empty_input_can_return_dict():
+    rendered, result = summaries.generate_summary([], "Prompt", return_dict=True)
+    assert json.loads(rendered) == result == {"summaries": []}
+
+
+def test_sanitize_html_handles_empty_text():
+    assert summaries.sanitize_html("") == ""
+
+
+def test_generate_summary_rejects_provider_and_missing_credentials(monkeypatch):
+    with pytest.raises(ValueError, match="Unsupported LLM provider"):
+        summaries.generate_summary([{"title": "A"}], "Prompt", provider="other")
+
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="GOOGLE_API_KEY"):
+        summaries.generate_summary([{"title": "A"}], "Prompt")
+
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
+        summaries.generate_summary([{"title": "A"}], "Prompt", provider="openrouter")
+
+
+def test_generate_summary_requires_gemini_dependency(monkeypatch):
+    monkeypatch.setattr(summaries, "genai", None)
+    with pytest.raises(RuntimeError, match="google-genai package"):
+        summaries.generate_summary([{"title": "A"}], "Prompt")
+
+
 def test_generate_summary_logging(mock_genai_client):
     mock_client, mock_types = mock_genai_client
 
@@ -306,3 +335,40 @@ def test_generate_summary_uses_openrouter_structured_outputs(monkeypatch):
     assert captured["response_format"]["type"] == "json_schema"
     assert captured["response_format"]["json_schema"]["strict"] is True
     assert captured["extra_body"] == {"provider": {"require_parameters": True}}
+
+
+def test_generate_summary_skips_empty_chunks_and_sanitizes_optional_fields(
+    mock_genai_client,
+):
+    mock_client, _ = mock_genai_client
+    payload = {
+        "summaries": [
+            {
+                "category": "<b>Tech</b>",
+                "summary": {
+                    "title": "<b>Title</b>",
+                    "what": "<i>What</i>",
+                    "so-what": "<i>Why</i>",
+                    "now-what": "<i>Act</i>",
+                },
+            },
+            {"summary": {}},
+        ]
+    }
+    mock_client.models.generate_content_stream.return_value = [
+        SimpleNamespace(text=None),
+        SimpleNamespace(text=json.dumps(payload)),
+    ]
+
+    rendered, result = summaries.generate_summary(
+        [{"title": "A"}], "Prompt", return_dict=True
+    )
+
+    assert json.loads(rendered) == result
+    assert result["summaries"][0]["category"] == "Tech"
+    assert result["summaries"][1]["summary"] == {
+        "title": "",
+        "what": "",
+        "so-what": "",
+        "now-what": "",
+    }

@@ -168,3 +168,54 @@ def test_truncate_text(monkeypatch):
 
     truncated_default = articles_module.truncate_text(original_text)
     assert len(encoder.encode(truncated_default)) == 100
+
+
+def test_truncate_text_returns_short_input_unchanged(monkeypatch):
+    articles_module, _ = _install_article_dependencies(monkeypatch)
+    encoder = types.SimpleNamespace(
+        encode=lambda value: list(value), decode=lambda tokens: "".join(tokens)
+    )
+    monkeypatch.setattr(articles_module.tiktoken, "get_encoding", lambda _name: encoder)
+
+    assert articles_module.truncate_text("short", limit=5) == "short"
+
+
+def test_newspaper_empty_text_and_image(monkeypatch):
+    articles_module, _ = _install_article_dependencies(
+        monkeypatch, article_text="   ", top_image="   "
+    )
+
+    assert articles_module.fetch_article_content("https://example.com") == (
+        articles_module.ArticleContent(text=None, image=None)
+    )
+
+
+def test_trafilatura_empty_text_without_metadata(monkeypatch):
+    articles_module, _ = _install_article_dependencies(monkeypatch)
+    fake = types.SimpleNamespace(
+        fetch_url=lambda _url: "html",
+        extract=lambda *_args, **_kwargs: None,
+        extract_metadata=lambda _downloaded: None,
+    )
+    monkeypatch.setattr(articles_module, "trafilatura", fake)
+
+    assert articles_module.fetch_article_content(
+        "https://example.com", extractor="trafilatura"
+    ) == articles_module.ArticleContent(text=None, image=None)
+
+
+def test_trafilatura_unexpected_error_is_recoverable(monkeypatch):
+    articles_module, _ = _install_article_dependencies(monkeypatch)
+
+    def fail(_url):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        articles_module,
+        "trafilatura",
+        types.SimpleNamespace(fetch_url=fail),
+    )
+
+    assert articles_module.fetch_article_content(
+        "https://example.com", extractor="trafilatura"
+    ) == articles_module.ArticleContent(text=None, image=None)

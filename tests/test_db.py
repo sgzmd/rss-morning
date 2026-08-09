@@ -1,6 +1,8 @@
 """Tests for the database abstraction layer."""
 
 import json
+from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,6 +17,7 @@ def session():
     session = SessionLocal()
     yield session
     session.close()
+    engine.dispose()
 
 
 def test_upsert_and_get_article(session):
@@ -114,3 +117,42 @@ def test_upsert_and_get_embeddings(session):
 
     cached = db.get_embeddings(session, [url1], backend)
     assert cached[url1] == json.dumps(new_vec1).encode("utf-8")
+
+
+def test_empty_database_operations_are_noops(session):
+    assert db.init_engine(None) is None
+    assert db.get_article(session, "missing") is None
+    assert db.get_embeddings(session, [], "backend") == {}
+    db.upsert_article(session, {})
+    db.upsert_embeddings(session, {}, "backend")
+
+
+def test_upsert_article_accepts_datetime_and_preserves_date_on_undated_update(session):
+    published = datetime(2025, 1, 2, tzinfo=timezone.utc)
+    url = "https://example.com/datetime"
+    db.upsert_article(session, {"url": url})
+    db.upsert_article(session, {"url": url, "published": published})
+    db.upsert_article(session, {"url": url, "title": "updated"})
+
+    cached = db.get_article(session, url)
+    assert cached is not None
+    assert cached["published"] == published.replace(tzinfo=None)
+
+
+@pytest.mark.parametrize(
+    "operation,args",
+    [
+        (db.upsert_article, ({"url": "https://example.com/fail"},)),
+        (db.upsert_embeddings, ({"url": b"vector"}, "backend")),
+    ],
+)
+def test_upsert_rolls_back_commit_failures(operation, args):
+    session = MagicMock()
+    session.execute.return_value.scalar_one_or_none.return_value = None
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.commit.side_effect = RuntimeError("commit failed")
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        operation(session, *args)
+
+    session.rollback.assert_called_once_with()
