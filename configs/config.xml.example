@@ -30,9 +30,23 @@
         <model>intfloat/multilingual-e5-large</model>
     </embeddings>
     <llm>
-        <!-- gemini uses GOOGLE_API_KEY/GEMINI_API_KEY; openrouter uses OPENROUTER_API_KEY -->
-        <provider>gemini</provider>
-        <model>gemini-flash-latest</model>
+        <!-- OpenRouter is the default. Direct Gemini remains available explicitly. -->
+        <provider>openrouter</provider>
+        <model>bytedance-seed/seed-2.0-mini</model>
+        <fallback-models>
+            <model>z-ai/glm-4.7-flash</model>
+            <model>openai/gpt-4o-mini</model>
+        </fallback-models>
+        <routing>price</routing>
+        <max-input-price-per-million>0.20</max-input-price-per-million>
+        <max-output-price-per-million>0.75</max-output-price-per-million>
+        <require-structured-output>true</require-structured-output>
+        <max-batch-articles>20</max-batch-articles>
+        <max-input-tokens>30000</max-input-tokens>
+        <request-timeout-seconds>90</request-timeout-seconds>
+        <max-attempts>3</max-attempts>
+        <max-split-depth>6</max-split-depth>
+        <cache-enabled>true</cache-enabled>
     </llm>
     <email>
         <to></to>

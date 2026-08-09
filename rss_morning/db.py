@@ -82,6 +82,18 @@ class EmbeddingModelV2(Base):
     )
 
 
+class LLMBatchCacheModel(Base):
+    """Validated response for one exact ordered summary batch."""
+
+    __tablename__ = "llm_batch_cache"
+
+    identity: Mapped[str] = mapped_column(String, primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
 def init_engine(connection_string: Optional[str]) -> Optional[Engine]:
     """Initialize the database engine."""
     if not connection_string:
@@ -247,6 +259,27 @@ def upsert_feed_http_states(session: Session, states: List[dict]) -> None:
                 )
             )
 
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def get_llm_batch_cache(session: Session, identity: str) -> Optional[str]:
+    """Read one exact LLM batch response."""
+    row = session.get(LLMBatchCacheModel, identity)
+    return row.payload if row else None
+
+
+def upsert_llm_batch_cache(session: Session, identity: str, payload: str) -> None:
+    """Atomically insert or replace one validated LLM batch response."""
+    row = session.get(LLMBatchCacheModel, identity)
+    if row:
+        row.payload = payload
+        row.created_at = datetime.now(timezone.utc)
+    else:
+        session.add(LLMBatchCacheModel(identity=identity, payload=payload))
     try:
         session.commit()
     except Exception:

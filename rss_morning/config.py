@@ -9,6 +9,11 @@ from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 
 from .models import FeedConfig
+from .summaries import (
+    DEFAULT_OPENROUTER_FALLBACKS,
+    DEFAULT_OPENROUTER_MODEL,
+    SummarySettings,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +34,7 @@ class EmbeddingsConfig:
     model: str = "intfloat/multilingual-e5-large"
 
 
-@dataclass
-class LLMConfig:
-    provider: str = "gemini"
-    model: str = "gemini-flash-latest"
+LLMConfig = SummarySettings
 
 
 @dataclass
@@ -74,7 +76,7 @@ class AppConfig:
     summary: bool = False
     pre_filter: PreFilterConfig = field(default_factory=PreFilterConfig)
     embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
-    llm: LLMConfig = field(default_factory=LLMConfig)
+    llm: SummarySettings = field(default_factory=SummarySettings)
     email: EmailConfig = field(default_factory=EmailConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
@@ -229,10 +231,86 @@ def parse_app_config(path: str) -> AppConfig:
 
     # Summary LLM
     llm_node = root.find("llm")
-    llm_config = LLMConfig()
+    llm_config = SummarySettings()
     if llm_node is not None:
-        llm_config.provider = llm_node.findtext("provider", "gemini").strip().lower()
-        llm_config.model = llm_node.findtext("model", "gemini-flash-latest").strip()
+        provider = llm_node.findtext("provider", "openrouter").strip().lower()
+        default_model = (
+            "gemini-flash-latest" if provider == "gemini" else DEFAULT_OPENROUTER_MODEL
+        )
+        model = llm_node.findtext("model", default_model).strip()
+        fallback_node = llm_node.find("fallback-models")
+        fallback_models: tuple[str, ...]
+        if fallback_node is None:
+            fallback_models = (
+                DEFAULT_OPENROUTER_FALLBACKS if provider == "openrouter" else ()
+            )
+        else:
+            fallback_models = tuple(
+                node.text.strip()
+                for node in fallback_node.findall("model")
+                if node.text and node.text.strip()
+            )
+        routing = llm_node.findtext("routing", "price").strip().lower()
+        if provider not in {"openrouter", "gemini"}:
+            raise ValueError("LLM provider must be openrouter or gemini")
+        if provider == "openrouter":
+            models = (model, *fallback_models)
+            if len(fallback_models) > 3:
+                raise ValueError("OpenRouter accepts zero to three fallback models")
+            if any(
+                value.count("/") != 1
+                or not all(value.split("/"))
+                or any(char.isspace() for char in value)
+                for value in models
+            ):
+                raise ValueError(
+                    "OpenRouter model IDs must be nonempty provider/model slugs"
+                )
+            if len(set(models)) != len(models):
+                raise ValueError("OpenRouter model chain contains a duplicate")
+        elif fallback_models:
+            raise ValueError("Direct Gemini does not support fallback models")
+        if routing not in {"price", "throughput", "latency"}:
+            raise ValueError("LLM routing must be price, throughput, or latency")
+        llm_config = SummarySettings(
+            provider=provider,
+            model=model,
+            fallback_models=fallback_models,
+            routing=routing,
+            max_input_price_per_million=float(
+                llm_node.findtext("max-input-price-per-million", "0.20")
+            ),
+            max_output_price_per_million=float(
+                llm_node.findtext("max-output-price-per-million", "0.75")
+            ),
+            require_structured_output=llm_node.findtext(
+                "require-structured-output", "true"
+            )
+            .strip()
+            .lower()
+            == "true",
+            max_batch_articles=int(llm_node.findtext("max-batch-articles", "20")),
+            max_input_tokens=int(llm_node.findtext("max-input-tokens", "30000")),
+            request_timeout_seconds=float(
+                llm_node.findtext("request-timeout-seconds", "90")
+            ),
+            max_attempts=int(llm_node.findtext("max-attempts", "3")),
+            max_split_depth=int(llm_node.findtext("max-split-depth", "6")),
+            cache_enabled=llm_node.findtext("cache-enabled", "true").strip().lower()
+            == "true",
+        )
+        if (
+            llm_config.max_input_price_per_million <= 0
+            or llm_config.max_output_price_per_million <= 0
+            or llm_config.max_batch_articles <= 0
+            or llm_config.max_input_tokens <= 0
+            or llm_config.request_timeout_seconds <= 0
+            or llm_config.max_attempts <= 0
+            or llm_config.max_split_depth < 0
+        ):
+            raise ValueError(
+                "LLM prices, limits, timeout, and attempts must be positive"
+            )
 
     # Email
     email_node = root.find("email")

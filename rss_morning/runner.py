@@ -16,7 +16,7 @@ from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
 from .http_client import HttpClient
-from .summaries import generate_summary
+from .summaries import SummarySettings, generate_summary
 from . import db
 
 logger = logging.getLogger(__name__)
@@ -49,8 +49,22 @@ class RunConfig:
     database_connection_string: Optional[str] = None
     embedding_provider: str = "fastembed"
     embedding_model: str = "intfloat/multilingual-e5-large"
-    llm_provider: str = "gemini"
-    llm_model: str = "gemini-flash-latest"
+    llm_provider: str = "openrouter"
+    llm_model: str = "bytedance-seed/seed-2.0-mini"
+    llm_fallback_models: tuple[str, ...] = (
+        "z-ai/glm-4.7-flash",
+        "openai/gpt-4o-mini",
+    )
+    llm_routing: str = "price"
+    llm_max_input_price_per_million: float = 0.20
+    llm_max_output_price_per_million: float = 0.75
+    llm_require_structured_output: bool = True
+    llm_max_batch_articles: int = 20
+    llm_max_input_tokens: int = 30_000
+    llm_request_timeout_seconds: float = 90
+    llm_max_attempts: int = 3
+    llm_max_split_depth: int = 6
+    llm_cache_enabled: bool = True
     llm_dry_run: bool = False
     http_connect_timeout: float = 5
     http_read_timeout: float = 20
@@ -465,6 +479,33 @@ def execute(config: RunConfig) -> RunResult:
             )
             raise ValueError("Summary requested but no system_prompt configured.")
 
+        cache_get = None
+        cache_put = None
+        if session_factory and config.llm_cache_enabled:
+
+            def cache_get(identity: str) -> Optional[str]:
+                with session_factory() as session:
+                    return db.get_llm_batch_cache(session, identity)
+
+            def cache_put(identity: str, payload: str) -> None:
+                with session_factory() as session:
+                    db.upsert_llm_batch_cache(session, identity, payload)
+
+        summary_settings = SummarySettings(
+            provider=config.llm_provider,
+            model=config.llm_model,
+            fallback_models=config.llm_fallback_models,
+            routing=config.llm_routing,
+            max_input_price_per_million=config.llm_max_input_price_per_million,
+            max_output_price_per_million=config.llm_max_output_price_per_million,
+            require_structured_output=config.llm_require_structured_output,
+            max_batch_articles=config.llm_max_batch_articles,
+            max_input_tokens=config.llm_max_input_tokens,
+            request_timeout_seconds=config.llm_request_timeout_seconds,
+            max_attempts=config.llm_max_attempts,
+            max_split_depth=config.llm_max_split_depth,
+            cache_enabled=config.llm_cache_enabled,
+        )
         summary_output, summary_data = cast(
             Tuple[str, Optional[dict]],
             generate_summary(
@@ -472,8 +513,9 @@ def execute(config: RunConfig) -> RunResult:
                 config.system_prompt,
                 return_dict=True,
                 dry_run=config.llm_dry_run,
-                provider=config.llm_provider,
-                model=config.llm_model,
+                settings=summary_settings,
+                cache_get=cache_get,
+                cache_put=cache_put,
             ),
         )
         output_text = summary_output

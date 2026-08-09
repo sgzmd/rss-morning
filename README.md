@@ -163,9 +163,31 @@ python main.py --config configs/config.xml --load-articles articles.json
 ```
 
 `--llm-dry-run` prepares the LLM payload and exits before the model request and
-before email delivery. It reports preparation at INFO level; the full prompt and
-article input are available only at DEBUG level. Use DEBUG logs only where that
-data is appropriate.
+before email delivery or cache access. It reports preparation at INFO level; the
+full prompt and article input are available only at DEBUG level. Use DEBUG logs
+only where that data is appropriate.
+
+Summaries default to an OpenRouter chain of
+`bytedance-seed/seed-2.0-mini`, `z-ai/glm-4.7-flash`, then
+`openai/gpt-4o-mini`. Requests require structured JSON output, preserve that
+fallback order, prefer price routing, and cap list prices at $0.20/M input and
+$0.75/M output tokens. The `<llm>` section can change the chain, routing
+(`price`, `throughput`, or `latency`), price caps, batch count/token limits,
+timeout, bounded attempts/split depth, and exact-batch caching. Direct Gemini is
+available only when explicitly selected.
+
+Failed transient requests are retried with bounded backoff, then multi-article
+batches are split up to the configured depth. Returned URLs must exactly match
+the submitted batch, required fields must be complete, and only fully validated
+responses are cached. Provider model and usage data are retained for internal
+cost metrics and do not change stdout JSON.
+
+Candidate quality evaluation uses only the committed synthetic corpus and
+requires explicit approval because it makes paid calls:
+
+```bash
+RUN_PAID_LLM_EVAL=1 PROMPT=path/to/synthetic-prompt.md make llm-eval
+```
 
 ## Live end-to-end test
 
@@ -183,9 +205,9 @@ the opt-in test, streams DEBUG logs, and requests a verbose, unshortened pytest
 traceback. Use `ENV_FISH=path/to/file.fish make live-e2e` if the Fish environment
 file has a different name.
 
-The bounded defaults are `BAAI/bge-small-en-v1.5` for local embeddings and
-`mistralai/mistral-nemo` for summaries. Override the summary model without editing
-the harness:
+The bounded live-test defaults are `BAAI/bge-small-en-v1.5` for local embeddings
+and `bytedance-seed/seed-2.0-mini` for summaries. Override the summary model
+without editing the harness:
 
 ```fish
 set -lx OPENROUTER_E2E_MODEL openai/gpt-oss-20b

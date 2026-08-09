@@ -119,7 +119,7 @@ Recognized settings are:
 - `<prompt file="..."/>`: prompt file. It is required when summaries are enabled. Inline prompt text is not supported.
 - `<pre-filter>`: `enabled`, `mode` (`full-text` default or opt-in `metadata-first`), positive `candidate-multiplier` (default `3`), optional `queries-file`, optional compatible version-2 `embeddings-path`, and `cluster-threshold` cosine similarity in `[0, 1]`.
 - `<embeddings>`: `provider` and `model`. `fastembed` is the default provider. Any provider value other than `fastembed` selects OpenAI.
-- `<llm>`: summary `provider` (`gemini` or `openrouter`) and model. Defaults to Gemini with `gemini-flash-latest`.
+- `<llm>`: summary provider and resilience/cost controls. It defaults to OpenRouter with `bytedance-seed/seed-2.0-mini`, ordered fallbacks `z-ai/glm-4.7-flash` and `openai/gpt-4o-mini`, `price` routing, $0.20/M input and $0.75/M output caps, required structured output, 20 articles/30,000 estimated input tokens per batch, a 90-second timeout, three attempts, split depth six, and exact-batch caching. Direct Gemini is available only when explicitly selected.
 - `<database>`: `enabled` and a SQLAlchemy `connection-string`.
 - `<email>`: `to`, `from`, and `subject`.
 - `<logging>`: `level` and `file`.
@@ -178,13 +178,13 @@ In opt-in `metadata-first` mode, deduplicated entries are screened before page d
 
 Without summaries, stdout is a JSON list of article dictionaries.
 
-With summaries, stdout is an object with `summaries` and, when the LLM supplies it, `exec_summary`. Each summary item contains `url`, `category`, and a nested `summary` with `title`, `rank-reasoning`, `what`, `so-what`, and `now-what`. LLM output is stripped of HTML. The runner restores a source image when the summary item has none.
+With summaries, stdout is an object with `summaries` and, when the LLM supplies it, `exec_summary`. Each summary item contains `url`, a source-restored `category`, and a nested `summary` with `title`, `rank-reasoning`, `what`, `so-what`, and `now-what`. Every returned URL must exactly match the submitted batch, all required strings must be present, and HTML is stripped from every summary field. The runner restores a source image when the summary item has none.
 
 Email templates accept both raw article lists and summarized objects. Markdown in summary fields is rendered and sanitized before it enters the HTML email.
 
 ## Database behavior
 
-When enabled, SQLAlchemy creates `articles`, legacy `embeddings`, `embeddings_v2`, and `feed_http_cache` tables. Articles are keyed by URL. Feed HTTP state is keyed by the original configured feed URL. Runtime embedding hits require the URL, SHA-256 hash of the exact composed input, and an identity containing provider, model, and preprocessing version. V2 vectors are compact float32 bytes with an explicit dimension; legacy model-only JSON vectors are not trusted.
+When enabled, SQLAlchemy creates `articles`, legacy `embeddings`, `embeddings_v2`, `feed_http_cache`, and `llm_batch_cache` tables. Articles are keyed by URL. Feed HTTP state is keyed by the original configured feed URL. Runtime embedding hits require the URL, SHA-256 hash of the exact composed input, and an identity containing provider, model, and preprocessing version. V2 vectors are compact float32 bytes with an explicit dimension; legacy model-only JSON vectors are not trusted. LLM cache entries are complete validated batch responses keyed by the exact prompt, ordered input, schema version, provider, model chain, routing, structured-output requirement, and price caps. Dry runs bypass this cache.
 
 A successful extraction caches its full, untruncated article text. Output-specific token truncation happens on a copy after the cache write. Article cache reads are batched before workers start, workers never receive database sessions, and successful new extractions are batch-written in one transaction after workers finish. A cache write failure is logged without changing digest output. A cached article with text supplies its saved title, text, image, summary, and publication date, but uses the category from the current feed entry. Legacy rows with `NULL` content and new metadata-only extraction failures are treated as cache misses, so extraction is retried on later runs. There is no cache expiry. Changing extraction behavior does not refresh existing successful rows automatically.
 
