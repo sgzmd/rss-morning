@@ -253,11 +253,19 @@ failures keep the original articles, failed LLM batches are omitted, and email
 failures are logged without failing the run. Top-level configuration or pipeline
 errors return exit code 1.
 
+Configuration parsing is strict and completes before feeds, databases, worker
+pools, or model clients are opened. Numeric limits must be in range, booleans
+must be exactly `true` or `false`, and provider/model/enumeration values must be
+supported and nonempty. Error messages name the invalid XML path and safe value.
+Enabling summaries requires a nonempty prompt file. Configuring an email recipient
+also requires either `<email><from>` or `RESEND_FROM_EMAIL` (including values
+loaded from the configured environment file).
+
 The pre-filter may load a compatible version-2 query-vector file from
 `pre-filter/embeddings-path`; stale or corrupt files are ignored and recomputed.
 Within each matched category, candidates are ordered by relevance and greedily
 clustered using `cluster-threshold` as cosine similarity in the inclusive `[0, 1]`
-range. Only representatives proceed to summarization, while duplicate source URLs
+range, with `max-cluster-size` defaulting to five. Only representatives proceed to summarization, while duplicate source URLs
 and their distances remain in the representative's `other_urls` field.
 
 `pre-filter/mode` defaults to `full-text`, preserving the original behavior of
@@ -266,6 +274,10 @@ uncached feed titles and summaries first (while using cached full text when
 available), retains up to `candidate-multiplier * max_cluster_size` candidates per
 category, and downloads only those pages before normal full-text scoring. If the
 first stage fails, the run falls back to the full-text path.
+
+Feedparser date tuples are interpreted as UTC directly, independent of the
+machine's local timezone. Entries without a date use the minimum UTC timestamp
+and sort last.
 
 ## Known compatibility gaps
 

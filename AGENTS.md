@@ -113,15 +113,15 @@ Recognized settings are:
 - `<max-age-hours>`: optional positive age cutoff.
 - `<summary>`: `true` or `false`; default `false`.
 - `<max-article-length>`: maximum article text tokens; default `100`.
-- `<extractor>`: `newspaper` or `trafilatura`; unknown values currently fall back to Newspaper.
+- `<extractor>`: `newspaper` or `trafilatura`; other values are rejected.
 - `<concurrency>`: worker count for feed and article pools; default `10`.
 - `<http>`: positive connect/read timeouts, feed/article byte limits, non-negative retry/backoff settings, and positive per-host concurrency. Defaults are `5`, `20`, `5242880`, `10485760`, `2`, `0.5`, and `2`, respectively.
 - `<prompt file="..."/>`: prompt file. It is required when summaries are enabled. Inline prompt text is not supported.
-- `<pre-filter>`: `enabled`, `mode` (`full-text` default or opt-in `metadata-first`), positive `candidate-multiplier` (default `3`), optional `queries-file`, optional compatible version-2 `embeddings-path`, and `cluster-threshold` cosine similarity in `[0, 1]`.
-- `<embeddings>`: `provider` and `model`. `fastembed` is the default provider. Any provider value other than `fastembed` selects OpenAI.
+- `<pre-filter>`: `enabled`, `mode` (`full-text` default or opt-in `metadata-first`), positive `candidate-multiplier` (default `3`), positive `max-cluster-size` (default `5`), optional `queries-file`, optional compatible version-2 `embeddings-path`, and `cluster-threshold` cosine similarity in `[0, 1]`.
+- `<embeddings>`: nonempty `model` and `provider`, which must be `fastembed` or `openai`. `fastembed` is the default.
 - `<llm>`: summary provider and resilience/cost controls. It defaults to OpenRouter with `bytedance-seed/seed-2.0-mini`, ordered fallbacks `z-ai/glm-4.7-flash` and `openai/gpt-4o-mini`, `price` routing, $0.20/M input and $0.75/M output caps, required structured output, 20 articles/30,000 estimated input tokens per batch, a 90-second timeout, three attempts, split depth six, and exact-batch caching. Direct Gemini is available only when explicitly selected.
 - `<database>`: `enabled` and a SQLAlchemy `connection-string`.
-- `<email>`: `to`, `from`, and `subject`.
+- `<email>`: `to`, `from`, and `subject`. A recipient requires either a configured sender or `RESEND_FROM_EMAIL` after the optional env XML is loaded.
 - `<logging>`: `level` and `file`.
 
 The env XML format is:
@@ -133,6 +133,8 @@ The env XML format is:
 ```
 
 Values from this file overwrite variables already present in the process environment.
+
+Configuration is parsed and validated before feed parsing, database setup, worker creation, or provider-client construction. Booleans accept only `true` or `false`; invalid values report the exact XML path and safe value. Summary mode requires a nonempty prompt file. Feedparser timestamp tuples are converted as UTC with `calendar.timegm`, so results do not depend on the process timezone; missing dates remain the minimum UTC datetime and sort last.
 
 The feed file is OPML. Nested non-feed outlines provide categories. Feed outlines require `type="rss"` and `xmlUrl`. Entries without a URL or title are skipped. Entries without a date sort as the oldest possible date.
 

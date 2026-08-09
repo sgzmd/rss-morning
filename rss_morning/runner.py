@@ -33,6 +33,7 @@ class RunConfig:
     pre_filter: bool = False
     pre_filter_mode: str = "full-text"
     candidate_multiplier: int = 3
+    max_cluster_size: int = 5
     pre_filter_embeddings_path: Optional[str] = None
     pre_filter_queries_file: Optional[str] = None
     email_to: Optional[str] = None
@@ -94,6 +95,7 @@ def _create_prefilter(config: RunConfig, session_factory=None):
         batch_size=EmbeddingArticleFilter.CONFIG.batch_size,
         threshold=EmbeddingArticleFilter.CONFIG.threshold,
         max_article_length=config.max_article_length,
+        max_cluster_size=config.max_cluster_size,
     )
     return EmbeddingArticleFilter(
         query_embeddings_path=config.pre_filter_embeddings_path,
