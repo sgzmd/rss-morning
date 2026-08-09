@@ -140,6 +140,56 @@ def test_legacy_null_content_rows_remain_readable(session):
     }
 
 
+def test_get_articles_returns_url_mapping_and_handles_empty_input(session):
+    db.upsert_article(session, {"url": "one", "text": "first"})
+    db.upsert_article(session, {"url": "two", "text": "second"})
+
+    assert db.get_articles(session, []) == {}
+    cached = db.get_articles(session, ["two", "missing", "one"])
+    assert list(cached) == ["one", "two"]
+    assert cached["one"]["text"] == "first"
+    assert cached["two"]["text"] == "second"
+
+
+def test_upsert_articles_inserts_and_updates_with_one_commit(session, monkeypatch):
+    db.upsert_article(session, {"url": "existing", "text": "old"})
+    original_commit = session.commit
+    commits = []
+
+    def commit_once():
+        commits.append(True)
+        original_commit()
+
+    monkeypatch.setattr(session, "commit", commit_once)
+    db.upsert_articles(
+        session,
+        [
+            {"url": "existing", "text": "new"},
+            {"url": "created", "text": "created text"},
+            {},
+        ],
+    )
+
+    assert commits == [True]
+    assert db.get_article(session, "existing")["text"] == "new"
+    assert db.get_article(session, "created")["text"] == "created text"
+
+
+def test_upsert_articles_rolls_back_entire_batch_on_failure():
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.commit.side_effect = RuntimeError("batch failed")
+
+    with pytest.raises(RuntimeError, match="batch failed"):
+        db.upsert_articles(
+            session,
+            [{"url": "one", "text": "first"}, {"url": "two", "text": "second"}],
+        )
+
+    session.commit.assert_called_once_with()
+    session.rollback.assert_called_once_with()
+
+
 def test_upsert_article_accepts_datetime_and_preserves_date_on_undated_update(session):
     published = datetime(2025, 1, 2, tzinfo=timezone.utc)
     url = "https://example.com/datetime"
