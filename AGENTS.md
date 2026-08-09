@@ -178,7 +178,7 @@ Email templates accept both raw article lists and summarized objects. Markdown i
 
 When enabled, SQLAlchemy creates `articles` and `embeddings` tables. Articles are keyed by URL. Embeddings are keyed by URL plus the configured model string. Vectors are JSON encoded into binary columns.
 
-A successful extraction caches its full, untruncated article text. Output-specific token truncation happens on a copy after the cache write. A cached article with text supplies its saved title, text, image, summary, and publication date, but uses the category from the current feed entry. Legacy rows with `NULL` content and new metadata-only extraction failures are treated as cache misses, so extraction is retried on later runs. There is no cache expiry. Changing extraction behavior does not refresh existing successful rows automatically.
+A successful extraction caches its full, untruncated article text. Output-specific token truncation happens on a copy after the cache write. Article cache reads are batched before workers start, workers never receive database sessions, and successful new extractions are batch-written in one transaction after workers finish. A cache write failure is logged without changing digest output. A cached article with text supplies its saved title, text, image, summary, and publication date, but uses the category from the current feed entry. Legacy rows with `NULL` content and new metadata-only extraction failures are treated as cache misses, so extraction is retried on later runs. There is no cache expiry. Changing extraction behavior does not refresh existing successful rows automatically.
 
 ## Known gaps and misleading settings
 

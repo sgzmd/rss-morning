@@ -1,6 +1,7 @@
 import requests.adapters  # noqa: F401
 
 import json
+import threading
 from datetime import datetime, timezone, timedelta
 
 import pytest
@@ -825,7 +826,7 @@ def test_cache_read_failure_drops_only_affected_article(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_feed_entries",
-        lambda _feed: [_feed_entry("bad"), _feed_entry("good")],
+        lambda _feed: [_feed_entry("bad"), _feed_entry("good"), _feed_entry("miss")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
@@ -846,7 +847,16 @@ def test_cache_read_failure_drops_only_affected_article(monkeypatch):
     def get_article(_session, url):
         if url == "bad":
             raise RuntimeError("cache read failed")
-        return None
+        if url == "miss":
+            return None
+        return {
+            "url": "good",
+            "title": "Cached",
+            "text": "cached text",
+            "image": None,
+            "summary": None,
+            "published": None,
+        }
 
     monkeypatch.setattr(runner.db, "get_article", get_article)
     monkeypatch.setattr(runner.db, "upsert_article", lambda *_args: None)
@@ -868,4 +878,98 @@ def test_cache_read_failure_drops_only_affected_article(monkeypatch):
         )
     )
 
-    assert [item["url"] for item in json.loads(result.output_text)] == ["good"]
+    assert {item["url"] for item in json.loads(result.output_text)} == {"good", "miss"}
+
+
+def test_article_cache_uses_one_bulk_read_and_write_outside_workers(monkeypatch):
+    now = datetime(2025, 1, 3, tzinfo=timezone.utc)
+    entries = [
+        FeedEntry("hit", "B", "Hit feed title", now, "Hit feed summary"),
+        FeedEntry("new", "A", "New", now - timedelta(hours=1), "New summary"),
+        FeedEntry(
+            "metadata", "A", "Metadata", now - timedelta(hours=2), "Metadata summary"
+        ),
+        FeedEntry("new", "A", "Duplicate", now - timedelta(hours=3), "Duplicate"),
+    ]
+    monkeypatch.setattr(
+        runner,
+        "parse_feeds_config",
+        lambda _path: [FeedConfig("Cat", "Feed", "feed")],
+    )
+    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: entries)
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda values, _limit, _cutoff: values
+    )
+    monkeypatch.setattr(runner, "prepare_tokenizer", lambda: None)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, limit: text[:limit])
+
+    def extract(url, **_kwargs):
+        if url == "metadata":
+            return ArticleContent(text=None, image=None)
+        if url == "hit":
+            raise AssertionError("cache hit must not fetch")
+        return ArticleContent(text="new full text", image="new.jpg")
+
+    monkeypatch.setattr(runner, "fetch_article_content", extract)
+    main_thread = threading.get_ident()
+    session_threads = []
+
+    class SessionContext:
+        def __enter__(self):
+            session_threads.append(threading.get_ident())
+            return object()
+
+        def __exit__(self, *_args):
+            return None
+
+    class SessionFactory:
+        def __call__(self):
+            return SessionContext()
+
+    bulk_reads = []
+    bulk_writes = []
+    cached_hit = {
+        "url": "hit",
+        "title": "Cached title",
+        "text": "cached text",
+        "image": "cached.jpg",
+        "summary": "Cached summary",
+        "published": now,
+    }
+    monkeypatch.setattr(
+        runner.db,
+        "get_articles",
+        lambda _session, urls: bulk_reads.append(list(urls)) or {"hit": cached_hit},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        runner.db,
+        "upsert_articles",
+        lambda _session, payloads: bulk_writes.append(list(payloads)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        runner.db,
+        "get_article",
+        lambda _session, url: cached_hit if url == "hit" else None,
+    )
+    monkeypatch.setattr(runner.db, "upsert_article", lambda *_args: None)
+
+    output = runner._collect_entries(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=10,
+            max_age_hours=None,
+            summary=False,
+            max_article_length=100,
+            concurrency=3,
+        ),
+        session_factory=SessionFactory(),
+    )
+
+    assert bulk_reads == [["hit", "new", "metadata"]]
+    assert len(bulk_writes) == 1
+    assert [payload["url"] for payload in bulk_writes[0]] == ["new"]
+    assert session_threads == [main_thread, main_thread]
+    assert [item["url"] for item in output] == ["new", "metadata", "hit"]
+    assert output[2]["category"] == "B"
