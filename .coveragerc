@@ -1,0 +1,9 @@
+[run]
+branch = True
+source =
+    rss_morning
+    main
+
+[report]
+fail_under = 100
+show_missing = True

@@ -309,11 +309,11 @@ def generate_summary(
 
     # Post-processing / Sanitization on the combined result
     for item in combined_summaries:
-        if "summary" in item:
-            item["summary"]["title"] = sanitize_html(item["summary"].get("title"))
-            item["summary"]["what"] = sanitize_html(item["summary"].get("what"))
-            item["summary"]["so-what"] = sanitize_html(item["summary"].get("so-what"))
-            item["summary"]["now-what"] = sanitize_html(item["summary"].get("now-what"))
+        # Response validation above guarantees that every item has a summary mapping.
+        item["summary"]["title"] = sanitize_html(item["summary"].get("title"))
+        item["summary"]["what"] = sanitize_html(item["summary"].get("what"))
+        item["summary"]["so-what"] = sanitize_html(item["summary"].get("so-what"))
+        item["summary"]["now-what"] = sanitize_html(item["summary"].get("now-what"))
         if "category" in item:
             item["category"] = sanitize_html(item["category"])
 

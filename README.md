@@ -55,6 +55,22 @@ runtime options are:
 - `--llm-dry-run`
 - `--send-email-from-json PATH`
 
+## Development checks
+
+Install the pinned development toolchain on top of the runtime dependencies:
+
+```bash
+python -m pip install -r requirements-dev.txt
+```
+
+`make test` runs the hermetic suite and excludes the opt-in live end-to-end
+test. `make coverage` requires 100% statement and branch coverage across
+`rss_morning` and `main.py`. Run the complete local/CI gate with:
+
+```bash
+make check
+```
+
 Without summaries, stdout is a JSON list of articles. With summaries enabled, it
 is an object containing `summaries` and, when supplied by the LLM, `exec_summary`.
 Operational logs are written to stderr.

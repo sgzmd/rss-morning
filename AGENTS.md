@@ -59,13 +59,13 @@ python main.py --help
 Before handing off a change, run checks that match its scope:
 
 ```bash
-ruff check .
-ruff format --check .
-mypy rss_morning main.py
-pytest
+python -m pip install -r requirements-dev.txt
+make check
 ```
 
-`make test` runs the hermetic suite. `make live-e2e` sources the ignored
+`make check` runs Ruff, formatting, mypy, and the hermetic test suite with 100%
+statement and branch coverage over `rss_morning` and `main.py`. `make test` runs
+the hermetic suite without coverage. `make live-e2e` sources the ignored
 `env.fish`, checks for `OPENROUTER_API_KEY`, enables the opt-in live test, and
 runs it with streaming DEBUG logs and a long traceback. `ENV_FISH` can override
 the Fish environment file path.

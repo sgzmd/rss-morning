@@ -144,3 +144,62 @@ def test_fetch_feed_entries_handles_request_exception(monkeypatch):
     results = feeds_module.fetch_feed_entries(feed)
 
     assert results == []
+
+
+def test_fetch_feed_entries_covers_missing_fields_and_date_fallbacks(monkeypatch):
+    stamp = time.gmtime(1)
+    entries = [
+        types.SimpleNamespace(link=None, title="No link"),
+        types.SimpleNamespace(
+            link="https://example.com/bad-content",
+            title="Bad content",
+            summary=None,
+            summary_detail=None,
+            content=[None],
+            published_parsed=None,
+            updated_parsed=None,
+            created_parsed=None,
+        ),
+        types.SimpleNamespace(
+            link="https://example.com/updated",
+            title="Updated",
+            summary=None,
+            summary_detail=None,
+            content=None,
+            published_parsed=None,
+            updated_parsed=stamp,
+        ),
+        types.SimpleNamespace(
+            link="https://example.com/created",
+            title="Created",
+            summary=None,
+            summary_detail=None,
+            content=None,
+            published_parsed=None,
+            updated_parsed=None,
+            created_parsed=stamp,
+        ),
+    ]
+    feeds_module = _reload_feeds_with_stub(monkeypatch, entries)
+
+    results = feeds_module.fetch_feed_entries(
+        FeedConfig(category="Cat", title="Feed", url="https://feed.example.com")
+    )
+
+    assert [item.summary for item in results] == [None, None, None]
+    assert results[0].published == datetime.min.replace(tzinfo=timezone.utc)
+    assert results[1].published == feeds_module.to_datetime(stamp)
+    assert results[2].published == feeds_module.to_datetime(stamp)
+
+
+def test_select_recent_entries_stops_at_limit_without_cutoff(monkeypatch):
+    feeds_module = _reload_feeds_with_stub(monkeypatch, [])
+    now = datetime.now(timezone.utc)
+    entries = [
+        FeedEntry(link="1", category="C", title="A", published=now),
+        FeedEntry(link="2", category="C", title="B", published=now),
+    ]
+
+    assert [item.link for item in feeds_module.select_recent_entries(entries, 1)] == [
+        "1"
+    ]
