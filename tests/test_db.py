@@ -220,3 +220,49 @@ def test_upsert_rolls_back_commit_failures(operation, args):
         operation(session, *args)
 
     session.rollback.assert_called_once_with()
+
+
+def test_embedding_v2_bulk_cache_exact_identity_update_and_empty(session):
+    assert db.get_embeddings_v2(session, {}, "backend") == {}
+    db.upsert_embeddings_v2(session, [])
+    record = {
+        "url": "url",
+        "input_hash": "hash",
+        "backend_identity": "provider:model:v1",
+        "dimension": 2,
+        "vector": b"12345678",
+    }
+    db.upsert_embeddings_v2(session, [record])
+    assert (
+        db.get_embeddings_v2(session, {"url": "other-hash"}, "provider:model:v1") == {}
+    )
+    assert (
+        db.get_embeddings_v2(session, {"url": "hash"}, "other-provider:model:v1") == {}
+    )
+
+    record["dimension"] = 1
+    record["vector"] = b"1234"
+    db.upsert_embeddings_v2(session, [record])
+    cached = db.get_embeddings_v2(session, {"url": "hash"}, "provider:model:v1")
+    assert cached["url"]["dimension"] == 1
+    assert cached["url"]["vector"] == b"1234"
+
+
+def test_embedding_v2_batch_rolls_back_on_commit_failure():
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.commit.side_effect = RuntimeError("v2 failed")
+    with pytest.raises(RuntimeError, match="v2 failed"):
+        db.upsert_embeddings_v2(
+            session,
+            [
+                {
+                    "url": "url",
+                    "input_hash": "hash",
+                    "backend_identity": "backend",
+                    "dimension": 1,
+                    "vector": b"1234",
+                }
+            ],
+        )
+    session.rollback.assert_called_once_with()
