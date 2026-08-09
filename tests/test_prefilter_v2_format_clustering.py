@@ -164,6 +164,7 @@ def test_greedy_clustering_returns_deterministic_representatives_and_duplicates(
 
     result = filt.filter(reversed(articles), cluster_threshold=0.95)
 
+    assert len(result) < len(articles)
     assert [item["url"] for item in result] == ["high", "different"]
     assert result[0]["other_urls"] == [{"url": "duplicate", "distance": 0.0051}]
     assert result[1]["other_urls"] == []

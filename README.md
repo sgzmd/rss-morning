@@ -9,7 +9,7 @@ Resend.
 
 ## Requirements
 
-- Python 3.11 (CI) or Python 3.12 (Docker)
+- Python 3.11 or Python 3.12 (CI covers both; Docker uses 3.12)
 - A Google Gemini or OpenRouter API key when its summary provider is enabled
 - An OpenAI API key only when the OpenAI embedding provider is selected
 - A Resend API key only when an email recipient is configured
@@ -90,6 +90,18 @@ filtering, summaries, caching, logging, and email. See
 [`configs/config.xml.example`](configs/config.xml.example) for the complete
 structure.
 
+Core defaults and bounds are: `limit=10`, `max-article-length=100`, and
+`concurrency=10` (all integers at least one); optional `max-age-hours` must be
+positive; `extractor` is `newspaper` or `trafilatura`; and booleans are exactly
+`true` or `false`. HTTP defaults are 5-second connect, 20-second read, 5,242,880
+feed bytes, 10,485,760 article bytes, two retries, 0.5-second backoff, and two
+requests per hostname. Timeouts/byte limits/per-host concurrency must be positive;
+retry count and backoff may be zero. Prefilter mode defaults to `full-text`, its
+candidate multiplier and maximum cluster size default to three and five, and its
+cluster threshold is inclusive from zero through one. Embeddings use `fastembed`
+by default (`openai` is the other valid provider). The LLM defaults and bounds are
+described under **Safe development workflow** and shown in the example XML.
+
 When the database cache is enabled, successful full-text extractions are stored
 before output token truncation. Later runs can therefore request a larger output
 limit without downloading the page again. Metadata-only extraction failures and
@@ -112,7 +124,9 @@ Feed and article downloads use a shared bounded HTTP layer with one reusable
 session per worker thread. The `<http>` section configures separate connect/read
 timeouts, feed/article byte limits, bounded transient GET retries with backoff, and
 the maximum concurrent requests to one hostname. See the example configuration
-for the conservative defaults. Newspaper and Trafilatura parse the same supplied
+for the conservative defaults. Retries cover connection/read failures and `429`,
+`500`, `502`, `503`, and `504` responses. Redirects are followed, the final URL is
+retained, and the same body-byte limit still applies. Newspaper and Trafilatura parse the same supplied
 HTML, so extractor libraries do not perform additional uncontrolled downloads.
 When the database cache is enabled, successful feed responses and their ETag or
 Last-Modified validators are stored by the original configured URL. Later runs use
@@ -179,7 +193,9 @@ Summaries default to an OpenRouter chain of
 `bytedance-seed/seed-2.0-mini`, `z-ai/glm-4.7-flash`, then
 `openai/gpt-4o-mini`. Requests require structured JSON output, preserve that
 fallback order, prefer price routing, and cap list prices at $0.20/M input and
-$0.75/M output tokens. The `<llm>` section can change the chain, routing
+$0.75/M output tokens. The committed model price/capability snapshot came from
+the OpenRouter models API on 2026-08-09; runtime price caps remain authoritative
+if catalog prices change. The `<llm>` section can change the chain, routing
 (`price`, `throughput`, or `latency`), price caps, batch count/token limits,
 timeout, bounded attempts/split depth, and exact-batch caching. Direct Gemini is
 available only when explicitly selected.
@@ -189,6 +205,15 @@ batches are split up to the configured depth. Returned URLs must exactly match
 the submitted batch, required fields must be complete, and only fully validated
 responses are cached. Provider model and usage data are retained for internal
 cost metrics and do not change stdout JSON.
+
+At INFO level, each run emits content-free operational metrics to stderr: feed
+success/failure and deduplication counts; article, embedding, and exact-LLM cache
+outcomes; page request bytes; prefilter candidates, representatives, and duplicates;
+LLM batches, calls, retries, splits, estimates, and provider usage; email outcomes;
+and stage/total durations. Prompts, article bodies, credentials, connection strings,
+provider response bodies, and rendered email bodies are excluded. The same internal
+object is available as `RunResult.stats`; telemetry failure never changes digest
+success or stdout JSON.
 
 Candidate quality evaluation uses only the committed synthetic corpus and
 requires explicit approval because it makes paid calls:
@@ -272,7 +297,9 @@ output location explicitly.
 `main.py` delegates configuration and output handling to `rss_morning.cli`. The
 pipeline in `rss_morning.runner` calls the feed and article download boundaries,
 then optionally invokes the database cache, embedding pre-filter, configured LLM
-summary, and Resend delivery modules. HTML and text email output is produced by
+summary, and Resend delivery modules. `rss_morning.metrics` collects content-free
+stage counters and timings without entering JSON output. HTML and text email output
+is produced by
 Jinja templates in `rss_morning/templates`.
 
 Failures fetching an individual feed or article are logged and skipped. Pre-filter
@@ -290,6 +317,9 @@ loaded from the configured environment file).
 
 The pre-filter may load a compatible version-2 query-vector file from
 `pre-filter/embeddings-path`; stale or corrupt files are ignored and recomputed.
+The JSON records format version, provider, model, preprocessing version, vector
+dimension, and one category/query/vector entry per configured query. Compatibility
+requires all metadata and the exact query set to match.
 Within each matched category, candidates are ordered by relevance and greedily
 clustered using `cluster-threshold` as cosine similarity in the inclusive `[0, 1]`
 range, with `max-cluster-size` defaulting to five. Only representatives proceed to summarization, while duplicate source URLs

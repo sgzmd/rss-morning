@@ -192,7 +192,9 @@ def test_batch_planner_is_deterministic_bounded_and_counts_prompt():
     assert summaries.plan_batches([], "", max_articles=1, max_input_tokens=1) == []
 
 
-def test_openrouter_request_has_ordered_fallbacks_caps_timeout_and_metrics(monkeypatch):
+def test_openrouter_request_has_ordered_fallbacks_caps_and_actual_model_cost(
+    monkeypatch,
+):
     article = _article(1)
     captured = {}
 
@@ -240,6 +242,15 @@ def test_openrouter_request_has_ordered_fallbacks_caps_timeout_and_metrics(monke
     assert metrics == [
         {"model": "z-ai/glm-4.7-flash", "input_tokens": 100, "output_tokens": 20}
     ]
+    actual_model = metrics[0]["model"]
+    actual_cost = summary_eval.score_result(
+        [article],
+        result,
+        metrics,
+        0,
+        summary_eval.CANDIDATES[actual_model],
+    )
+    assert actual_cost["list_price_usd"] == pytest.approx(0.000014)
     assert "model" not in result and "usage" not in result
 
 
