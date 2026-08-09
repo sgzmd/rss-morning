@@ -31,6 +31,8 @@ class RunConfig:
     max_age_hours: Optional[float]
     summary: bool
     pre_filter: bool = False
+    pre_filter_mode: str = "full-text"
+    candidate_multiplier: int = 3
     pre_filter_embeddings_path: Optional[str] = None
     pre_filter_queries_file: Optional[str] = None
     email_to: Optional[str] = None
@@ -66,6 +68,25 @@ class RunResult:
     output_text: str
     email_payload: Any
     is_summary: bool
+
+
+def _create_prefilter(config: RunConfig, session_factory=None):
+    from .prefilter import EmbeddingArticleFilter
+
+    emb_config_cls = type(EmbeddingArticleFilter.CONFIG)
+    emb_config = emb_config_cls(
+        model=config.embedding_model,
+        provider=config.embedding_provider,
+        batch_size=EmbeddingArticleFilter.CONFIG.batch_size,
+        threshold=EmbeddingArticleFilter.CONFIG.threshold,
+        max_article_length=config.max_article_length,
+    )
+    return EmbeddingArticleFilter(
+        query_embeddings_path=config.pre_filter_embeddings_path,
+        queries_file=config.pre_filter_queries_file,
+        config=emb_config,
+        session_factory=session_factory,
+    )
 
 
 def _load_articles_from_file(path: str) -> List[dict]:
@@ -234,6 +255,42 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                     logger.exception("Failed to read article cache for %s", entry.link)
                     cache_read_failures.add(entry.link)
 
+    if config.pre_filter and config.pre_filter_mode == "metadata-first":
+        metadata_articles = []
+        for entry in unique_entries:
+            cached = cached_articles.get(entry.link)
+            payload = {
+                "url": entry.link,
+                "category": entry.category,
+                "title": cached.get("title") if cached else entry.title,
+                "summary": (cached.get("summary") if cached else None)
+                or entry.summary
+                or "",
+                "published": entry.published.isoformat() if entry.published else None,
+            }
+            if cached and cached.get("text") is not None:
+                payload["text"] = cached["text"]
+            metadata_articles.append(payload)
+        try:
+            selector = _create_prefilter(config, session_factory)
+            selected_metadata = selector.select_metadata_candidates(
+                metadata_articles,
+                candidate_multiplier=config.candidate_multiplier,
+            )
+            selected_urls = {str(item.get("url")) for item in selected_metadata}
+            unique_entries = [
+                entry for entry in unique_entries if entry.link in selected_urls
+            ]
+            logger.info(
+                "Metadata-first stage retained %d of %d entries for page download",
+                len(unique_entries),
+                len(metadata_articles),
+            )
+        except Exception:
+            logger.exception(
+                "Metadata-first prefilter failed; using full-text compatibility path"
+            )
+
     def process_entry(entry):
         try:
             if entry.link in cache_read_failures:
@@ -382,24 +439,7 @@ def execute(config: RunConfig) -> RunResult:
     if config.pre_filter:
         logger.info("Applying embedding pre-filter to %d articles", len(articles))
 
-        from .prefilter import EmbeddingArticleFilter
-
-        # Create a config object with the runtime settings.
-        emb_config_cls = type(EmbeddingArticleFilter.CONFIG)
-        emb_config = emb_config_cls(
-            model=config.embedding_model,
-            provider=config.embedding_provider,
-            batch_size=EmbeddingArticleFilter.CONFIG.batch_size,
-            threshold=EmbeddingArticleFilter.CONFIG.threshold,
-            max_article_length=config.max_article_length,
-        )
-
-        filter_layer = EmbeddingArticleFilter(
-            query_embeddings_path=config.pre_filter_embeddings_path,
-            queries_file=config.pre_filter_queries_file,
-            config=emb_config,
-            session_factory=session_factory,
-        )
+        filter_layer = _create_prefilter(config, session_factory)
         filtered_articles = filter_layer.filter(
             list(articles), cluster_threshold=config.cluster_threshold
         )

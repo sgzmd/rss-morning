@@ -175,6 +175,38 @@ def test_first_stage_failure_falls_back_to_full_text_downloads(monkeypatch):
     assert calls == ["one", "two"]
 
 
+def test_metadata_first_downloads_fewer_pages_with_identical_final_fixture(
+    monkeypatch,
+):
+    install_feed_fixture(monkeypatch, [entry("one"), entry("two"), entry("three")])
+
+    class FixtureFilter:
+        def select_metadata_candidates(self, articles, **_kwargs):
+            return [item for item in articles if item["url"] in {"one", "three"}]
+
+        def filter(self, articles, **_kwargs):
+            return [dict(item) for item in articles if item["url"] == "one"]
+
+    monkeypatch.setattr(runner, "_create_prefilter", lambda *_args: FixtureFilter())
+    calls = []
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url, **_kwargs: calls.append(url) or ArticleContent(url, None),
+    )
+
+    full = runner.execute(runtime_config(pre_filter_mode="full-text", concurrency=1))
+    full_calls = list(calls)
+    calls.clear()
+    metadata = runner.execute(
+        runtime_config(pre_filter_mode="metadata-first", concurrency=1)
+    )
+
+    assert metadata.output_text == full.output_text
+    assert full_calls == ["one", "two", "three"]
+    assert calls == ["one", "three"]
+
+
 class Backend:
     def __init__(self, vectors):
         self.vectors = vectors
@@ -203,6 +235,19 @@ def test_candidate_multiplier_applies_per_category():
     assert {item["prefilter_match"] for item in selected} == {"A", "B"}
     with pytest.raises(ValueError, match="candidate_multiplier"):
         filt.select_metadata_candidates(articles, candidate_multiplier=0)
+
+    assert filt.select_metadata_candidates([], candidate_multiplier=1) == []
+    empty = EmbeddingArticleFilter(backend=Backend({}), queries={})
+    with pytest.raises(Exception, match="no query centroids"):
+        empty.select_metadata_candidates([{"url": "u"}], candidate_multiplier=1)
+
+    rejected = EmbeddingArticleFilter(
+        backend=Backend({"q": [1.0, 0.0], "irrelevant": [0.0, 1.0]}),
+        queries={"A": ("q",)},
+    ).select_metadata_candidates(
+        [{"url": "irrelevant", "title": "irrelevant"}], candidate_multiplier=1
+    )
+    assert rejected == []
 
 
 @pytest.mark.parametrize("mode", ["full-text", "metadata-first"])
