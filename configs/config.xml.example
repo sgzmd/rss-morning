@@ -3,8 +3,10 @@
     <feeds>../feeds.xml</feeds>
     <env>env.xml</env>
     <limit>10</limit>
+    <!-- Optional; when present it must be positive. -->
     <max-age-hours>24</max-age-hours>
     <summary>false</summary>
+    <max-article-length>100</max-article-length>
     <extractor>newspaper</extractor>
     <concurrency>10</concurrency>
     <http>
@@ -30,6 +32,10 @@
         <provider>fastembed</provider>
         <model>intfloat/multilingual-e5-large</model>
     </embeddings>
+    <database>
+        <enabled>false</enabled>
+        <connection-string>sqlite:///data/rss-morning.db</connection-string>
+    </database>
     <llm>
         <!-- OpenRouter is the default. Direct Gemini remains available explicitly. -->
         <provider>openrouter</provider>
@@ -56,6 +62,7 @@
     </email>
     <logging>
         <level>INFO</level>
+        <!-- Known compatibility gap: use --log-file to enable file logging. -->
         <file>../logs/rss-morning.log</file>
     </logging>
     <prompt file="../prompt.md" />

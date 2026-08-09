@@ -100,7 +100,8 @@ def test_200_stores_bounded_body_validators_timestamp_and_redirect_identity():
 
 def test_304_sends_validators_and_parses_cached_body_without_transfer():
     state = cached_state()
-    client = FakeClient(response(304))
+    not_modified = response(304)
+    client = FakeClient(not_modified)
 
     outcomes = []
     entries = feeds.fetch_feed_entries(
@@ -117,6 +118,7 @@ def test_304_sends_validators_and_parses_cached_body_without_transfer():
     }
     assert client.responses == []
     assert outcomes == [True]
+    assert len(not_modified.body) == 0
 
 
 @pytest.mark.parametrize(

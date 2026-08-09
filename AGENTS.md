@@ -22,6 +22,7 @@ main.py
         -> db.py: optionally cache article vectors
      -> summaries.py: optionally ask Gemini or OpenRouter for JSON summaries
      -> emailing.py: optionally send rendered templates through Resend
+     -> metrics.py: collect content-free counts and stage timings
   -> cli.py: print final JSON
 ```
 
@@ -46,13 +47,14 @@ One failed feed or article is logged and skipped. Pre-filter errors fail open an
 - `rss_morning/summaries.py`: Gemini/OpenRouter batching, response schema, and text cleanup.
 - `rss_morning/db.py`: SQLAlchemy article and embedding cache.
 - `rss_morning/emailing.py`: Resend integration.
+- `rss_morning/metrics.py`: private operational counts, provider usage, and durations.
 - `rss_morning/renderers.py`, `rss_morning/templating.py`, `rss_morning/templates/`: HTML and text email rendering.
 - `rss_morning/prefilter_cli.py`: exports validated version-2 query embeddings consumed by the runtime.
 - `tests/`: unit tests. External network and API work should be replaced with fakes.
 
 ## Setup and checks
 
-CI uses Python 3.11. The Docker image uses Python 3.12. Use either unless a dependency proves otherwise.
+CI uses Python 3.11 and 3.12. The Docker image uses Python 3.12. Use either unless a dependency proves otherwise.
 
 ```bash
 python3 -m venv .venv
@@ -128,6 +130,13 @@ Recognized settings are:
 - `<email>`: `to`, `from`, and `subject`. A recipient requires either a configured sender or `RESEND_FROM_EMAIL` after the optional env XML is loaded.
 - `<logging>`: `level` and `file`.
 
+INFO logs include content-free per-stage and final operational metrics: feed,
+deduplication, article/cache, page-byte, prefilter/clustering, embedding/cache,
+LLM/cache/token, email, and duration fields. `RunResult.stats` exposes the same
+internal object without changing stdout JSON. Metrics must never contain prompts,
+article bodies, credentials, connection strings, provider response bodies, or full
+email bodies, and telemetry failure must fail open.
+
 The env XML format is:
 
 ```xml
@@ -180,6 +189,11 @@ image      absolute lead image URL, possibly absent
 
 The pre-filter may add `prefilter_score`, `prefilter_match`, and `other_urls`. It embeds `title + summary + text`, compares the vector with each query-category centroid, and applies the fixed relevance threshold `0.5`. Matching candidates are relevance-sorted and greedily clustered within each category; up to five representatives are returned, while semantically duplicate URLs and cosine distances are attached once to the nearest representative. Exact relevance ties prefer newer publication timestamps and then lexical URLs.
 
+Version-2 precomputed query files record `format_version`, provider, model,
+preprocessing version, dimension, and category/query/vector entries for the exact
+configured query set. Any mismatch or invalid vector makes the runtime recompute
+query centroids safely.
+
 In opt-in `metadata-first` mode, deduplicated entries are screened before page downloads. Cached successful text is used when available; uncached entries use title and feed summary. Up to `candidate-multiplier * max_cluster_size` candidates per category proceed to extraction and the normal full-text filter. A first-stage error falls back to the full-text compatibility path. Snapshot replay never invokes feed or page HTTP in either mode.
 
 Without summaries, stdout is a JSON list of article dictionaries.
@@ -191,6 +205,10 @@ Email templates accept both raw article lists and summarized objects. Markdown i
 ## Database behavior
 
 When enabled, SQLAlchemy creates `articles`, legacy `embeddings`, `embeddings_v2`, `feed_http_cache`, and `llm_batch_cache` tables. Articles are keyed by URL. Feed HTTP state is keyed by the original configured feed URL. Runtime embedding hits require the URL, SHA-256 hash of the exact composed input, and an identity containing provider, model, and preprocessing version. V2 vectors are compact float32 bytes with an explicit dimension; legacy model-only JSON vectors are not trusted. LLM cache entries are complete validated batch responses keyed by the exact prompt, ordered input, schema version, provider, model chain, routing, structured-output requirement, and price caps. Dry runs bypass this cache.
+
+The default OpenRouter price/capability snapshot is dated 2026-08-09 and is a
+test/documentation fixture, not a runtime dependency. Runtime request price caps
+remain authoritative when provider catalog data changes.
 
 A successful extraction caches its full, untruncated article text. Output-specific token truncation happens on a copy after the cache write. Article cache reads are batched before workers start, workers never receive database sessions, and successful new extractions are batch-written in one transaction after workers finish. A cache write failure is logged without changing digest output. A cached article with text supplies its saved title, text, image, summary, and publication date, but uses the category from the current feed entry. Legacy rows with `NULL` content and new metadata-only extraction failures are treated as cache misses, so extraction is retried on later runs. There is no cache expiry. Changing extraction behavior does not refresh existing successful rows automatically.
 
