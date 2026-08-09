@@ -127,6 +127,19 @@ def test_empty_database_operations_are_noops(session):
     db.upsert_embeddings(session, {}, "backend")
 
 
+def test_legacy_null_content_rows_remain_readable(session):
+    db.upsert_article(session, {"url": "legacy", "text": None, "title": "Legacy"})
+
+    assert db.get_article(session, "legacy") == {
+        "url": "legacy",
+        "title": "Legacy",
+        "text": None,
+        "image": None,
+        "summary": None,
+        "published": None,
+    }
+
+
 def test_upsert_article_accepts_datetime_and_preserves_date_on_undated_update(session):
     published = datetime(2025, 1, 2, tzinfo=timezone.utc)
     url = "https://example.com/datetime"
