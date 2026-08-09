@@ -155,6 +155,18 @@ def test_email_sender_environment_fallback_is_accepted(tmp_path, monkeypatch):
     assert config.email.to_addr == "reader@example.com"
 
 
+def test_malformed_number_text_and_empty_prompt_are_rejected(tmp_path):
+    with pytest.raises(ValueError, match="limit"):
+        parse_app_config(str(_config(tmp_path, "<limit>many</limit>")))
+    with pytest.raises(ValueError, match="max-age-hours"):
+        parse_app_config(
+            str(_config(tmp_path, "<max-age-hours>recent</max-age-hours>"))
+        )
+    (tmp_path / "prompt.txt").write_text("   ", encoding="utf-8")
+    with pytest.raises(ValueError, match="prompt"):
+        parse_app_config(str(_config(tmp_path, '<prompt file="prompt.txt" />')))
+
+
 def test_known_catalog_price_over_cap_warns_without_failing(tmp_path, caplog):
     config = parse_app_config(
         str(
@@ -180,11 +192,24 @@ def test_invalid_config_exits_before_external_boundaries(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "configure_logging", lambda *_: calls.append("logging"))
     monkeypatch.setattr(cli, "execute", lambda *_: calls.append("execute"))
 
-    with pytest.raises(SystemExit) as caught:
-        cli.main(["--config", str(config)])
-
-    assert caught.value.code == 2
+    assert cli.main(["--config", str(config)]) == 1
     assert calls == []
+
+
+def test_missing_sender_in_env_is_rejected_before_runtime(tmp_path, monkeypatch):
+    config = _config(
+        tmp_path,
+        "<env>env.xml</env><email><to>reader@example.com</to></email>",
+    )
+    (tmp_path / "env.xml").write_text("<environment />", encoding="utf-8")
+    calls = []
+    monkeypatch.delenv("RESEND_FROM_EMAIL", raising=False)
+    monkeypatch.setattr(cli, "parse_env_config", lambda *_: calls.append("env") or {})
+    monkeypatch.setattr(cli, "configure_logging", lambda *_: calls.append("logging"))
+    monkeypatch.setattr(cli, "execute", lambda *_: calls.append("execute"))
+
+    assert cli.main(["--config", str(config)]) == 1
+    assert calls == ["env"]
 
 
 def test_feed_timestamp_is_independent_of_process_timezone(monkeypatch):

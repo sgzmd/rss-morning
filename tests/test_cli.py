@@ -248,9 +248,7 @@ def test_main_error_paths(monkeypatch):
         "parse_app_config",
         lambda _path: (_ for _ in ()).throw(ValueError("bad config")),
     )
-    with pytest.raises(SystemExit) as exc:
-        cli.main([])
-    assert exc.value.code == 2
+    assert cli.main([]) == 1
 
     for error in (RuntimeError("runtime"), FileNotFoundError("missing")):
         monkeypatch.setattr(

@@ -84,8 +84,8 @@ def test_llm_defaults_and_complete_openrouter_configuration(tmp_path):
 @pytest.mark.parametrize(
     "llm_xml,match",
     [
-        ("<llm><model>not-a-slug</model></llm>", "OpenRouter model"),
-        ("<llm><model>vendor/</model></llm>", "OpenRouter model"),
+        ("<llm><model>not-a-slug</model></llm>", "llm/model"),
+        ("<llm><model>vendor/</model></llm>", "llm/model"),
         (
             "<llm><model>v/a</model><fallback-models><model>v/a</model></fallback-models></llm>",
             "duplicate",
@@ -110,7 +110,7 @@ def test_openrouter_config_validation(tmp_path, llm_xml, match):
             "<llm><provider>gemini</provider><fallback-models><model>v/f</model></fallback-models></llm>",
             "Gemini",
         ),
-        ("<llm><max-attempts>0</max-attempts></llm>", "positive"),
+        ("<llm><max-attempts>0</max-attempts></llm>", "llm/max-attempts"),
     ],
 )
 def test_additional_llm_config_validation(tmp_path, llm_xml, match):

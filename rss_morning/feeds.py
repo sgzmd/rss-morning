@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import calendar
 import time
 from datetime import datetime, timezone
 from typing import Callable, Iterable, List, Mapping, Optional
@@ -28,7 +29,7 @@ def to_datetime(value: Optional[time.struct_time]) -> datetime:
     """Convert feedparser timestamps to timezone-aware datetimes."""
     if value is None:
         return datetime.min.replace(tzinfo=timezone.utc)
-    return datetime.fromtimestamp(time.mktime(value), tz=timezone.utc)
+    return datetime.fromtimestamp(calendar.timegm(value), tz=timezone.utc)
 
 
 def fetch_feed_entries(

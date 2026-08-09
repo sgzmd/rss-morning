@@ -116,6 +116,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             env_vars = parse_env_config(app_config.env_file)
             os.environ.update(env_vars)
 
+        if (
+            app_config.email.to_addr
+            and not app_config.email.from_addr
+            and not os.environ.get("RESEND_FROM_EMAIL")
+        ):
+            raise ValueError(
+                "Invalid <email/from> value 'missing'; expected a sender or RESEND_FROM_EMAIL"
+            )
+
         # Determine logging settings (CLI overrides Config)
         log_level = args.log_level or app_config.logging.level
         log_file = args.log_file
@@ -134,6 +143,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             pre_filter=app_config.pre_filter.enabled,
             pre_filter_mode=app_config.pre_filter.mode,
             candidate_multiplier=app_config.pre_filter.candidate_multiplier,
+            max_cluster_size=app_config.pre_filter.max_cluster_size,
             pre_filter_embeddings_path=app_config.pre_filter.embeddings_path,
             pre_filter_queries_file=app_config.pre_filter.queries_file,
             email_to=app_config.email.to_addr,
@@ -198,7 +208,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         result = execute(config)
     except ValueError as exc:
-        parser.error(str(exc))
+        logger.error("%s", exc)
+        return 1
     except (RuntimeError, FileNotFoundError) as exc:
         logger.error("%s", exc)
         return 1

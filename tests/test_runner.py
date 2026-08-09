@@ -197,6 +197,7 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
                 batch_size=None,
                 threshold=None,
                 max_article_length=None,
+                max_cluster_size=None,
             ):
                 self.model = model
                 self.provider = provider

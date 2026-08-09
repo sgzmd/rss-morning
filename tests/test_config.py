@@ -273,13 +273,13 @@ def test_parse_app_config_http_settings(tmp_path):
 @pytest.mark.parametrize(
     "setting,value,message",
     [
-        ("connect-timeout", "0", "timeouts"),
-        ("read-timeout", "0", "timeouts"),
-        ("max-feed-bytes", "0", "byte limits"),
-        ("max-article-bytes", "0", "byte limits"),
-        ("retries", "-1", "retry settings"),
-        ("backoff-seconds", "-1", "retry settings"),
-        ("per-host-concurrency", "0", "per-host concurrency"),
+        ("connect-timeout", "0", "http/connect-timeout"),
+        ("read-timeout", "0", "http/read-timeout"),
+        ("max-feed-bytes", "0", "http/max-feed-bytes"),
+        ("max-article-bytes", "0", "http/max-article-bytes"),
+        ("retries", "-1", "http/retries"),
+        ("backoff-seconds", "-1", "http/backoff-seconds"),
+        ("per-host-concurrency", "0", "http/per-host-concurrency"),
     ],
 )
 def test_parse_app_config_rejects_invalid_http_settings(
