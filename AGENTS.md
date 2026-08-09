@@ -146,6 +146,7 @@ Query files can be JSON or plain text:
 - OpenAI embeddings use `OPENAI_API_KEY` when the provider is not `fastembed`.
 - Resend uses `RESEND_API_KEY`. The sender comes from the XML email `from` value or `RESEND_FROM_EMAIL`.
 - FastEmbed runs locally but may download its model on first use. `FASTEMBED_CACHE_PATH` controls its cache in Docker.
+- Article truncation initializes one shared `cl100k_base` encoder before article workers start. Docker prewarms it under `TIKTOKEN_CACHE_DIR`. If initialization fails offline, truncation uses a deterministic character-limit approximation and logs one content-free warning.
 
 Never commit real config files, env XML, API keys, feed lists, prompts, logs, databases, snapshots, model caches, or generated output. Most are already ignored. Treat ignored files as user data: inspect only when needed, do not rewrite them casually, and never print secrets.
 

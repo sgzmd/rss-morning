@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 from newspaper import Article, Config
@@ -14,6 +15,33 @@ import trafilatura
 import tiktoken
 
 logger = logging.getLogger(__name__)
+
+_ENCODER_UNINITIALIZED = object()
+_encoder: Any = _ENCODER_UNINITIALIZED
+_encoder_lock = threading.Lock()
+
+
+def _get_encoder() -> Any | None:
+    """Return the shared encoder, or ``None`` when offline initialization fails."""
+    global _encoder
+    if _encoder is _ENCODER_UNINITIALIZED:
+        with _encoder_lock:
+            if _encoder is _ENCODER_UNINITIALIZED:
+                try:
+                    _encoder = tiktoken.get_encoding("cl100k_base")
+                except Exception as exc:  # noqa: BLE001 - tokenizer boundary
+                    logger.warning(
+                        "Token encoder initialization failed (%s); using offline "
+                        "character fallback.",
+                        type(exc).__name__,
+                    )
+                    _encoder = None
+    return _encoder
+
+
+def prepare_tokenizer() -> None:
+    """Initialize the shared tokenizer before concurrent article workers start."""
+    _get_encoder()
 
 
 @dataclass
@@ -96,7 +124,15 @@ def _fetch_with_newspaper(url: str, timeout: int) -> ArticleContent:
 
 def truncate_text(value: str, limit: int = 100) -> str:
     """Limit text length to the given number of tokens."""
-    encoder = tiktoken.get_encoding("cl100k_base")
+    if not isinstance(value, str):
+        raise TypeError("text must be a string")
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+
+    encoder = _get_encoder()
+    if encoder is None:
+        return value if len(value) <= limit else value[:limit]
+
     tokens = encoder.encode(value)
     if len(tokens) <= limit:
         return value

@@ -21,7 +21,12 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 ENV FASTEMBED_CACHE_PATH=/app/data/fastembed_cache
+ENV TIKTOKEN_CACHE_DIR=/app/data/tiktoken_cache
 ENV DB_PATH=/app/data/db
+
+RUN mkdir -p "$TIKTOKEN_CACHE_DIR" && \
+    python -c 'import tiktoken; tiktoken.get_encoding("cl100k_base")' && \
+    chmod -R a+rX "$TIKTOKEN_CACHE_DIR"
 
 COPY . .
 

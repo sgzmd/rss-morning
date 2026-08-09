@@ -10,7 +10,7 @@ from pathlib import Path
 import concurrent.futures
 from typing import Any, List, Optional, Tuple, cast
 
-from .articles import fetch_article_content, truncate_text
+from .articles import fetch_article_content, prepare_tokenizer, truncate_text
 from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
@@ -150,6 +150,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
         seen_links.add(entry.link)
 
     logger.info("Fetching article text for %d selected entries", len(unique_entries))
+    prepare_tokenizer()
 
     output = []
 
@@ -265,6 +266,9 @@ def _build_default_email_subject() -> str:
 
 def execute(config: RunConfig) -> RunResult:
     """Run the application logic and return the result payload."""
+    if config.max_article_length <= 0:
+        raise ValueError("max_article_length must be positive")
+
     session_factory = None
     if config.database_enabled:
         if not config.database_connection_string:

@@ -88,6 +88,11 @@ limit without downloading the page again. Metadata-only extraction failures and
 legacy cache rows with no text are treated as misses and retried; the current feed
 category always overrides cached metadata.
 
+Token truncation uses one shared `cl100k_base` encoder initialized before article
+workers start. If its cache is unavailable offline, the run continues with a
+deterministic character-limit approximation and logs one warning without article
+content.
+
 Environment values can be stored in the configured environment XML file:
 
 ```xml
@@ -105,6 +110,7 @@ external integrations use:
 - `RESEND_API_KEY` for email delivery
 - `RESEND_FROM_EMAIL` as the fallback sender address
 - `FASTEMBED_CACHE_PATH` for the local FastEmbed model cache
+- `TIKTOKEN_CACHE_DIR` for the prewarmed article-tokenizer cache
 
 Do not commit populated configuration, environment files, feed lists, prompts,
 snapshots, databases, logs, or model caches.
