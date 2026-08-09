@@ -1,0 +1,39 @@
+{
+  "retrieved_at": "2026-08-09",
+  "source": "https://openrouter.ai/api/v1/models",
+  "prices_are_usd_per_token": true,
+  "models": [
+    {
+      "id": "bytedance-seed/seed-2.0-mini",
+      "context_length": 262144,
+      "prompt_price": "0.0000001",
+      "completion_price": "0.0000004",
+      "supports_response_format": true,
+      "supports_structured_outputs": true
+    },
+    {
+      "id": "z-ai/glm-4.7-flash",
+      "context_length": 202752,
+      "prompt_price": "0.00000006",
+      "completion_price": "0.0000004",
+      "supports_response_format": true,
+      "supports_structured_outputs": true
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "context_length": 128000,
+      "prompt_price": "0.00000015",
+      "completion_price": "0.0000006",
+      "supports_response_format": true,
+      "supports_structured_outputs": true
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "context_length": 1048576,
+      "prompt_price": "0.0000003",
+      "completion_price": "0.0000025",
+      "supports_response_format": true,
+      "supports_structured_outputs": true
+    }
+  ]
+}
