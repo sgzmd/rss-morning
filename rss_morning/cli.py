@@ -151,6 +151,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             llm_provider=app_config.llm.provider,
             llm_model=app_config.llm.model,
             llm_dry_run=args.llm_dry_run,
+            http_connect_timeout=app_config.http.connect_timeout,
+            http_read_timeout=app_config.http.read_timeout,
+            max_feed_bytes=app_config.http.max_feed_bytes,
+            max_article_bytes=app_config.http.max_article_bytes,
+            http_retries=app_config.http.retries,
+            http_backoff_seconds=app_config.http.backoff_seconds,
+            http_per_host_concurrency=app_config.http.per_host_concurrency,
         )
 
         if args.send_email_from_json:

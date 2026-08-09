@@ -27,7 +27,11 @@ class FakeResponse:
         self._chunks = chunks
         self.status_code = status
         self.url = url
-        self.headers = headers or {"Content-Type": "text/html; charset=utf-8"}
+        self.headers = (
+            headers
+            if headers is not None
+            else {"Content-Type": "text/html; charset=utf-8"}
+        )
         self.closed = False
 
     def iter_content(self, chunk_size):
@@ -72,7 +76,7 @@ def make_client(session, **overrides):
 
 
 def test_request_uses_timeouts_streaming_redirects_and_final_url():
-    response = FakeResponse(url="https://example.com/redirected")
+    response = FakeResponse(chunks=(b"", b"body"), url="https://example.com/redirected")
     session = FakeSession(response)
     client = make_client(session)
 
@@ -97,7 +101,7 @@ def test_request_uses_timeouts_streaming_redirects_and_final_url():
 
 def test_retry_policy_is_bounded_to_safe_get_transients_and_retry_after():
     session = FakeSession()
-    make_client(session)
+    make_client(session).get("https://example.com")
 
     retries = session.mounts[0][1].max_retries
     assert retries.total == 2
@@ -109,6 +113,36 @@ def test_retry_policy_is_bounded_to_safe_get_transients_and_retry_after():
     assert 404 not in retries.status_forcelist
     assert retries.respect_retry_after_header is True
     assert retries.backoff_factor == 0.5
+    assert retries.backoff_jitter == 0.05
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"connect_timeout": 0},
+        {"read_timeout": 0},
+        {"max_bytes": 0},
+        {"retries": -1},
+        {"backoff_seconds": -0.1},
+        {"per_host_concurrency": 0},
+    ],
+)
+def test_invalid_resource_settings_are_rejected(overrides):
+    module = http_client_module()
+    with pytest.raises(ValueError):
+        module.HttpClient(**overrides)
+
+
+def test_typed_request_and_invalid_url():
+    module = http_client_module()
+    client = make_client(FakeSession())
+    request = module.DownloadRequest(
+        url="https://example.com", accepted_content_types=("text/html",)
+    )
+
+    assert client.download(request).body == b"body"
+    with pytest.raises(module.DownloadError, match="no hostname"):
+        client.get("not-a-url")
 
 
 def test_oversized_response_is_closed_and_raises_typed_error():

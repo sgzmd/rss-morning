@@ -14,6 +14,7 @@ from .articles import fetch_article_content, prepare_tokenizer, truncate_text
 from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
+from .http_client import HttpClient
 from .summaries import generate_summary
 from . import db
 
@@ -48,6 +49,13 @@ class RunConfig:
     llm_provider: str = "gemini"
     llm_model: str = "gemini-flash-latest"
     llm_dry_run: bool = False
+    http_connect_timeout: float = 5
+    http_read_timeout: float = 20
+    max_feed_bytes: int = 5_242_880
+    max_article_bytes: int = 10_485_760
+    http_retries: int = 2
+    http_backoff_seconds: float = 0.5
+    http_per_host_concurrency: int = 2
 
 
 @dataclass
@@ -107,10 +115,26 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
 
     selected_entries = []
     any_entries_fetched = False
+    feed_http_client = HttpClient(
+        connect_timeout=config.http_connect_timeout,
+        read_timeout=config.http_read_timeout,
+        max_bytes=config.max_feed_bytes,
+        retries=config.http_retries,
+        backoff_seconds=config.http_backoff_seconds,
+        per_host_concurrency=config.http_per_host_concurrency,
+    )
+    article_http_client = HttpClient(
+        connect_timeout=config.http_connect_timeout,
+        read_timeout=config.http_read_timeout,
+        max_bytes=config.max_article_bytes,
+        retries=config.http_retries,
+        backoff_seconds=config.http_backoff_seconds,
+        per_host_concurrency=config.http_per_host_concurrency,
+    )
 
     def process_feed(feed):
         try:
-            entries = fetch_feed_entries(feed)
+            entries = fetch_feed_entries(feed, http_client=feed_http_client)
             if not entries:
                 logger.info("No entries retrieved for feed %s", feed.url)
                 return []
@@ -197,7 +221,11 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                     else None,
                 }
 
-            content = fetch_article_content(entry.link, extractor=config.extractor)
+            content = fetch_article_content(
+                entry.link,
+                extractor=config.extractor,
+                http_client=article_http_client,
+            )
             raw_payload = {
                 "url": entry.link,
                 "category": entry.category,

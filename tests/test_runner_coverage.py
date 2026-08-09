@@ -65,7 +65,7 @@ def test_collect_entries_applies_cutoff_deduplicates_and_recovers_feed_failure(
     ]
     monkeypatch.setattr(runner, "parse_feeds_config", lambda _path: feeds)
 
-    def fetch(feed):
+    def fetch(feed, **_kwargs):
         if feed.url == "bad":
             raise RuntimeError("feed failed")
         if feed.url == "empty":
@@ -98,7 +98,9 @@ def test_collect_entries_drops_failed_article_but_keeps_success(monkeypatch):
         lambda _path: [FeedConfig("Cat", "Feed", "feed")],
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda _feed: [entry("bad"), entry("good")]
+        runner,
+        "fetch_feed_entries",
+        lambda _feed, **_kwargs: [entry("bad"), entry("good")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries

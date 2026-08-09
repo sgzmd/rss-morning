@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import urljoin
 
@@ -14,7 +14,10 @@ import trafilatura
 
 import tiktoken
 
+from .http_client import HttpClient
+
 logger = logging.getLogger(__name__)
+_DEFAULT_HTTP_CLIENT = HttpClient(max_bytes=10_485_760)
 
 _ENCODER_UNINITIALIZED = object()
 _encoder: Any = _ENCODER_UNINITIALIZED
@@ -50,31 +53,43 @@ class ArticleContent:
 
     text: Optional[str]
     image: Optional[str]
+    base_url: Optional[str] = field(default=None, repr=False, compare=False)
 
 
 def fetch_article_content(
-    url: str, timeout: int = 20, extractor: str = "newspaper"
+    url: str,
+    timeout: int = 20,
+    extractor: str = "newspaper",
+    http_client: Optional[HttpClient] = None,
 ) -> ArticleContent:
     """Download article content using selected extractor and return text and lead image."""
     logger.debug("Downloading article content from %s using %s", url, extractor)
 
     if extractor == "trafilatura":
-        content = _fetch_with_trafilatura(url)
+        content = _fetch_with_trafilatura(url, http_client)
     else:
-        content = _fetch_with_newspaper(url, timeout)
+        content = _fetch_with_newspaper(url, timeout, http_client)
 
     if content.image:
-        content.image = urljoin(url, content.image)
+        content.image = urljoin(content.base_url or url, content.image)
 
     return content
 
 
-def _fetch_with_trafilatura(url: str) -> ArticleContent:
+def _download_html(url: str, http_client: Optional[HttpClient]) -> tuple[str, str]:
+    response = (http_client or _DEFAULT_HTTP_CLIENT).get(
+        url,
+        accepted_content_types=("text/html", "application/xhtml+xml"),
+        allow_missing_content_type=True,
+    )
+    return response.body.decode("utf-8", errors="replace"), response.final_url
+
+
+def _fetch_with_trafilatura(
+    url: str, http_client: Optional[HttpClient] = None
+) -> ArticleContent:
     try:
-        downloaded = trafilatura.fetch_url(url)
-        if downloaded is None:
-            logger.warning("Trafilatura failed to download content for %s", url)
-            return ArticleContent(text=None, image=None)
+        downloaded, final_url = _download_html(url, http_client)
 
         text = trafilatura.extract(downloaded, include_comments=False)
 
@@ -84,9 +99,9 @@ def _fetch_with_trafilatura(url: str) -> ArticleContent:
         if not text:
             logger.info("Article contains no readable text: %s", url)
 
-        return ArticleContent(text=text, image=image)
+        return ArticleContent(text=text, image=image, base_url=final_url)
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - extractor and HTTP boundary
         logger.warning(
             "Unexpected error while processing article %s with trafilatura: %s",
             url,
@@ -95,16 +110,18 @@ def _fetch_with_trafilatura(url: str) -> ArticleContent:
         return ArticleContent(text=None, image=None)
 
 
-def _fetch_with_newspaper(url: str, timeout: int) -> ArticleContent:
+def _fetch_with_newspaper(
+    url: str, timeout: int, http_client: Optional[HttpClient] = None
+) -> ArticleContent:
     config = Config()
     config.fetch_images = True
     config.memoize_articles = False
     config.request_timeout = timeout
 
-    article = Article(url=url, config=config)
-
     try:
-        article.download()
+        downloaded, final_url = _download_html(url, http_client)
+        article = Article(url=final_url, config=config)
+        article.set_html(downloaded)
         article.parse()
     except ArticleException as exc:
         logger.warning("Failed to process article %s: %s", url, exc)
@@ -119,7 +136,7 @@ def _fetch_with_newspaper(url: str, timeout: int) -> ArticleContent:
     if not text:
         logger.info("Article contains no readable text: %s", url)
 
-    return ArticleContent(text=text, image=image)
+    return ArticleContent(text=text, image=image, base_url=final_url)
 
 
 def truncate_text(value: str, limit: int = 100) -> str:

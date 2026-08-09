@@ -53,6 +53,17 @@ class DatabaseConfig:
 
 
 @dataclass
+class HttpConfig:
+    connect_timeout: float = 5
+    read_timeout: float = 20
+    max_feed_bytes: int = 5_242_880
+    max_article_bytes: int = 10_485_760
+    retries: int = 2
+    backoff_seconds: float = 0.5
+    per_host_concurrency: int = 2
+
+
+@dataclass
 class AppConfig:
     feeds_file: str
     env_file: Optional[str]
@@ -65,6 +76,7 @@ class AppConfig:
     email: EmailConfig = field(default_factory=EmailConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
+    http: HttpConfig = field(default_factory=HttpConfig)
     prompt: Optional[str] = None
     max_article_length: int = 100
     extractor: str = "newspaper"
@@ -236,6 +248,35 @@ def parse_app_config(path: str) -> AppConfig:
         db_config.enabled = db_node.findtext("enabled", "false").lower() == "true"
         db_config.connection_string = db_node.findtext("connection-string")
 
+    # HTTP downloads
+    http_node = root.find("http")
+    http_config = HttpConfig()
+    if http_node is not None:
+        http_config.connect_timeout = float(http_node.findtext("connect-timeout", "5"))
+        http_config.read_timeout = float(http_node.findtext("read-timeout", "20"))
+        http_config.max_feed_bytes = int(
+            http_node.findtext("max-feed-bytes", "5242880")
+        )
+        http_config.max_article_bytes = int(
+            http_node.findtext("max-article-bytes", "10485760")
+        )
+        http_config.retries = int(http_node.findtext("retries", "2"))
+        http_config.backoff_seconds = float(
+            http_node.findtext("backoff-seconds", "0.5")
+        )
+        http_config.per_host_concurrency = int(
+            http_node.findtext("per-host-concurrency", "2")
+        )
+
+    if http_config.connect_timeout <= 0 or http_config.read_timeout <= 0:
+        raise ValueError("HTTP timeouts must be positive")
+    if http_config.max_feed_bytes <= 0 or http_config.max_article_bytes <= 0:
+        raise ValueError("HTTP byte limits must be positive")
+    if http_config.retries < 0 or http_config.backoff_seconds < 0:
+        raise ValueError("HTTP retry settings cannot be negative")
+    if http_config.per_host_concurrency <= 0:
+        raise ValueError("HTTP per-host concurrency must be positive")
+
     # Prompt
     prompt_node = root.find("prompt")
     prompt = None
@@ -265,6 +306,7 @@ def parse_app_config(path: str) -> AppConfig:
         email=email,
         logging=logging_config,
         database=db_config,
+        http=http_config,
         prompt=prompt,
         max_article_length=max_len,
         extractor=extractor,

@@ -7,6 +7,15 @@
     <summary>false</summary>
     <extractor>newspaper</extractor>
     <concurrency>10</concurrency>
+    <http>
+        <connect-timeout>5</connect-timeout>
+        <read-timeout>20</read-timeout>
+        <max-feed-bytes>5242880</max-feed-bytes>
+        <max-article-bytes>10485760</max-article-bytes>
+        <retries>2</retries>
+        <backoff-seconds>0.5</backoff-seconds>
+        <per-host-concurrency>2</per-host-concurrency>
+    </http>
     <pre-filter>
         <enabled>false</enabled>
         <embeddings-path>../query_embeddings.json</embeddings-path>
