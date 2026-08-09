@@ -68,12 +68,16 @@ python -m pip install -r requirements-dev.txt
 make check
 ```
 
+`requirements.in` lists direct runtime dependencies and generates the pinned `requirements.txt`; `requirements-dev.in` layers development tools and generates the complete pinned `requirements-dev.txt`. Regenerate both with `make lock` using the development environment. Never hand-edit transitive lock entries.
+
 `make check` runs Ruff, formatting, mypy, and the hermetic test suite with 100%
 statement and branch coverage over `rss_morning` and `main.py`. `make test` runs
 the hermetic suite without coverage. `make live-e2e` sources the ignored
 `env.fish`, checks for `OPENROUTER_API_KEY`, enables the opt-in live test, and
 runs it with streaming DEBUG logs and a long traceback. `ENV_FISH` can override
 the Fish environment file path.
+
+`make container-smoke` builds the multi-stage Python 3.12 image and runs every smoke check with networking disabled. It prints image bytes, the installed package list, and layer history. Docker must be available before a container change can be declared complete.
 
 The pre-commit config applies Ruff fixes and formatting, then runs pytest and mypy using the active Python environment.
 
