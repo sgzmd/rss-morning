@@ -172,3 +172,59 @@ def test_zero_vectors_are_deterministic_and_late_failure_returns_pristine_articl
 
     assert filt.filter(articles) == articles
     assert all(set(article) == {"url", "title", "category"} for article in articles)
+
+
+def test_embedding_validation_and_lru_guard_branches(monkeypatch):
+    filt = prefilter.EmbeddingArticleFilter(backend=Backend([]), queries={})
+    assert filt._embed_backend([]) == []
+    with pytest.raises(prefilter.EmbeddingValidationError, match="dimensions"):
+        prefilter.EmbeddingArticleFilter(
+            backend=Backend([[1.0], [1.0, 2.0]]), queries={}
+        )._embed_backend(["a", "b"])
+    with pytest.raises(prefilter.EmbeddingValidationError, match="cached"):
+        prefilter.EmbeddingArticleFilter(
+            backend=Backend([[1.0, 2.0]]), queries={}
+        )._embed_backend(["a"], expected_dimension=1)
+    filt._session_factory = ObjectSession
+    with pytest.raises(prefilter.EmbeddingValidationError, match="URL count"):
+        filt._embed_texts(["a", "b"], ["one"])
+
+    prefilter.EmbeddingArticleFilter._cached_centroids.clear()
+    monkeypatch.setattr(prefilter, "_CENTROID_CACHE_SIZE", 1)
+    for model in ("one", "two"):
+        prefilter.EmbeddingArticleFilter(
+            backend=Backend([[1.0]]),
+            queries={"A": ("q",)},
+            config=prefilter._EmbeddingConfig(model=model),
+        )._get_category_centroids()
+    assert len(prefilter.EmbeddingArticleFilter._cached_centroids) == 1
+
+
+def test_cached_dimension_mismatch_and_missing_slot_are_typed(monkeypatch):
+    filt = prefilter.EmbeddingArticleFilter(
+        backend=Backend([[1.0, 2.0]]),
+        queries={},
+        session_factory=ObjectSession,
+    )
+    monkeypatch.setattr(
+        prefilter.db,
+        "get_embeddings_v2",
+        lambda *_args: {
+            "one": {
+                "dimension": 1,
+                "vector": np.array([1.0], dtype=np.float32).tobytes(),
+            },
+            "two": {
+                "dimension": 2,
+                "vector": np.array([1.0, 2.0], dtype=np.float32).tobytes(),
+            },
+        },
+    )
+    monkeypatch.setattr(prefilter.db, "upsert_embeddings_v2", lambda *_args: None)
+    with pytest.raises(prefilter.EmbeddingValidationError, match="cached"):
+        filt._embed_texts(["one", "two"], ["one", "two"])
+
+    monkeypatch.setattr(filt, "_embed_backend", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(prefilter.db, "get_embeddings_v2", lambda *_args: {})
+    with pytest.raises(prefilter.EmbeddingValidationError, match="missing"):
+        filt._embed_texts(["missing"], ["missing"])

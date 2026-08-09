@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import random
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
@@ -33,6 +35,16 @@ MutableArticle = MutableMapping[str, object]
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_QUERIES_FILE = PROJECT_ROOT / "queries.txt"
 EXAMPLE_QUERIES_FILE = PROJECT_ROOT / "queries.example.txt"
+PREPROCESSING_VERSION = "article-text-v1"
+_CENTROID_CACHE_SIZE = 32
+
+
+class EmbeddingValidationError(ValueError):
+    """An embedding backend or cached vector violated the vector contract."""
+
+
+def _embedding_input_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _load_queries_from_path(path: Path) -> Dict[str, Tuple[str, ...]]:
@@ -111,9 +123,7 @@ class EmbeddingArticleFilter:
 
     CONFIG = _EmbeddingConfig()
     DEFAULT_QUERIES: Dict[str, Tuple[str, ...]] = load_queries()
-    _cached_centroids: Dict[
-        Tuple[Tuple[Tuple[str, Tuple[str, ...]], ...], str], Dict[str, np.ndarray]
-    ] = {}
+    _cached_centroids: OrderedDict[object, Dict[str, np.ndarray]] = OrderedDict()
 
     @dataclass
     class _ScoredArticle:
@@ -181,10 +191,11 @@ class EmbeddingArticleFilter:
         rng: Optional[random.Random] = None,
     ) -> List[MutableArticle]:
         """Return the list of articles that pass the embedding filter."""
-        materialized: List[MutableArticle] = [dict(article) for article in articles]
-        if not materialized:
+        pristine: List[MutableArticle] = [dict(article) for article in articles]
+        if not pristine:
             logger.info("Embedding pre-filter received no articles.")
             return []
+        materialized: List[MutableArticle] = [dict(article) for article in pristine]
 
         try:
             centroids = self._get_category_centroids()
@@ -204,14 +215,6 @@ class EmbeddingArticleFilter:
                 else:
                     arr = np.zeros_like(arr)
                 article_vectors.append(arr)
-
-            if not article_vectors:
-                logger.warning(
-                    "Embedding pre-filter failed to obtain article embeddings; "
-                    "returning original %d articles",
-                    len(materialized),
-                )
-                return materialized
 
             threshold = self._config.threshold
             # We will group scored items by category
@@ -285,16 +288,17 @@ class EmbeddingArticleFilter:
             logger.exception(
                 "Embedding pre-filter encountered an error; returning all articles."
             )
-            return materialized
+            return pristine
 
     def _get_category_centroids(self) -> Dict[str, np.ndarray]:
         """Fetch and cache centroids for the security query categories."""
         # Use a tuple of sorted items as a stable key for caching
         queries_key = tuple(sorted((k, tuple(v)) for k, v in self._queries.items()))
-        key = (queries_key, self._config.model)
+        key = (queries_key, self._backend_identity())
 
         cached = self.__class__._cached_centroids.get(key)
         if cached is not None:
+            self.__class__._cached_centroids.move_to_end(key)
             return cached
 
         centroids = {}
@@ -313,28 +317,83 @@ class EmbeddingArticleFilter:
             centroids[category] = mean_vec
 
         self.__class__._cached_centroids[key] = centroids
+        while len(self.__class__._cached_centroids) > _CENTROID_CACHE_SIZE:
+            self.__class__._cached_centroids.popitem(last=False)
         return centroids
+
+    def _backend_identity(self) -> str:
+        return ":".join(
+            (self._config.provider, self._config.model, PREPROCESSING_VERSION)
+        )
+
+    def _embed_backend(
+        self, texts: Sequence[str], expected_dimension: Optional[int] = None
+    ) -> List[List[float]]:
+        vectors = self._backend.embed(texts)
+        if len(vectors) != len(texts):
+            raise EmbeddingValidationError(
+                f"embedding count {len(vectors)} does not match input count {len(texts)}"
+            )
+        if not vectors:
+            return []
+        dimensions = {len(vector) for vector in vectors}
+        if 0 in dimensions or len(dimensions) != 1:
+            raise EmbeddingValidationError(
+                "embedding dimensions must be identical and nonzero"
+            )
+        dimension = next(iter(dimensions))
+        if expected_dimension is not None and dimension != expected_dimension:
+            raise EmbeddingValidationError(
+                "embedding dimension does not match cached vectors"
+            )
+        return [[float(value) for value in vector] for vector in vectors]
 
     def _embed_texts(
         self, texts: Sequence[str], urls: Optional[Sequence[str]] = None
     ) -> List[List[float]]:
         """Generate normalised embedding vectors for the given texts."""
         if not self._session_factory or not urls:
-            return self._backend.embed(texts)
+            return self._embed_backend(texts)
 
-        backend_key = self._config.model
+        if len(urls) != len(texts):
+            raise EmbeddingValidationError(
+                "URL count does not match embedding input count"
+            )
+
+        backend_identity = self._backend_identity()
+        input_hashes = {
+            str(url): _embedding_input_hash(text) for text, url in zip(texts, urls)
+        }
         with self._session_factory() as session:
-            cached = db.get_embeddings(session, list(urls), backend_key)
+            cached = db.get_embeddings_v2(session, input_hashes, backend_identity)
 
         # Determine which texts need embedding
         missing_indices = []
         missing_texts = []
         ordered_vectors: List[Optional[List[float]]] = [None] * len(texts)
 
-        for idx, (text, url) in enumerate(zip(texts, urls)):
-            if url in cached:
+        expected_dimension = None
+        for idx, (text, raw_url) in enumerate(zip(texts, urls)):
+            url = str(raw_url)
+            record = cached.get(url)
+            if record:
                 try:
-                    ordered_vectors[idx] = json.loads(cached[url].decode("utf-8"))
+                    dimension = int(record["dimension"])
+                    raw_vector = bytes(record["vector"])
+                    if dimension <= 0 or len(raw_vector) != dimension * 4:
+                        raise EmbeddingValidationError("corrupt cached vector")
+                    cached_vector = np.frombuffer(raw_vector, dtype=np.float32).astype(
+                        float
+                    )
+                    if (
+                        expected_dimension is not None
+                        and dimension != expected_dimension
+                    ):
+                        raise EmbeddingValidationError(
+                            "cached vector dimension mismatch"
+                        )
+                    expected_dimension = dimension
+                    ordered_vectors[idx] = cached_vector.tolist()
                 except Exception:
                     logger.warning("Failed to decode vector for %s, re-embedding", url)
                     missing_indices.append(idx)
@@ -345,26 +404,35 @@ class EmbeddingArticleFilter:
 
         if missing_texts:
             logger.info("Computing embeddings for %d new articles", len(missing_texts))
-            new_vectors = self._backend.embed(missing_texts)
+            new_vectors = self._embed_backend(missing_texts, expected_dimension)
 
-            to_upsert = {}
+            to_upsert = []
             for i, vector in enumerate(new_vectors):
                 original_idx = missing_indices[i]
                 ordered_vectors[original_idx] = vector
-                url = urls[original_idx]
-                to_upsert[url] = json.dumps(vector).encode("utf-8")
+                url = str(urls[original_idx])
+                compact = np.asarray(vector, dtype=np.float32)
+                to_upsert.append(
+                    {
+                        "url": url,
+                        "input_hash": input_hashes[url],
+                        "backend_identity": backend_identity,
+                        "dimension": len(vector),
+                        "vector": compact.tobytes(),
+                    }
+                )
 
             with self._session_factory() as session:
-                db.upsert_embeddings(session, to_upsert, backend_key)
+                db.upsert_embeddings_v2(session, to_upsert)
 
         # Ensure correct return type (all floats)
-        final_vectors = []
+        final_vectors: List[List[float]] = []
         for v in ordered_vectors:
             if v is None:
-                pass
+                raise EmbeddingValidationError("missing embedding vector")
             final_vectors.append(v)
 
-        return final_vectors  # type: ignore
+        return final_vectors
 
     def _compose_article_text(self, article: Mapping[str, object]) -> str:
         title = str(article.get("title") or "")
@@ -395,7 +463,9 @@ class EmbeddingArticleFilter:
 
     @staticmethod
     def _dot(left: np.ndarray, right: np.ndarray) -> float:
-        return sum(lft * rght for lft, rght in zip(left, right))
+        if left.shape != right.shape or left.ndim != 1:
+            raise EmbeddingValidationError("embedding dimension mismatch")
+        return float(np.dot(left, right))
 
     def _build_other_urls(
         self,

@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy import (
     DateTime,
+    Integer,
     LargeBinary,
     String,
     Text,
@@ -64,6 +65,21 @@ class FeedHttpCacheModel(Base):
     last_modified: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     body: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class EmbeddingModelV2(Base):
+    """Content- and backend-specific compact embedding cache."""
+
+    __tablename__ = "embeddings_v2"
+
+    url: Mapped[str] = mapped_column(String, primary_key=True)
+    input_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    backend_identity: Mapped[str] = mapped_column(String, primary_key=True)
+    dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    vector: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
 
 
 def init_engine(connection_string: Optional[str]) -> Optional[Engine]:
@@ -231,6 +247,70 @@ def upsert_feed_http_states(session: Session, states: List[dict]) -> None:
                 )
             )
 
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def get_embeddings_v2(
+    session: Session, input_hashes: Dict[str, str], backend_identity: str
+) -> Dict[str, dict]:
+    """Return exact content/backend cache hits keyed in caller URL order."""
+    if not input_hashes:
+        return {}
+    stmt = select(EmbeddingModelV2).where(
+        EmbeddingModelV2.url.in_(list(input_hashes)),
+        EmbeddingModelV2.backend_identity == backend_identity,
+    )
+    rows = session.execute(stmt).scalars().all()
+    return {
+        row.url: {
+            "input_hash": row.input_hash,
+            "dimension": row.dimension,
+            "vector": row.vector,
+        }
+        for row in rows
+        if input_hashes.get(row.url) == row.input_hash
+    }
+
+
+def upsert_embeddings_v2(session: Session, records: List[dict]) -> None:
+    """Atomically store compact versioned embedding records."""
+    if not records:
+        return
+    urls = [str(record["url"]) for record in records]
+    identities = [str(record["backend_identity"]) for record in records]
+    stmt = select(EmbeddingModelV2).where(
+        EmbeddingModelV2.url.in_(urls),
+        EmbeddingModelV2.backend_identity.in_(identities),
+    )
+    existing = {
+        (row.url, row.input_hash, row.backend_identity): row
+        for row in session.execute(stmt).scalars().all()
+    }
+    for record in records:
+        key = (
+            str(record["url"]),
+            str(record["input_hash"]),
+            str(record["backend_identity"]),
+        )
+        row = existing.get(key)
+        if row:
+            row.dimension = int(record["dimension"])
+            row.vector = bytes(record["vector"])
+            row.created_at = datetime.now(timezone.utc)
+        else:
+            session.add(
+                EmbeddingModelV2(
+                    url=key[0],
+                    input_hash=key[1],
+                    backend_identity=key[2],
+                    dimension=int(record["dimension"]),
+                    vector=bytes(record["vector"]),
+                )
+            )
     try:
         session.commit()
     except Exception:

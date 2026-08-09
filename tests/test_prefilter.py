@@ -300,23 +300,28 @@ def test_embed_texts_uses_valid_cache_and_replaces_invalid_cache(monkeypatch):
     )
     monkeypatch.setattr(
         prefilter.db,
-        "get_embeddings",
-        lambda *_args: {"cached": b"[0.1]", "bad": b"not-json"},
+        "get_embeddings_v2",
+        lambda *_args: {
+            "cached": {
+                "dimension": 1,
+                "vector": np.array([0.1], dtype=np.float32).tobytes(),
+            },
+            "bad": {"dimension": 1, "vector": b"bad"},
+        },
     )
-    saved = {}
+    saved = []
     monkeypatch.setattr(
         prefilter.db,
-        "upsert_embeddings",
-        lambda _session, data, backend_key: saved.update(data),
+        "upsert_embeddings_v2",
+        lambda _session, records: saved.extend(records),
     )
 
     vectors = filt._embed_texts(
         ["cached text", "bad text", "new text"], ["cached", "bad", "new"]
     )
 
-    assert vectors == [[0.1], [0.2], [0.3]]
-    assert json.loads(saved["bad"]) == [0.2]
-    assert json.loads(saved["new"]) == [0.3]
+    assert np.allclose(vectors, [[0.1], [0.2], [0.3]])
+    assert [record["url"] for record in saved] == ["bad", "new"]
 
 
 def test_embed_texts_all_cached_and_missing_provider_result(monkeypatch):
@@ -328,11 +333,19 @@ def test_embed_texts_all_cached_and_missing_provider_result(monkeypatch):
         config=prefilter._EmbeddingConfig(model="cache-branches"),
     )
     monkeypatch.setattr(
-        prefilter.db, "get_embeddings", lambda *_args: {"cached": b"[0.1]"}
+        prefilter.db,
+        "get_embeddings_v2",
+        lambda *_args: {
+            "cached": {
+                "dimension": 1,
+                "vector": np.array([0.1], dtype=np.float32).tobytes(),
+            }
+        },
     )
-    monkeypatch.setattr(prefilter.db, "upsert_embeddings", lambda *_args: None)
-    assert filt._embed_texts(["cached"], ["cached"]) == [[0.1]]
-    assert filt._embed_texts(["missing"], ["new"]) == [None]
+    monkeypatch.setattr(prefilter.db, "upsert_embeddings_v2", lambda *_args: None)
+    assert np.allclose(filt._embed_texts(["cached"], ["cached"]), [[0.1]])
+    with pytest.raises(prefilter.EmbeddingValidationError, match="count"):
+        filt._embed_texts(["missing"], ["new"])
 
 
 def test_scoring_helpers_other_urls_and_cosine_bounds(monkeypatch):

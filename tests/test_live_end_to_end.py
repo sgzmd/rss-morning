@@ -149,7 +149,7 @@ now-what. Keep every field concise and use plain text.
             "SELECT COUNT(*) FROM articles WHERE content IS NOT NULL AND length(content) > 0"
         ).fetchone()[0]
         embedding_count = connection.execute(
-            "SELECT COUNT(*) FROM embeddings"
+            "SELECT COUNT(*) FROM embeddings_v2"
         ).fetchone()[0]
     assert article_count >= 1
     assert extracted_article_count >= 1

@@ -90,6 +90,11 @@ category always overrides cached metadata. Cache reads are batched before articl
 workers start, and successful new extractions are written in one transaction after
 the workers finish.
 
+Embedding vectors use the separate `embeddings_v2` table. A cache hit requires
+matching article content, provider, model, and preprocessing version; vectors are
+stored as validated float32 bytes with their dimension. The older model-only
+`embeddings` table remains untouched but is not used by the runtime filter.
+
 Token truncation uses one shared `cl100k_base` encoder initialized before article
 workers start. If its cache is unavailable offline, the run continues with a
 deterministic character-limit approximation and logs one warning without article
