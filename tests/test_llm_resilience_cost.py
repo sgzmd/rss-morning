@@ -1,10 +1,11 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
-from rss_morning import summaries
+from rss_morning import db, runner, summaries, summary_eval
 from rss_morning.config import parse_app_config
 
 
@@ -84,6 +85,7 @@ def test_llm_defaults_and_complete_openrouter_configuration(tmp_path):
     "llm_xml,match",
     [
         ("<llm><model>not-a-slug</model></llm>", "OpenRouter model"),
+        ("<llm><model>vendor/</model></llm>", "OpenRouter model"),
         (
             "<llm><model>v/a</model><fallback-models><model>v/a</model></fallback-models></llm>",
             "duplicate",
@@ -96,6 +98,22 @@ def test_llm_defaults_and_complete_openrouter_configuration(tmp_path):
     ],
 )
 def test_openrouter_config_validation(tmp_path, llm_xml, match):
+    with pytest.raises(ValueError, match=match):
+        _write_config(tmp_path, llm_xml)
+
+
+@pytest.mark.parametrize(
+    "llm_xml,match",
+    [
+        ("<llm><provider>unknown</provider></llm>", "provider"),
+        (
+            "<llm><provider>gemini</provider><fallback-models><model>v/f</model></fallback-models></llm>",
+            "Gemini",
+        ),
+        ("<llm><max-attempts>0</max-attempts></llm>", "positive"),
+    ],
+)
+def test_additional_llm_config_validation(tmp_path, llm_xml, match):
     with pytest.raises(ValueError, match=match):
         _write_config(tmp_path, llm_xml)
 
@@ -124,18 +142,40 @@ def test_catalog_fixture_proves_default_caps_and_is_not_runtime_dependency(monke
     assert summaries.cache_identity(settings, "prompt", [_article(1)])
 
 
+def test_catalog_validation_skips_unsupported_and_over_cap_models():
+    settings = summaries.SummarySettings(model="v/a", fallback_models=("v/b",))
+    catalog = {
+        "models": [
+            {"id": "other/x"},
+            {
+                "id": "v/a",
+                "prompt_price": "0.1",
+                "completion_price": "0.1",
+                "supports_structured_outputs": True,
+            },
+            {
+                "id": "v/b",
+                "prompt_price": "0.0000001",
+                "completion_price": "0.0000001",
+                "supports_structured_outputs": False,
+            },
+        ]
+    }
+    assert summaries.models_within_caps(catalog, settings) == []
+
+
 def test_batch_planner_is_deterministic_bounded_and_counts_prompt():
     articles = [_article(i, text="x" * 90) for i in range(5)]
     first = summaries.plan_batches(
-        articles, "p" * 80, max_articles=3, max_input_tokens=130
+        articles, "p" * 80, max_articles=3, max_input_tokens=150
     )
     second = summaries.plan_batches(
-        articles, "p" * 80, max_articles=3, max_input_tokens=130
+        articles, "p" * 80, max_articles=3, max_input_tokens=150
     )
     assert first == second
     assert [len(batch) for batch in first] == [2, 2, 1]
     assert all(
-        summaries.estimate_input_tokens("p" * 80, batch) <= 130 for batch in first
+        summaries.estimate_input_tokens("p" * 80, batch) <= 150 for batch in first
     )
 
     oversized = summaries.plan_batches(
@@ -146,6 +186,10 @@ def test_batch_planner_is_deterministic_bounded_and_counts_prompt():
     )
     assert len(oversized) == 1 and len(oversized[0]) == 1
     assert summaries.estimate_input_tokens("prompt", oversized[0]) <= 100
+
+    with pytest.raises(ValueError, match="positive"):
+        summaries.plan_batches([], "", max_articles=0, max_input_tokens=1)
+    assert summaries.plan_batches([], "", max_articles=1, max_input_tokens=1) == []
 
 
 def test_openrouter_request_has_ordered_fallbacks_caps_timeout_and_metrics(monkeypatch):
@@ -231,10 +275,19 @@ def test_transient_failures_retry_with_injected_sleeper(monkeypatch, error):
         settings=settings,
         provider_request=request,
         sleeper=sleeps.append,
+        jitter=lambda: 0,
     )
     assert len(json.loads(result)["summaries"]) == 1
     assert calls == 2
     assert sleeps == [7 if getattr(error, "retry_after", None) else 1.0]
+
+
+def test_retry_delay_reads_provider_headers_and_falls_back_from_malformed_value():
+    header_error = summaries.ProviderError(429)
+    header_error.response = SimpleNamespace(headers={"Retry-After": "4"})
+    assert summaries._retry_delay(header_error, 0, lambda: 1) == 4
+    header_error.response.headers = {"retry-after": "invalid"}
+    assert summaries._retry_delay(header_error, 1, lambda: 1) == 2.5
 
 
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 422])
@@ -288,7 +341,7 @@ def test_retry_exhaustion_splits_and_attempt_bound_is_exact():
         )
     )
     assert [item["url"] for item in result["summaries"]] == [a["url"] for a in articles]
-    assert len(calls) == 6
+    assert len(calls) == 10
     assert summaries.maximum_provider_attempts(4, 2, 2) == 14
 
 
@@ -340,6 +393,57 @@ def test_reconciliation_sanitizes_every_field_restores_order_and_category():
         "so-what": "Why",
         "now-what": "Act",
     }
+
+
+@pytest.mark.parametrize(
+    "parsed,batch",
+    [
+        (_payload([_article(1)]), [{"url": ""}]),
+        (_payload([_article(1), _article(1)]), [_article(1), _article(1)]),
+        ({"summaries": [{"url": 1, "summary": {}}]}, [_article(1)]),
+        ({"summaries": [], "exec-summary": "bad"}, []),
+    ],
+)
+def test_reconciliation_rejects_invalid_source_or_exec_identity(parsed, batch):
+    with pytest.raises(ValueError):
+        summaries.reconcile_response(parsed, batch)
+
+
+def test_attempt_bound_handles_invalid_and_singleton_inputs():
+    assert summaries.maximum_provider_attempts(0, 3, 2) == 0
+    assert summaries.maximum_provider_attempts(1, 3, 2) == 3
+
+
+def test_unconfigured_response_model_and_zero_attempts_are_bounded():
+    article = _article(1)
+    response = summaries.ProviderResponse(
+        json.dumps(_payload([article])), "unconfigured/model", 1, 1
+    )
+    settings = summaries.SummarySettings(
+        model="v/m",
+        fallback_models=(),
+        max_attempts=1,
+        max_split_depth=0,
+        cache_enabled=False,
+    )
+    result = summaries.generate_summary(
+        [article], "p", settings=settings, provider_request=lambda *_: response
+    )
+    assert json.loads(result) == {"summaries": []}
+
+    no_attempts = summaries.generate_summary(
+        [article],
+        "p",
+        settings=summaries.SummarySettings(
+            model="v/m",
+            fallback_models=(),
+            max_attempts=0,
+            max_split_depth=0,
+            cache_enabled=False,
+        ),
+        provider_request=lambda *_: pytest.fail("must not call"),
+    )
+    assert json.loads(no_attempts) == {"summaries": []}
 
 
 def test_exact_cache_identity_hits_and_all_semantic_inputs_miss():
@@ -435,3 +539,114 @@ def test_quality_corpus_covers_required_synthetic_cases():
     assert any("<script>" in article.get("text", "") for article in articles)
     assert any("text_repeat" in article for article in articles)
     assert fixture["required_summary_fields"] == list(summaries.REQUIRED_SUMMARY_FIELDS)
+
+
+def test_llm_batch_database_cache_insert_update_and_rollback():
+    engine = db.init_engine("sqlite:///:memory:")
+    assert engine is not None
+    session = db.get_session_factory(engine)()
+    try:
+        assert db.get_llm_batch_cache(session, "key") is None
+        db.upsert_llm_batch_cache(session, "key", "first")
+        assert db.get_llm_batch_cache(session, "key") == "first"
+        db.upsert_llm_batch_cache(session, "key", "second")
+        assert db.get_llm_batch_cache(session, "key") == "second"
+    finally:
+        session.close()
+        engine.dispose()
+
+    failing = SimpleNamespace(
+        get=lambda *_: None,
+        add=lambda *_: None,
+        commit=lambda: (_ for _ in ()).throw(RuntimeError("write")),
+        rollback=lambda: None,
+    )
+    with pytest.raises(RuntimeError, match="write"):
+        db.upsert_llm_batch_cache(failing, "key", "payload")
+
+
+def test_runner_wires_database_batch_cache(tmp_path, monkeypatch):
+    snapshot = tmp_path / "articles.json"
+    snapshot.write_text(json.dumps([_article(1)]), encoding="utf-8")
+    context = MagicMock()
+    context.__enter__.return_value = "session"
+    monkeypatch.setattr(runner.db, "init_engine", lambda _: object())
+    monkeypatch.setattr(runner.db, "get_session_factory", lambda _: lambda: context)
+    monkeypatch.setattr(
+        runner.db,
+        "get_llm_batch_cache",
+        lambda session, key: f"{session}:{key}",
+    )
+    writes = []
+    monkeypatch.setattr(
+        runner.db, "upsert_llm_batch_cache", lambda *args: writes.append(args)
+    )
+
+    def fake_generate(_articles, _prompt, **kwargs):
+        assert kwargs["cache_get"]("identity") == "session:identity"
+        kwargs["cache_put"]("identity", "payload")
+        assert kwargs["settings"] == summaries.SummarySettings()
+        payload = {"summaries": []}
+        return json.dumps(payload), payload
+
+    monkeypatch.setattr(runner, "generate_summary", fake_generate)
+    result = runner.execute(
+        runner.RunConfig(
+            feeds_file="unused",
+            limit=1,
+            max_age_hours=None,
+            summary=True,
+            system_prompt="prompt",
+            load_articles_path=str(snapshot),
+            database_enabled=True,
+            database_connection_string="sqlite://",
+        )
+    )
+    assert json.loads(result.output_text) == {"summaries": []}
+    assert writes == [("session", "identity", "payload")]
+
+
+def test_summary_eval_load_score_guard_and_success(tmp_path, monkeypatch, capsys):
+    corpus = tmp_path / "corpus.json"
+    corpus.write_text(
+        json.dumps(
+            {
+                "articles": [
+                    _article(1),
+                    {**_article(2), "text_repeat": {"value": "x", "count": 3}},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("synthetic", encoding="utf-8")
+    loaded = summary_eval.load_corpus(corpus)
+    assert loaded[1]["text"] == "xxx"
+    result = _payload([loaded[0], loaded[0]])
+    score = summary_eval.score_result(
+        loaded,
+        result,
+        [{"input_tokens": 10, "output_tokens": 5}],
+        0.25,
+        (1, 2),
+    )
+    assert score["duplicate_url_count"] == 1
+    assert score["source_url_recall"] == 0.5
+    assert score["list_price_usd"] == pytest.approx(0.00002)
+
+    monkeypatch.delenv("RUN_PAID_LLM_EVAL", raising=False)
+    with pytest.raises(SystemExit):
+        summary_eval.main(["--corpus", str(corpus), "--prompt", str(prompt)])
+
+    def fake_generate(articles, _prompt, *, metrics_sink, **_kwargs):
+        metrics_sink({"input_tokens": 2, "output_tokens": 1})
+        payload = _payload(articles)
+        return json.dumps(payload), payload
+
+    monkeypatch.setenv("RUN_PAID_LLM_EVAL", "1")
+    monkeypatch.setattr(summary_eval, "generate_summary", fake_generate)
+    monkeypatch.setattr(summary_eval.time, "monotonic", lambda: 1.0)
+    assert summary_eval.main(["--corpus", str(corpus), "--prompt", str(prompt)]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert set(report) == set(summary_eval.CANDIDATES)

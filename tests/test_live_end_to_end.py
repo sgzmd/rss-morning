@@ -89,7 +89,7 @@ now-what. Keep every field concise and use plain text.
   </embeddings>
   <llm>
     <provider>openrouter</provider>
-    <model>{os.environ.get("OPENROUTER_E2E_MODEL", "mistralai/mistral-nemo")}</model>
+    <model>{os.environ.get("OPENROUTER_E2E_MODEL", "bytedance-seed/seed-2.0-mini")}</model>
   </llm>
   <database>
     <enabled>true</enabled>

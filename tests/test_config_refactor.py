@@ -95,5 +95,5 @@ def test_parse_app_config_minimal(tmp_path):
     assert config.summary is False
     assert config.env_file is None
     assert config.prompt is None
-    assert config.llm.provider == "gemini"
-    assert config.llm.model == "gemini-flash-latest"
+    assert config.llm.provider == "openrouter"
+    assert config.llm.model == "bytedance-seed/seed-2.0-mini"

@@ -4,7 +4,7 @@ PYTEST := $(VENV)/bin/pytest
 ENV_FISH ?= env.fish
 CONFIG ?= configs/config.xml
 
-.PHONY: help test coverage check live-e2e production
+.PHONY: help test coverage check live-e2e llm-eval production
 
 help:
 	@echo "Available targets:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make coverage    Run hermetic tests with 100% branch coverage"
 	@echo "  make check       Run lint, format, type, test, and coverage checks"
 	@echo "  make live-e2e    Run the live pipeline with detailed console logging"
+	@echo "  make llm-eval    Run explicitly approved paid model-quality evaluation"
 	@echo "  make production  Run the full production pipeline"
 
 test:
@@ -34,6 +35,11 @@ live-e2e:
 	@command -v fish >/dev/null || { echo "The fish shell is required to load $(ENV_FISH)." >&2; exit 2; }
 	@test -f "$(ENV_FISH)" || { echo "Missing $(ENV_FISH). Add OPENROUTER_API_KEY there first." >&2; exit 2; }
 	@fish -c 'source "$(ENV_FISH)"; or exit 2; set -q OPENROUTER_API_KEY; or begin; echo "OPENROUTER_API_KEY is not set by $(ENV_FISH)." >&2; exit 2; end; set -lx RUN_LIVE_E2E 1; "$(PYTEST)" -m live_e2e -vv -s --tb=long'
+
+llm-eval:
+	@test "$(RUN_PAID_LLM_EVAL)" = "1" || { echo "Set RUN_PAID_LLM_EVAL=1 to approve paid evaluation." >&2; exit 2; }
+	@test -n "$(PROMPT)" || { echo "Set PROMPT to a synthetic evaluation prompt path." >&2; exit 2; }
+	@RUN_PAID_LLM_EVAL=1 $(PYTHON) -m rss_morning.summary_eval --prompt "$(PROMPT)"
 
 production:
 	@test -x "$(PYTHON)" || { echo "Missing $(PYTHON). Create the virtual environment first." >&2; exit 2; }
