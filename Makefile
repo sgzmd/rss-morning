@@ -4,13 +4,15 @@ PYTEST := $(VENV)/bin/pytest
 ENV_FISH ?= env.fish
 CONFIG ?= configs/config.xml
 
-.PHONY: help test coverage check live-e2e llm-eval production
+.PHONY: help test coverage check lock container-smoke live-e2e llm-eval production
 
 help:
 	@echo "Available targets:"
 	@echo "  make test        Run the hermetic test suite"
 	@echo "  make coverage    Run hermetic tests with 100% branch coverage"
 	@echo "  make check       Run lint, format, type, test, and coverage checks"
+	@echo "  make lock        Regenerate pinned runtime and development dependencies"
+	@echo "  make container-smoke  Build and verify the offline production image"
 	@echo "  make live-e2e    Run the live pipeline with detailed console logging"
 	@echo "  make llm-eval    Run explicitly approved paid model-quality evaluation"
 	@echo "  make production  Run the full production pipeline"
@@ -29,6 +31,14 @@ check:
 	@$(VENV)/bin/ruff format --check .
 	@$(VENV)/bin/mypy rss_morning main.py
 	@$(MAKE) coverage
+
+lock:
+	@CUSTOM_COMPILE_COMMAND='make lock' $(VENV)/bin/pip-compile --resolver=backtracking --strip-extras --output-file=requirements.txt requirements.in
+	@CUSTOM_COMPILE_COMMAND='make lock' $(VENV)/bin/pip-compile --resolver=backtracking --strip-extras --output-file=requirements-dev.txt requirements-dev.in
+
+container-smoke:
+	@docker build --tag rss-morning:smoke .
+	@sh scripts/container-smoke.sh rss-morning:smoke
 
 live-e2e:
 	@test -x "$(PYTEST)" || { echo "Missing $(PYTEST). Create the virtual environment first." >&2; exit 2; }

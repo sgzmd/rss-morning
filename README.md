@@ -63,6 +63,14 @@ Install the pinned development toolchain on top of the runtime dependencies:
 python -m pip install -r requirements-dev.txt
 ```
 
+`requirements.in` contains only direct production dependencies;
+`requirements.txt` is its reproducibly generated pinned runtime lock.
+`requirements-dev.in` adds test, lint, type, hook, and lock-generation tools, and
+`requirements-dev.txt` is the corresponding complete pinned development lock.
+After intentionally changing an input file, install the development lock and run
+`make lock` to regenerate both outputs. Do not edit transitive lock entries by
+hand.
+
 `make test` runs the hermetic suite and excludes the opt-in live end-to-end
 test. `make coverage` requires 100% statement and branch coverage across
 `rss_morning` and `main.py`. Run the complete local/CI gate with:
@@ -230,6 +238,25 @@ docker build -t rss-morning:local .
 docker run --rm rss-morning:local --help
 ```
 
+The multi-stage build compiles or downloads wheels in a builder stage. The final
+Python 3.12 slim stage installs only the pinned runtime wheels and runtime shared
+libraries, copies only application and smoke-harness files, and contains no
+compiler or development tooling. It prewarms `cl100k_base` under
+`TIKTOKEN_CACHE_DIR`; `/app/data`, including the FastEmbed model-cache directory,
+is writable by the unprivileged `appuser`.
+
+Run all required offline image checks and print the image size, installed package
+list, and layer history with:
+
+```bash
+make container-smoke
+```
+
+This builds `rss-morning:smoke`, disables networking, checks CLI help, imports
+every runtime module, exercises cached token truncation, verifies the non-root
+user and absence of development packages, and runs a synthetic snapshot LLM dry
+run without credentials or sockets. CI runs the same harness.
+
 For Compose, copy `docker-compose.example.override.yml` to the ignored
 `docker-compose.override.yml`, create the local files shown in **Setup**, and run:
 
@@ -237,8 +264,8 @@ For Compose, copy `docker-compose.example.override.yml` to the ignored
 docker compose run --rm rss-morning
 ```
 
-The image runs as an unprivileged user. Compose persists only the FastEmbed cache;
-mount any desired database or output location explicitly.
+Compose persists only the writable FastEmbed cache; mount any desired database or
+output location explicitly.
 
 ## Architecture
 
