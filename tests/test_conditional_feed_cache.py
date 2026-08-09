@@ -102,8 +102,12 @@ def test_304_sends_validators_and_parses_cached_body_without_transfer():
     state = cached_state()
     client = FakeClient(response(304))
 
+    outcomes = []
     entries = feeds.fetch_feed_entries(
-        feed_config(), http_client=client, cached_state=state
+        feed_config(),
+        http_client=client,
+        cached_state=state,
+        on_result=outcomes.append,
     )
 
     assert [entry.title for entry in entries] == ["Story"]
@@ -112,6 +116,7 @@ def test_304_sends_validators_and_parses_cached_body_without_transfer():
         "If-Modified-Since": "Wed, 01 Jan 2025 00:00:00 GMT",
     }
     assert client.responses == []
+    assert outcomes == [True]
 
 
 @pytest.mark.parametrize(
@@ -325,15 +330,25 @@ def test_malformed_current_response_does_not_replace_last_good_body():
     updates = []
     client = FakeClient(response(200, body=b"not a feed"))
 
+    outcomes = []
     entries = feeds.fetch_feed_entries(
         feed_config(),
         http_client=client,
         cached_state=cached_state(),
         on_cache_update=updates.append,
+        on_result=outcomes.append,
     )
 
     assert entries == []
     assert updates == []
+    assert outcomes == [False]
+    assert (
+        feeds.fetch_feed_entries(
+            feed_config(),
+            http_client=FakeClient(response(200, body=b"not a feed")),
+        )
+        == []
+    )
 
 
 def test_transient_error_preserves_state_but_does_not_serve_it():

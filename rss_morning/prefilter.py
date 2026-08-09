@@ -26,6 +26,7 @@ import numpy as np
 from openai import OpenAI
 
 from .embeddings import EmbeddingBackend, FastEmbedBackend, OpenAIEmbeddingBackend
+from .metrics import RunStats
 from . import db
 
 logger = logging.getLogger(__name__)
@@ -145,9 +146,11 @@ class EmbeddingArticleFilter:
         queries: Optional[Mapping[str, Sequence[str]]] = None,
         config: Optional[_EmbeddingConfig] = None,
         session_factory=None,
+        stats: RunStats | None = None,
     ):
         self._config = config or self.CONFIG
         self._session_factory = session_factory
+        self._stats = stats
         if backend is not None and client is not None:
             logger.info(
                 "EmbeddingArticleFilter received both backend and client; backend takes precedence."
@@ -446,7 +449,16 @@ class EmbeddingArticleFilter:
     def _embed_backend(
         self, texts: Sequence[str], expected_dimension: Optional[int] = None
     ) -> List[List[float]]:
+        started = self._stats.start() if self._stats is not None else 0.0
         vectors = self._backend.embed(texts)
+        if self._stats is not None:
+            self._stats.add(
+                "embeddings",
+                provider_calls=1,
+                provider=self._config.provider,
+                model=self._config.model,
+                duration_seconds=max(0.0, self._stats.clock() - started),
+            )
         if len(vectors) != len(texts):
             raise EmbeddingValidationError(
                 f"embedding count {len(vectors)} does not match input count {len(texts)}"
@@ -518,6 +530,13 @@ class EmbeddingArticleFilter:
             else:
                 missing_indices.append(idx)
                 missing_texts.append(text)
+
+        if self._stats is not None:
+            self._stats.add(
+                "embeddings",
+                cache_hits=len(texts) - len(missing_indices),
+                cache_misses=len(missing_indices),
+            )
 
         if missing_texts:
             logger.info("Computing embeddings for %d new articles", len(missing_texts))

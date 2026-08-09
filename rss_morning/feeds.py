@@ -37,6 +37,7 @@ def fetch_feed_entries(
     http_client: Optional[HttpClient] = None,
     cached_state: Optional[Mapping[str, object]] = None,
     on_cache_update: Optional[Callable[[dict], None]] = None,
+    on_result: Optional[Callable[[bool], None]] = None,
 ) -> List[FeedEntry]:
     """Fetch entries from a single RSS feed definition."""
     logger.info("Fetching feed '%s' (%s)", feed.title, feed.url)
@@ -57,16 +58,22 @@ def fetch_feed_entries(
             if isinstance(cached_body, bytes):
                 cached_entries, corrupt = _parse_feed(feed, cached_body)
                 if not corrupt:
+                    if on_result is not None:
+                        on_result(True)
                     return cached_entries
             logger.warning("Cached feed body is unavailable or corrupt: %s", feed.url)
             response = _download_feed(client, feed.url)
     except DownloadError as e:
         logger.warning("Failed to fetch feed '%s' (%s): %s", feed.title, feed.url, e)
+        if on_result is not None:
+            on_result(False)
         return []
 
     entries, corrupt = _parse_feed(feed, response.body)
     if corrupt:
         logger.warning("Downloaded feed body could not be parsed: %s", feed.url)
+        if on_result is not None:
+            on_result(False)
         return entries
 
     if on_cache_update is not None:
@@ -81,6 +88,8 @@ def fetch_feed_entries(
             }
         )
 
+    if on_result is not None:
+        on_result(True)
     return entries
 
 

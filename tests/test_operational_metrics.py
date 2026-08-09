@@ -1,13 +1,17 @@
 import json
 import logging
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from types import SimpleNamespace
+
+import numpy as np
 
 from rss_morning.articles import ArticleContent
 from rss_morning.emailing import EmailDeliveryResult
 from rss_morning.http_client import HttpClient
 from rss_morning.metrics import RunStats
 from rss_morning.models import FeedConfig, FeedEntry
+from rss_morning.prefilter import EmbeddingArticleFilter, _EmbeddingConfig
 from rss_morning.runner import RunConfig, execute
 from rss_morning.summaries import ProviderError, ProviderResponse, SummarySettings
 import rss_morning.runner as runner
@@ -97,7 +101,7 @@ def test_summary_metrics_count_planning_retries_splits_cache_and_usage(monkeypat
         }
         return ProviderResponse(json.dumps(payload), "fixture/model", 7, 3)
 
-    monkeypatch.setattr(summaries, "estimate_tokens", lambda _value: 5)
+    monkeypatch.setattr(summaries, "estimate_input_tokens", lambda *_args: 5)
     settings = SummarySettings(
         model="fixture/model",
         fallback_models=(),
@@ -125,6 +129,72 @@ def test_summary_metrics_count_planning_retries_splits_cache_and_usage(monkeypat
     assert stats.llm.provider_input_tokens == 21
     assert stats.llm.provider_output_tokens == 9
 
+    cached_stats = RunStats(clock=Clock())
+    cached_payload = {
+        "exec-summary": [],
+        "summaries": [
+            {
+                "url": articles[0]["url"],
+                "category": "A",
+                "summary": {
+                    "title": "t",
+                    "rank-reasoning": "r",
+                    "what": "w",
+                    "so-what": "s",
+                    "now-what": "n",
+                },
+            }
+        ],
+    }
+    summaries.generate_summary(
+        articles[:1],
+        "private prompt",
+        settings=SummarySettings(model="fixture/model"),
+        cache_get=lambda _key: json.dumps(cached_payload),
+        provider_request=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("cached batch must not call provider")
+        ),
+        stats=cached_stats,
+    )
+    assert cached_stats.llm.exact_cache_hits == 1
+    assert cached_stats.llm.provider_calls == 0
+
+
+def test_embedding_metrics_include_cache_counts_and_safe_provider_duration(monkeypatch):
+    class Backend:
+        def embed(self, texts):
+            assert texts == ["missing"]
+            return [[0.0, 1.0]]
+
+    cached_vector = np.asarray([1.0, 0.0], dtype=np.float32).tobytes()
+    monkeypatch.setattr(
+        "rss_morning.prefilter.db.get_embeddings_v2",
+        lambda *_args: {
+            "cached": {"dimension": 2, "vector": cached_vector},
+        },
+    )
+    monkeypatch.setattr(
+        "rss_morning.prefilter.db.upsert_embeddings_v2", lambda *_args: None
+    )
+    stats = RunStats(clock=Clock())
+    layer = EmbeddingArticleFilter(
+        backend=Backend(),
+        queries={},
+        config=_EmbeddingConfig(provider="fixture", model="safe-model"),
+        session_factory=lambda: nullcontext(object()),
+        stats=stats,
+    )
+
+    vectors = layer._embed_texts(["cached", "missing"], urls=["cached", "missing"])
+
+    assert vectors == [[1.0, 0.0], [0.0, 1.0]]
+    assert stats.embeddings.cache_hits == 1
+    assert stats.embeddings.cache_misses == 1
+    assert stats.embeddings.provider_calls == 1
+    assert stats.embeddings.provider == "fixture"
+    assert stats.embeddings.model == "safe-model"
+    assert stats.embeddings.duration_seconds == 0.25
+
 
 def test_execute_reports_mixed_run_metrics_without_changing_stdout_or_leaking(
     monkeypatch, caplog
@@ -138,7 +208,9 @@ def test_execute_reports_mixed_run_metrics_without_changing_stdout_or_leaking(
 
     def fetch_feed(feed, **_kwargs):
         if feed.title == "bad":
+            _kwargs["on_result"](False)
             raise RuntimeError("feed unavailable")
+        _kwargs["on_result"](True)
         if feed.title == "one":
             return [
                 _entry("https://articles.invalid/a"),
@@ -172,13 +244,15 @@ def test_execute_reports_mixed_run_metrics_without_changing_stdout_or_leaking(
         },
     }
     monkeypatch.setattr(runner.db, "init_engine", lambda _connection: object())
-    monkeypatch.setattr(
-        runner.db,
-        "get_session_factory",
-        lambda _engine: lambda: SimpleNamespace(
-            __enter__=lambda self: self, __exit__=lambda *_args: None
-        ),
-    )
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(runner.db, "get_session_factory", lambda _engine: Session)
     monkeypatch.setattr(runner.db, "get_feed_http_states", lambda *_args: {})
     monkeypatch.setattr(runner.db, "get_articles", lambda *_args: cached)
     monkeypatch.setattr(runner.db, "upsert_articles", lambda *_args: None)
@@ -303,3 +377,71 @@ def test_execute_collects_prefilter_llm_email_metrics_and_survives_metric_loggin
     assert stats.durations.prefilter_seconds > 0
     assert stats.durations.summary_seconds > 0
     assert stats.durations.email_seconds > 0
+
+    broken = RunStats(clock=Clock())
+    monkeypatch.setattr(
+        broken, "finish", lambda: (_ for _ in ()).throw(RuntimeError("metrics broken"))
+    )
+    runner._finish_run_metrics(broken)
+
+
+def test_metadata_first_candidate_count_is_recorded(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "parse_feeds_config",
+        lambda _path: [FeedConfig("A", "feed", "https://feed.invalid")],
+    )
+
+    def fetch_feed(_feed, **kwargs):
+        kwargs["on_result"](True)
+        return [
+            _entry("https://article.invalid/1"),
+            _entry("https://article.invalid/2"),
+        ]
+
+    monkeypatch.setattr(runner, "fetch_feed_entries", fetch_feed)
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, *_args: entries
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda *_args, **_kwargs: ArticleContent(text="safe", image=None),
+    )
+    monkeypatch.setattr(runner, "prepare_tokenizer", lambda: None)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **_kwargs: text)
+
+    class Filter:
+        def select_metadata_candidates(self, incoming, **_kwargs):
+            return incoming[:1]
+
+        def filter(self, incoming, **_kwargs):
+            return incoming
+
+    monkeypatch.setattr(runner, "_create_prefilter", lambda *_args: Filter())
+    stats = RunStats(clock=Clock())
+
+    execute(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=2,
+            max_age_hours=None,
+            summary=False,
+            pre_filter=True,
+            pre_filter_mode="metadata-first",
+        ),
+        stats=stats,
+    )
+
+    assert stats.prefilter.input_articles == 2
+    assert stats.prefilter.metadata_candidates == 1
+    assert stats.prefilter.full_text_candidates == 1
+
+
+def test_run_stats_stage_context_records_duration():
+    stats = RunStats(clock=Clock())
+
+    with stats.stage("feed"):
+        pass
+
+    assert stats.durations.feed_seconds == 0.25
