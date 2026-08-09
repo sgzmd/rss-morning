@@ -46,7 +46,7 @@ One failed feed or article is logged and skipped. Pre-filter errors fail open an
 - `rss_morning/db.py`: SQLAlchemy article and embedding cache.
 - `rss_morning/emailing.py`: Resend integration.
 - `rss_morning/renderers.py`, `rss_morning/templating.py`, `rss_morning/templates/`: HTML and text email rendering.
-- `rss_morning/prefilter_cli.py`: legacy query-embedding export command; see known gaps below.
+- `rss_morning/prefilter_cli.py`: exports validated version-2 query embeddings consumed by the runtime.
 - `tests/`: unit tests. External network and API work should be replaced with fakes.
 
 ## Setup and checks
@@ -116,7 +116,7 @@ Recognized settings are:
 - `<concurrency>`: worker count for feed and article pools; default `10`.
 - `<http>`: positive connect/read timeouts, feed/article byte limits, non-negative retry/backoff settings, and positive per-host concurrency. Defaults are `5`, `20`, `5242880`, `10485760`, `2`, `0.5`, and `2`, respectively.
 - `<prompt file="..."/>`: prompt file. It is required when summaries are enabled. Inline prompt text is not supported.
-- `<pre-filter>`: `enabled`, optional `queries-file`, optional `embeddings-path`, and `cluster-threshold`.
+- `<pre-filter>`: `enabled`, optional `queries-file`, optional compatible version-2 `embeddings-path`, and `cluster-threshold` cosine similarity in `[0, 1]`.
 - `<embeddings>`: `provider` and `model`. `fastembed` is the default provider. Any provider value other than `fastembed` selects OpenAI.
 - `<llm>`: summary `provider` (`gemini` or `openrouter`) and model. Defaults to Gemini with `gemini-flash-latest`.
 - `<database>`: `enabled` and a SQLAlchemy `connection-string`.
@@ -171,7 +171,7 @@ text       extracted and token-trimmed article text, possibly absent
 image      absolute lead image URL, possibly absent
 ```
 
-The pre-filter may add `prefilter_score`, `prefilter_match`, and `other_urls`. It embeds `title + summary + text`, compares the vector with each query-category centroid, applies the fixed default threshold `0.5`, and keeps up to five articles per matching category. The best article in each category lists the other retained URLs and cosine distances.
+The pre-filter may add `prefilter_score`, `prefilter_match`, and `other_urls`. It embeds `title + summary + text`, compares the vector with each query-category centroid, and applies the fixed relevance threshold `0.5`. Matching candidates are relevance-sorted and greedily clustered within each category; up to five representatives are returned, while semantically duplicate URLs and cosine distances are attached once to the nearest representative. Exact relevance ties prefer newer publication timestamps and then lexical URLs.
 
 Without summaries, stdout is a JSON list of article dictionaries.
 
@@ -189,9 +189,6 @@ A successful extraction caches its full, untruncated article text. Output-specif
 
 Do not silently build new behavior around these settings; either preserve current behavior or fix it with tests and documentation:
 
-- `pre-filter/embeddings-path` is parsed and passed through, but the current filter ignores precomputed query embeddings.
-- `cluster-threshold` is parsed and passed to the filter, but current grouping does not use it.
-- `rss_morning.prefilter_cli` exports a legacy format that the runtime does not consume.
 - `<logging><file>` is parsed, but `cli.py` ignores it. Only `--log-file` currently enables file logging. `RSS_MORNING_LOG_STDOUT=1` disables file logging, despite its name; the default `StreamHandler` writes to stderr.
 
 ## Change rules
