@@ -194,6 +194,53 @@ class EmbeddingArticleFilter:
     def queries(self) -> Dict[str, Tuple[str, ...]]:
         return self._queries
 
+    def select_metadata_candidates(
+        self,
+        articles: Iterable[Article],
+        *,
+        candidate_multiplier: int,
+    ) -> List[MutableArticle]:
+        """Select a bounded metadata candidate set before article page downloads."""
+        if candidate_multiplier <= 0:
+            raise ValueError("candidate_multiplier must be positive")
+        materialized: List[MutableArticle] = [dict(article) for article in articles]
+        if not materialized:
+            return []
+        centroids = self._get_category_centroids()
+        if not centroids:
+            raise EmbeddingValidationError("metadata stage has no query centroids")
+        texts = [self._compose_article_text(article) for article in materialized]
+        urls = [str(article.get("url") or "") for article in materialized]
+        vectors = self._embed_texts(texts, urls=urls)
+        selected_by_category: Dict[
+            str, List[EmbeddingArticleFilter._ScoredArticle]
+        ] = {}
+        for article, vector in zip(materialized, vectors):
+            array = np.asarray(vector, dtype=float)
+            norm = float(np.linalg.norm(array))
+            array = array / norm if norm else np.zeros_like(array)
+            category, score = self._score_against_centroids(array, centroids)
+            if score < self._config.threshold:
+                continue
+            assert category is not None
+            article["category"] = category
+            article["prefilter_match"] = category
+            article["prefilter_score"] = score
+            selected_by_category.setdefault(category, []).append(
+                self._ScoredArticle(score, article, array, category)
+            )
+
+        limit = candidate_multiplier * self._config.max_cluster_size
+        selected: List[MutableArticle] = []
+        for items in selected_by_category.values():
+            items.sort(key=lambda item: str(item.article.get("url") or ""))
+            items.sort(
+                key=lambda item: str(item.article.get("published") or ""), reverse=True
+            )
+            items.sort(key=lambda item: item.score, reverse=True)
+            selected.extend(item.article for item in items[:limit])
+        return selected
+
     def filter(
         self,
         articles: Iterable[Article],

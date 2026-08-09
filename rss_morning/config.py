@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PreFilterConfig:
     enabled: bool = False
+    mode: str = "full-text"
+    candidate_multiplier: int = 3
     embeddings_path: Optional[str] = None
     cluster_threshold: float = 0.8
     queries_file: Optional[str] = None
@@ -196,6 +198,14 @@ def parse_app_config(path: str) -> AppConfig:
     pre_filter = PreFilterConfig()
     if pf_node is not None:
         pre_filter.enabled = pf_node.findtext("enabled", "false").lower() == "true"
+        pre_filter.mode = pf_node.findtext("mode", "full-text").strip().lower()
+        pre_filter.candidate_multiplier = int(
+            pf_node.findtext("candidate-multiplier", "3")
+        )
+        if pre_filter.mode not in {"full-text", "metadata-first"}:
+            raise ValueError("pre-filter mode must be full-text or metadata-first")
+        if pre_filter.candidate_multiplier <= 0:
+            raise ValueError("pre-filter candidate-multiplier must be positive")
         emb_path = pf_node.findtext("embeddings-path")
         if emb_path:
             pre_filter.embeddings_path = _resolve_path(config_path, emb_path)

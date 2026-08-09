@@ -18,6 +18,9 @@
     </http>
     <pre-filter>
         <enabled>false</enabled>
+        <!-- full-text is the compatibility default; metadata-first reduces page downloads -->
+        <mode>full-text</mode>
+        <candidate-multiplier>3</candidate-multiplier>
         <embeddings-path>../query_embeddings.json</embeddings-path>
         <queries-file>../queries.txt</queries-file>
         <cluster-threshold>0.8</cluster-threshold>

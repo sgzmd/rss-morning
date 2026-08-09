@@ -14,9 +14,10 @@ main.py
   -> runner.py: coordinate the run
      -> config.py: read OPML feeds
      -> feeds.py: fetch feeds and select recent entries
+     -> prefilter.py: optionally screen metadata-first candidates
      -> articles.py: fetch, extract, and trim article pages
      -> db.py: optionally cache articles
-     -> prefilter.py: optionally score and group articles
+     -> prefilter.py: optionally score and cluster full-text articles
         -> embeddings.py: FastEmbed or OpenAI vectors
         -> db.py: optionally cache article vectors
      -> summaries.py: optionally ask Gemini or OpenRouter for JSON summaries
@@ -116,7 +117,7 @@ Recognized settings are:
 - `<concurrency>`: worker count for feed and article pools; default `10`.
 - `<http>`: positive connect/read timeouts, feed/article byte limits, non-negative retry/backoff settings, and positive per-host concurrency. Defaults are `5`, `20`, `5242880`, `10485760`, `2`, `0.5`, and `2`, respectively.
 - `<prompt file="..."/>`: prompt file. It is required when summaries are enabled. Inline prompt text is not supported.
-- `<pre-filter>`: `enabled`, optional `queries-file`, optional compatible version-2 `embeddings-path`, and `cluster-threshold` cosine similarity in `[0, 1]`.
+- `<pre-filter>`: `enabled`, `mode` (`full-text` default or opt-in `metadata-first`), positive `candidate-multiplier` (default `3`), optional `queries-file`, optional compatible version-2 `embeddings-path`, and `cluster-threshold` cosine similarity in `[0, 1]`.
 - `<embeddings>`: `provider` and `model`. `fastembed` is the default provider. Any provider value other than `fastembed` selects OpenAI.
 - `<llm>`: summary `provider` (`gemini` or `openrouter`) and model. Defaults to Gemini with `gemini-flash-latest`.
 - `<database>`: `enabled` and a SQLAlchemy `connection-string`.
@@ -172,6 +173,8 @@ image      absolute lead image URL, possibly absent
 ```
 
 The pre-filter may add `prefilter_score`, `prefilter_match`, and `other_urls`. It embeds `title + summary + text`, compares the vector with each query-category centroid, and applies the fixed relevance threshold `0.5`. Matching candidates are relevance-sorted and greedily clustered within each category; up to five representatives are returned, while semantically duplicate URLs and cosine distances are attached once to the nearest representative. Exact relevance ties prefer newer publication timestamps and then lexical URLs.
+
+In opt-in `metadata-first` mode, deduplicated entries are screened before page downloads. Cached successful text is used when available; uncached entries use title and feed summary. Up to `candidate-multiplier * max_cluster_size` candidates per category proceed to extraction and the normal full-text filter. A first-stage error falls back to the full-text compatibility path. Snapshot replay never invokes feed or page HTTP in either mode.
 
 Without summaries, stdout is a JSON list of article dictionaries.
 

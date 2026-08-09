@@ -238,6 +238,13 @@ clustered using `cluster-threshold` as cosine similarity in the inclusive `[0, 1
 range. Only representatives proceed to summarization, while duplicate source URLs
 and their distances remain in the representative's `other_urls` field.
 
+`pre-filter/mode` defaults to `full-text`, preserving the original behavior of
+downloading every selected page before filtering. Opt-in `metadata-first` embeds
+uncached feed titles and summaries first (while using cached full text when
+available), retains up to `candidate-multiplier * max_cluster_size` candidates per
+category, and downloads only those pages before normal full-text scoring. If the
+first stage fails, the run falls back to the full-text path.
+
 ## Known compatibility gaps
 
 - The XML logging `file` value is parsed but only the `--log-file` CLI option
