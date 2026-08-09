@@ -82,6 +82,12 @@ filtering, summaries, caching, logging, and email. See
 [`configs/config.xml.example`](configs/config.xml.example) for the complete
 structure.
 
+When the database cache is enabled, successful full-text extractions are stored
+before output token truncation. Later runs can therefore request a larger output
+limit without downloading the page again. Metadata-only extraction failures and
+legacy cache rows with no text are treated as misses and retried; the current feed
+category always overrides cached metadata.
+
 Environment values can be stored in the configured environment XML file:
 
 ```xml

@@ -602,3 +602,270 @@ def test_execute_truncates_cached_content(monkeypatch, tmp_path):
     # Should be truncated to 10 chars
     assert len(payload[0]["text"]) == 10
     assert payload[0]["text"] == long_text[:10]
+
+
+def test_cached_article_without_text_is_retried_and_kept_as_metadata(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda _path: [FeedConfig("New", "Feed", "url")]
+    )
+    feed_item = _feed_entry("https://example.com/missing-text")
+    feed_item.category = "New"
+    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: [feed_item])
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    fetch_calls = []
+
+    def failed_extract(url, **_kwargs):
+        fetch_calls.append(url)
+        return ArticleContent(text=None, image=None)
+
+    monkeypatch.setattr(runner, "fetch_article_content", failed_extract)
+    connection = f"sqlite:///{tmp_path / 'cache.db'}"
+    engine = runner.db.init_engine(connection)
+    assert engine is not None
+    session_factory = runner.db.get_session_factory(engine)
+    with session_factory() as session:
+        runner.db.upsert_article(
+            session,
+            {
+                "url": feed_item.link,
+                "title": "Old title",
+                "text": None,
+                "image": "old.jpg",
+            },
+        )
+
+    result = execute(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=1,
+            max_age_hours=None,
+            summary=False,
+            database_enabled=True,
+            database_connection_string=connection,
+        )
+    )
+
+    assert fetch_calls == [feed_item.link]
+    assert json.loads(result.output_text) == [
+        {
+            "url": feed_item.link,
+            "category": "New",
+            "title": "Title",
+            "summary": "Summary",
+            "published": "2024-01-01T00:00:00+00:00",
+        }
+    ]
+    engine.dispose()
+
+
+def test_successful_extraction_caches_raw_text_before_output_truncation(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda _path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    feed_item = _feed_entry("https://example.com/raw-cache")
+    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: [feed_item])
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    raw_text = "abcdefghijklmnopqrstuvwxyz"
+    fetch_calls = []
+
+    def extract(url, **_kwargs):
+        fetch_calls.append(url)
+        return ArticleContent(text=raw_text, image="image.jpg")
+
+    monkeypatch.setattr(runner, "fetch_article_content", extract)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, limit: text[:limit])
+    connection = f"sqlite:///{tmp_path / 'raw-cache.db'}"
+    first_config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=1,
+        max_age_hours=None,
+        summary=False,
+        database_enabled=True,
+        database_connection_string=connection,
+        max_article_length=10,
+    )
+
+    first = execute(first_config)
+    assert json.loads(first.output_text)[0]["text"] == raw_text[:10]
+
+    engine = runner.db.init_engine(connection)
+    assert engine is not None
+    session_factory = runner.db.get_session_factory(engine)
+    with session_factory() as session:
+        cached = runner.db.get_article(session, feed_item.link)
+    assert cached is not None
+    assert cached["text"] == raw_text
+
+    fetch_calls.clear()
+    second = execute(
+        RunConfig(
+            **{
+                **first_config.__dict__,
+                "max_article_length": 100,
+            }
+        )
+    )
+    assert json.loads(second.output_text)[0]["text"] == raw_text
+    assert fetch_calls == []
+    engine.dispose()
+
+
+def test_failed_extraction_is_not_written_to_article_cache(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda _path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    feed_item = _feed_entry("https://example.com/not-cached")
+    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: [feed_item])
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda *_args, **_kwargs: ArticleContent(text=None, image=None),
+    )
+    connection = f"sqlite:///{tmp_path / 'failed.db'}"
+
+    execute(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=1,
+            max_age_hours=None,
+            summary=False,
+            database_enabled=True,
+            database_connection_string=connection,
+        )
+    )
+
+    engine = runner.db.init_engine(connection)
+    assert engine is not None
+    session_factory = runner.db.get_session_factory(engine)
+    with session_factory() as session:
+        assert runner.db.get_article(session, feed_item.link) is None
+    engine.dispose()
+
+
+def test_cached_article_restores_fields_but_feed_category_wins(monkeypatch, tmp_path):
+    feed_item = _feed_entry("https://example.com/restored")
+    feed_item.category = "Current category"
+    monkeypatch.setattr(
+        runner,
+        "parse_feeds_config",
+        lambda _path: [FeedConfig("Current category", "Feed", "url")],
+    )
+    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: [feed_item])
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("cache hit must not fetch")
+        ),
+    )
+    monkeypatch.setattr(runner, "truncate_text", lambda text, limit: text)
+    connection = f"sqlite:///{tmp_path / 'restored.db'}"
+    engine = runner.db.init_engine(connection)
+    assert engine is not None
+    session_factory = runner.db.get_session_factory(engine)
+    published = datetime(2023, 5, 6, tzinfo=timezone.utc)
+    with session_factory() as session:
+        runner.db.upsert_article(
+            session,
+            {
+                "url": feed_item.link,
+                "title": "Cached title",
+                "summary": "Cached summary",
+                "text": "Cached text",
+                "image": "cached.jpg",
+                "published": published,
+            },
+        )
+
+    result = execute(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=1,
+            max_age_hours=None,
+            summary=False,
+            database_enabled=True,
+            database_connection_string=connection,
+        )
+    )
+
+    assert json.loads(result.output_text) == [
+        {
+            "url": feed_item.link,
+            "category": "Current category",
+            "title": "Cached title",
+            "summary": "Cached summary",
+            "text": "Cached text",
+            "image": "cached.jpg",
+            "published": "2023-05-06T00:00:00",
+        }
+    ]
+    engine.dispose()
+
+
+def test_cache_read_failure_drops_only_affected_article(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "parse_feeds_config",
+        lambda _path: [FeedConfig("Cat", "Feed", "url")],
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_feed_entries",
+        lambda _feed: [_feed_entry("bad"), _feed_entry("good")],
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    monkeypatch.setattr(runner.db, "init_engine", lambda _connection: object())
+
+    class SessionContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        runner.db, "get_session_factory", lambda _engine: SessionContext
+    )
+
+    def get_article(_session, url):
+        if url == "bad":
+            raise RuntimeError("cache read failed")
+        return None
+
+    monkeypatch.setattr(runner.db, "get_article", get_article)
+    monkeypatch.setattr(runner.db, "upsert_article", lambda *_args: None)
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda *_args, **_kwargs: ArticleContent(text="text", image=None),
+    )
+    monkeypatch.setattr(runner, "truncate_text", lambda text, limit: text)
+
+    result = execute(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=2,
+            max_age_hours=None,
+            summary=False,
+            database_enabled=True,
+            database_connection_string="sqlite://",
+        )
+    )
+
+    assert [item["url"] for item in json.loads(result.output_text)] == ["good"]

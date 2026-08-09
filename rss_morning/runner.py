@@ -158,7 +158,8 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             if session_factory:
                 with session_factory() as session:
                     cached = db.get_article(session, entry.link)
-                    if cached:
+                    cached_text = cached.get("text") if cached else None
+                    if cached and cached_text is not None:
                         logger.debug("Cache hit for %s", entry.link)
                         return {
                             "url": cached["url"],
@@ -166,7 +167,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                             "title": cached["title"],
                             "summary": cached["summary"] or entry.summary or "",
                             "text": truncate_text(
-                                cached["text"], limit=config.max_article_length
+                                cached_text, limit=config.max_article_length
                             ),
                             "image": cached["image"],
                             "published": cached["published"].isoformat()
@@ -175,7 +176,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                         }
 
             content = fetch_article_content(entry.link, extractor=config.extractor)
-            payload = {
+            raw_payload = {
                 "url": entry.link,
                 "category": entry.category,
                 "title": entry.title,
@@ -183,21 +184,24 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                 "published": entry.published.isoformat() if entry.published else None,
             }
             if content.text:
-                payload["text"] = truncate_text(
-                    content.text, limit=config.max_article_length
-                )
+                raw_payload["text"] = content.text
             else:
                 logger.info(
                     "Article text unavailable; including metadata only: %s", entry.link
                 )
             if content.image:
-                payload["image"] = content.image
+                raw_payload["image"] = content.image
 
-            if session_factory:
+            if session_factory and content.text:
                 with session_factory() as session:
-                    db.upsert_article(session, payload)
+                    db.upsert_article(session, raw_payload)
 
-            return payload
+            output_payload = dict(raw_payload)
+            if content.text:
+                output_payload["text"] = truncate_text(
+                    content.text, limit=config.max_article_length
+                )
+            return output_payload
         except Exception:
             logger.exception("Failed to process article content for %s", entry.link)
             return None
