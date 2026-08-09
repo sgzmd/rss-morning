@@ -13,9 +13,10 @@ from typing import Any, List, Optional, Tuple, cast
 
 from .articles import fetch_article_content, prepare_tokenizer, truncate_text
 from .config import parse_feeds_config
-from .emailing import send_email_report
+from .emailing import EmailDeliveryResult, send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
 from .http_client import HttpClient
+from .metrics import RunStats
 from .summaries import SummarySettings, generate_summary
 from . import db
 
@@ -83,9 +84,10 @@ class RunResult:
     output_text: str
     email_payload: Any
     is_summary: bool
+    stats: RunStats | None = None
 
 
-def _create_prefilter(config: RunConfig, session_factory=None):
+def _create_prefilter(config: RunConfig, session_factory=None, stats=None):
     from .prefilter import EmbeddingArticleFilter
 
     emb_config_cls = type(EmbeddingArticleFilter.CONFIG)
@@ -102,6 +104,7 @@ def _create_prefilter(config: RunConfig, session_factory=None):
         queries_file=config.pre_filter_queries_file,
         config=emb_config,
         session_factory=session_factory,
+        stats=stats,
     )
 
 
@@ -139,8 +142,13 @@ def _save_articles_to_file(path: str, articles: List[dict]) -> None:
     logger.info("Saved %d articles to %s", len(serialisable), location)
 
 
-def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
+def _collect_entries(
+    config: RunConfig, session_factory=None, stats: RunStats | None = None
+) -> List[dict]:
+    stats = stats or RunStats()
+    feed_started = stats.start()
     feeds = parse_feeds_config(config.feeds_file)
+    stats.set("feeds", configured=len(feeds))
     if not feeds:
         raise RuntimeError("No feeds found in the configuration.")
 
@@ -187,16 +195,28 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
         retries=config.http_retries,
         backoff_seconds=config.http_backoff_seconds,
         per_host_concurrency=config.http_per_host_concurrency,
+        stats=stats,
+        page_requests=True,
     )
 
     def process_feed(feed):
+        result_reported = False
+
+        def record_result(success: bool) -> None:
+            nonlocal result_reported
+            result_reported = True
+            stats.add("feeds", **({"successful": 1} if success else {"failed": 1}))
+
         try:
             entries = fetch_feed_entries(
                 feed,
                 http_client=feed_http_client,
                 cached_state=feed_cache_states.get(feed.url),
                 on_cache_update=record_feed_cache_update if session_factory else None,
+                on_result=record_result,
             )
+            if not result_reported:
+                record_result(True)
             if not entries:
                 logger.info("No entries retrieved for feed %s", feed.url)
                 return []
@@ -207,6 +227,8 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             )
             return per_feed_entries
         except Exception:
+            if not result_reported:
+                record_result(False)
             logger.exception("Failed to process feed %s", feed.url)
             return []
 
@@ -243,6 +265,14 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             continue
         unique_entries.append(entry)
         seen_links.add(entry.link)
+
+    stats.set(
+        "entries",
+        before_deduplication=len(selected_entries),
+        after_deduplication=len(unique_entries),
+    )
+    stats.complete_stage("feed", feed_started)
+    extraction_started = stats.start()
 
     logger.info("Fetching article text for %d selected entries", len(unique_entries))
     prepare_tokenizer()
@@ -287,8 +317,9 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             if cached and cached.get("text") is not None:
                 payload["text"] = cached["text"]
             metadata_articles.append(payload)
+        prefilter_started = stats.start()
         try:
-            selector = _create_prefilter(config, session_factory)
+            selector = _create_prefilter(config, session_factory, stats)
             selected_metadata = selector.select_metadata_candidates(
                 metadata_articles,
                 candidate_multiplier=config.candidate_multiplier,
@@ -297,6 +328,11 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             unique_entries = [
                 entry for entry in unique_entries if entry.link in selected_urls
             ]
+            stats.set(
+                "prefilter",
+                input_articles=len(metadata_articles),
+                metadata_candidates=len(unique_entries),
+            )
             logger.info(
                 "Metadata-first stage retained %d of %d entries for page download",
                 len(unique_entries),
@@ -306,6 +342,8 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             logger.exception(
                 "Metadata-first prefilter failed; using full-text compatibility path"
             )
+        finally:
+            stats.complete_stage("prefilter", prefilter_started)
 
     def process_entry(entry):
         try:
@@ -315,6 +353,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             cached = cached_articles.get(entry.link)
             cached_text = cached.get("text") if cached else None
             if cached and cached_text is not None:
+                stats.add("articles", cache_hits=1)
                 logger.debug("Cache hit for %s", entry.link)
                 return {
                     "url": cached["url"],
@@ -328,6 +367,9 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                     else None,
                 }
 
+            stats.add("articles", cache_misses=1)
+            if cached:
+                stats.add("articles", retried_null_content=1)
             content = fetch_article_content(
                 entry.link,
                 extractor=config.extractor,
@@ -341,8 +383,10 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                 "published": entry.published.isoformat() if entry.published else None,
             }
             if content.text:
+                stats.add("articles", successful_extractions=1)
                 raw_payload["text"] = content.text
             else:
+                stats.add("articles", extraction_failures=1)
                 logger.info(
                     "Article text unavailable; including metadata only: %s", entry.link
                 )
@@ -359,6 +403,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                 )
             return output_payload
         except Exception:
+            stats.add("articles", extraction_failures=1)
             logger.exception("Failed to process article content for %s", entry.link)
             return None
 
@@ -387,6 +432,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
     output.sort(key=lambda x: x.get("published") or "", reverse=True)
     # Then sort by category ascending (stable sort preserves published order within category)
     output.sort(key=lambda x: x.get("category") or "")
+    stats.complete_stage("extraction", extraction_started)
     return output
 
 
@@ -428,8 +474,17 @@ def _build_default_email_subject() -> str:
     return "RSS Mailer update for " + timestamp.strftime("%Y-%m-%d at %H:%M")
 
 
-def execute(config: RunConfig) -> RunResult:
+def _finish_run_metrics(stats: RunStats) -> None:
+    try:
+        stats.finish()
+        stats.emit()
+    except Exception:  # noqa: BLE001 - telemetry must never fail the digest
+        logger.warning("Operational metrics finalization unavailable")
+
+
+def execute(config: RunConfig, *, stats: RunStats | None = None) -> RunResult:
     """Run the application logic and return the result payload."""
+    stats = stats or RunStats()
     if config.max_article_length <= 0:
         raise ValueError("max_article_length must be positive")
 
@@ -447,15 +502,21 @@ def execute(config: RunConfig) -> RunResult:
     if config.load_articles_path:
         articles = _load_articles_from_file(config.load_articles_path)
     else:
-        articles = _collect_entries(config, session_factory=session_factory)
+        articles = _collect_entries(
+            config, session_factory=session_factory, stats=stats
+        )
 
     if config.save_articles_path:
         _save_articles_to_file(config.save_articles_path, articles)
 
     if config.pre_filter:
         logger.info("Applying embedding pre-filter to %d articles", len(articles))
+        prefilter_started = stats.start()
+        if stats.prefilter.input_articles == 0:
+            stats.set("prefilter", input_articles=len(articles))
+        stats.set("prefilter", full_text_candidates=len(articles))
 
-        filter_layer = _create_prefilter(config, session_factory)
+        filter_layer = _create_prefilter(config, session_factory, stats)
         filtered_articles = filter_layer.filter(
             list(articles), cluster_threshold=config.cluster_threshold
         )
@@ -470,11 +531,22 @@ def execute(config: RunConfig) -> RunResult:
                 len(articles),
             )
             articles = cast(List[dict], filtered_articles)
+            stats.set(
+                "prefilter",
+                representatives=len(articles),
+                clustered_duplicates=sum(
+                    len(item.get("other_urls", []))
+                    for item in articles
+                    if isinstance(item.get("other_urls", []), list)
+                ),
+            )
+        stats.complete_stage("prefilter", prefilter_started)
 
     email_payload: Any = articles
     is_summary_payload = False
 
     if config.summary:
+        summary_started = stats.start()
         if not config.system_prompt:
             logger.warning(
                 "Summary requested but no system prompt provided using default."
@@ -518,15 +590,22 @@ def execute(config: RunConfig) -> RunResult:
                 settings=summary_settings,
                 cache_get=cache_get,
                 cache_put=cache_put,
+                stats=stats,
             ),
         )
+        stats.complete_stage("summary", summary_started)
         output_text = summary_output
 
         if config.llm_dry_run:
             logger.info("LLM dry run completed. Exiting without sending email.")
-            return RunResult(
-                output_text=output_text, email_payload=None, is_summary=True
+            result = RunResult(
+                output_text=output_text,
+                email_payload=None,
+                is_summary=True,
+                stats=stats,
             )
+            _finish_run_metrics(stats)
+            return result
 
         if summary_data is not None:
             summary_data = _attach_summary_images(summary_data, articles)
@@ -539,17 +618,31 @@ def execute(config: RunConfig) -> RunResult:
         output_text = json.dumps(articles, indent=2, ensure_ascii=False)
 
     if config.email_to:
+        email_started = stats.start()
         subject = config.email_subject or _build_default_email_subject()
-        send_email_report(
+        delivery = send_email_report(
             payload=email_payload,
             is_summary=is_summary_payload,
             to_address=config.email_to,
             from_address=config.email_from,
             subject=subject,
         )
+        if isinstance(delivery, EmailDeliveryResult):
+            stats.add(
+                "email",
+                attempted=int(delivery.attempted),
+                sent=int(delivery.sent),
+                failed=int(delivery.failed),
+            )
+        else:
+            stats.add("email", attempted=1, sent=1)
+        stats.complete_stage("email", email_started)
 
-    return RunResult(
+    result = RunResult(
         output_text=output_text,
         email_payload=email_payload,
         is_summary=is_summary_payload,
+        stats=stats,
     )
+    _finish_run_metrics(stats)
+    return result

@@ -160,12 +160,22 @@ def test_caller_headers_are_forwarded_with_user_agent():
 def test_oversized_response_is_closed_and_raises_typed_error():
     module = http_client_module()
     response = FakeResponse(chunks=(b"1234", b"5678"))
-    client = make_client(FakeSession(response), max_bytes=6)
+    stats = module.RunStats()
+    client = make_client(
+        FakeSession(response), max_bytes=6, stats=stats, page_requests=True
+    )
 
     with pytest.raises(module.ResponseTooLarge):
         client.get("https://example.com/large")
 
     assert response.closed is True
+    assert stats.http.page_requests == 1
+    assert stats.http.transferred_bytes == 8
+
+    with pytest.raises(module.ResponseTooLarge):
+        make_client(
+            FakeSession(FakeResponse(chunks=(b"1234", b"5678"))), max_bytes=6
+        ).get("https://example.com/large")
 
 
 @pytest.mark.parametrize("headers", [{}, {"Content-Type": "application/pdf"}])

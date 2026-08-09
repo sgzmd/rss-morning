@@ -122,9 +122,13 @@ def test_fetch_feed_entries_handles_request_exception(monkeypatch):
     feed = FeedConfig(
         category="Cat", title="Feed Title", url="https://timeout.example.com"
     )
-    results = feeds_module.fetch_feed_entries(feed, http_client=FailingClient())
+    outcomes = []
+    results = feeds_module.fetch_feed_entries(
+        feed, http_client=FailingClient(), on_result=outcomes.append
+    )
 
     assert results == []
+    assert outcomes == [False]
 
 
 def test_fetch_feed_entries_uses_injected_http_client(monkeypatch):
@@ -143,7 +147,14 @@ def test_fetch_feed_entries_uses_injected_http_client(monkeypatch):
 
     feed = FeedConfig(category="Cat", title="Feed", url="https://feed.example.com")
 
-    assert feeds_module.fetch_feed_entries(feed, http_client=Client()) == []
+    outcomes = []
+    assert (
+        feeds_module.fetch_feed_entries(
+            feed, http_client=Client(), on_result=outcomes.append
+        )
+        == []
+    )
+    assert outcomes == [True]
     assert calls == [
         (
             feed.url,

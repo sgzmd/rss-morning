@@ -16,6 +16,8 @@ from typing import Any, Callable
 from bs4 import BeautifulSoup
 from openai import OpenAI
 
+from .metrics import RunStats
+
 try:
     genai: Any = importlib.import_module("google.genai")
     types: Any = importlib.import_module("google.genai.types")
@@ -493,6 +495,7 @@ def generate_summary(
     cache_get: Callable[[str], str | None] | None = None,
     cache_put: Callable[[str, str], None] | None = None,
     metrics_sink: Callable[[dict], None] | None = None,
+    stats: RunStats | None = None,
 ) -> str | tuple[str, dict | None]:
     """Generate validated summary JSON with bounded retry, splitting, and caching."""
     if not articles:
@@ -507,6 +510,13 @@ def generate_summary(
         max_articles=resolved.max_batch_articles,
         max_input_tokens=resolved.max_input_tokens,
     )
+    if stats is not None:
+        stats.record_llm(
+            planned_batches=len(batches),
+            submitted_token_estimate=sum(
+                estimate_input_tokens(system_prompt, batch) for batch in batches
+            ),
+        )
     if dry_run:
         for index, batch in enumerate(batches, start=1):
             input_text = f"{system_prompt}\n\n{build_summary_input(batch)}"
@@ -529,6 +539,8 @@ def generate_summary(
                     valid = reconcile_response(json.loads(cached), batch)
                     combined.extend(valid["summaries"])
                     exec_summaries.extend(valid["exec-summary"])
+                    if stats is not None:
+                        stats.record_llm(exact_cache_hits=1)
                     return
             except Exception:
                 logger.warning("Ignoring unreadable LLM batch cache entry")
@@ -543,6 +555,8 @@ def generate_summary(
                     len(batch),
                 )
                 logger.debug("%s request payload: %s", resolved.provider, input_text)
+                if stats is not None:
+                    stats.record_llm(provider_calls=1)
                 response = request(batch, input_text)
                 if response.model not in {resolved.model, *resolved.fallback_models}:
                     raise ValueError(
@@ -557,6 +571,11 @@ def generate_summary(
                 valid = reconcile_response(parsed, batch)
                 combined.extend(valid["summaries"])
                 exec_summaries.extend(valid["exec-summary"])
+                if stats is not None:
+                    stats.record_llm(
+                        provider_input_tokens=response.input_tokens,
+                        provider_output_tokens=response.output_tokens,
+                    )
                 if metrics_sink:
                     metrics_sink(
                         {
@@ -580,11 +599,15 @@ def generate_summary(
                 last_error = exc
                 if not _is_transient(exc) or attempt + 1 >= resolved.max_attempts:
                     break
+                if stats is not None:
+                    stats.record_llm(retries=1)
                 sleeper(_retry_delay(exc, attempt, jitter))
         logger.warning(
             "LLM batch failed after bounded attempts: %s", type(last_error).__name__
         )
         if len(batch) > 1 and depth < resolved.max_split_depth:
+            if stats is not None:
+                stats.record_llm(split_recoveries=1)
             middle = len(batch) // 2
             process(batch[:middle], depth + 1)
             process(batch[middle:], depth + 1)

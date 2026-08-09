@@ -12,6 +12,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from .metrics import RunStats
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +62,8 @@ class HttpClient:
         backoff_seconds: float = 0.5,
         per_host_concurrency: int = 2,
         session_factory: Callable[[], requests.Session] = requests.Session,
+        stats: RunStats | None = None,
+        page_requests: bool = False,
     ) -> None:
         if connect_timeout <= 0 or read_timeout <= 0:
             raise ValueError("HTTP timeouts must be positive")
@@ -76,6 +80,8 @@ class HttpClient:
         self.backoff_seconds = backoff_seconds
         self.per_host_concurrency = per_host_concurrency
         self._session_factory = session_factory
+        self._stats = stats
+        self._page_requests = page_requests
         self._local = threading.local()
         self._semaphores: dict[str, threading.BoundedSemaphore] = {}
         self._semaphores_lock = threading.Lock()
@@ -139,6 +145,8 @@ class HttpClient:
 
         semaphore = self._host_semaphore(hostname.lower())
         with semaphore:
+            if self._stats is not None and self._page_requests:
+                self._stats.add("http", page_requests=1)
             try:
                 request_headers = {"User-Agent": "RSS-Morning/1.0"}
                 if request.headers:
@@ -172,15 +180,20 @@ class HttpClient:
                         continue
                     total += len(chunk)
                     if total > self.max_bytes:
+                        if self._stats is not None and self._page_requests:
+                            self._stats.add("http", transferred_bytes=total)
                         response.close()
                         raise ResponseTooLarge("Response exceeded byte limit")
                     chunks.append(chunk)
 
+                body = b"".join(chunks)
+                if self._stats is not None and self._page_requests:
+                    self._stats.add("http", transferred_bytes=len(body))
                 return DownloadResponse(
                     final_url=str(response.url),
                     status=int(response.status_code),
                     headers=headers,
-                    body=b"".join(chunks),
+                    body=body,
                 )
             except DownloadError:
                 raise
