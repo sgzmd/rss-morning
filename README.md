@@ -37,8 +37,12 @@ intend to run. Paths in that file are resolved relative to the config file.
 Run the application with:
 
 ```bash
-python main.py --config configs/config.xml
+make production
 ```
+
+This runs the full configured pipeline, including email delivery when enabled.
+Use `CONFIG=path/to/config.xml make production` to select another configuration.
+The equivalent direct command is `python main.py --config configs/config.xml`.
 
 Use `python main.py --help` as the authoritative CLI reference. The supported
 runtime options are:
