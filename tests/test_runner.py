@@ -826,7 +826,7 @@ def test_cache_read_failure_drops_only_affected_article(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_feed_entries",
-        lambda _feed: [_feed_entry("bad"), _feed_entry("good")],
+        lambda _feed: [_feed_entry("bad"), _feed_entry("good"), _feed_entry("miss")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
@@ -847,7 +847,16 @@ def test_cache_read_failure_drops_only_affected_article(monkeypatch):
     def get_article(_session, url):
         if url == "bad":
             raise RuntimeError("cache read failed")
-        return None
+        if url == "miss":
+            return None
+        return {
+            "url": "good",
+            "title": "Cached",
+            "text": "cached text",
+            "image": None,
+            "summary": None,
+            "published": None,
+        }
 
     monkeypatch.setattr(runner.db, "get_article", get_article)
     monkeypatch.setattr(runner.db, "upsert_article", lambda *_args: None)
@@ -869,7 +878,7 @@ def test_cache_read_failure_drops_only_affected_article(monkeypatch):
         )
     )
 
-    assert [item["url"] for item in json.loads(result.output_text)] == ["good"]
+    assert {item["url"] for item in json.loads(result.output_text)} == {"good", "miss"}
 
 
 def test_article_cache_uses_one_bulk_read_and_write_outside_workers(monkeypatch):

@@ -124,6 +124,7 @@ def test_empty_database_operations_are_noops(session):
     assert db.get_article(session, "missing") is None
     assert db.get_embeddings(session, [], "backend") == {}
     db.upsert_article(session, {})
+    db.upsert_articles(session, [{}, {"url": ""}])
     db.upsert_embeddings(session, {}, "backend")
 
 

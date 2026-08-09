@@ -73,59 +73,82 @@ def get_session_factory(engine: Engine) -> sessionmaker[Session]:
 
 def get_article(session: Session, url: str) -> Optional[dict]:
     """Retrieve an article from the cache."""
-    stmt = select(ArticleModel).where(ArticleModel.url == url)
-    result = session.execute(stmt).scalar_one_or_none()
-    if not result:
-        return None
+    return get_articles(session, [url]).get(url)
 
+
+def get_articles(session: Session, urls: List[str]) -> Dict[str, dict]:
+    """Retrieve cached articles for all requested URLs in one query."""
+    if not urls:
+        return {}
+
+    stmt = select(ArticleModel).where(ArticleModel.url.in_(urls))
+    results = session.execute(stmt).scalars().all()
     return {
-        "url": result.url,
-        "title": result.title,
-        "text": result.content,
-        "image": result.image,
-        "summary": result.summary,
-        "published": result.published,
+        result.url: {
+            "url": result.url,
+            "title": result.title,
+            "text": result.content,
+            "image": result.image,
+            "summary": result.summary,
+            "published": result.published,
+        }
+        for result in results
     }
 
 
 def upsert_article(session: Session, data: dict) -> None:
     """Insert or update an article in the cache."""
-    url = data.get("url")
-    if not url:
+    if not data.get("url"):
         return
 
-    stmt = select(ArticleModel).where(ArticleModel.url == url)
-    existing = session.execute(stmt).scalar_one_or_none()
+    upsert_articles(session, [data])
 
-    raw_published = data.get("published")
-    published_val: Optional[datetime] = None
-    if isinstance(raw_published, datetime):
-        published_val = raw_published
-    elif isinstance(raw_published, str):
-        try:
-            published_val = datetime.fromisoformat(raw_published)
-        except ValueError:
-            logger.warning("Ignoring invalid publication date for %s", url)
 
-    if existing:
-        existing.title = data.get("title")
-        existing.content = data.get("text")
-        existing.image = data.get("image")
-        existing.summary = data.get("summary")
-        if published_val:
-            existing.published = published_val
-        existing.updated_at = datetime.now(timezone.utc)
-    else:
-        new_article = ArticleModel(
-            url=url,
-            title=data.get("title"),
-            content=data.get("text"),
-            image=data.get("image"),
-            summary=data.get("summary"),
-            published=published_val,
-            updated_at=datetime.now(timezone.utc),
-        )
-        session.add(new_article)
+def upsert_articles(session: Session, payloads: List[dict]) -> None:
+    """Insert or update multiple cached articles in one transaction."""
+    valid_payloads = [data for data in payloads if data.get("url")]
+    if not valid_payloads:
+        return
+
+    urls = [str(data["url"]) for data in valid_payloads]
+    stmt = select(ArticleModel).where(ArticleModel.url.in_(urls))
+    existing_by_url = {
+        article.url: article for article in session.execute(stmt).scalars().all()
+    }
+
+    for data in valid_payloads:
+        url = str(data["url"])
+        raw_published = data.get("published")
+        published_val: Optional[datetime] = None
+        if isinstance(raw_published, datetime):
+            published_val = raw_published
+        elif isinstance(raw_published, str):
+            try:
+                published_val = datetime.fromisoformat(raw_published)
+            except ValueError:
+                logger.warning("Ignoring invalid publication date for %s", url)
+
+        existing = existing_by_url.get(url)
+        if existing:
+            existing.title = data.get("title")
+            existing.content = data.get("text")
+            existing.image = data.get("image")
+            existing.summary = data.get("summary")
+            if published_val:
+                existing.published = published_val
+            existing.updated_at = datetime.now(timezone.utc)
+        else:
+            session.add(
+                ArticleModel(
+                    url=url,
+                    title=data.get("title"),
+                    content=data.get("text"),
+                    image=data.get("image"),
+                    summary=data.get("summary"),
+                    published=published_val,
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
 
     try:
         session.commit()

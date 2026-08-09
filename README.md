@@ -86,7 +86,9 @@ When the database cache is enabled, successful full-text extractions are stored
 before output token truncation. Later runs can therefore request a larger output
 limit without downloading the page again. Metadata-only extraction failures and
 legacy cache rows with no text are treated as misses and retried; the current feed
-category always overrides cached metadata.
+category always overrides cached metadata. Cache reads are batched before article
+workers start, and successful new extractions are written in one transaction after
+the workers finish.
 
 Token truncation uses one shared `cl100k_base` encoder initialized before article
 workers start. If its cache is unavailable offline, the run continues with a

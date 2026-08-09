@@ -153,28 +153,49 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
     prepare_tokenizer()
 
     output = []
+    raw_cache_payloads = []
+    cached_articles = {}
+    cache_read_failures = set()
+
+    if session_factory:
+        urls = [entry.link for entry in unique_entries]
+        try:
+            with session_factory() as session:
+                cached_articles = db.get_articles(session, urls)
+        except Exception:
+            logger.exception(
+                "Bulk article cache read failed; checking entries individually"
+            )
+            for entry in unique_entries:
+                try:
+                    with session_factory() as session:
+                        cached = db.get_article(session, entry.link)
+                    if cached:
+                        cached_articles[entry.link] = cached
+                except Exception:
+                    logger.exception("Failed to read article cache for %s", entry.link)
+                    cache_read_failures.add(entry.link)
 
     def process_entry(entry):
         try:
-            if session_factory:
-                with session_factory() as session:
-                    cached = db.get_article(session, entry.link)
-                    cached_text = cached.get("text") if cached else None
-                    if cached and cached_text is not None:
-                        logger.debug("Cache hit for %s", entry.link)
-                        return {
-                            "url": cached["url"],
-                            "category": entry.category,
-                            "title": cached["title"],
-                            "summary": cached["summary"] or entry.summary or "",
-                            "text": truncate_text(
-                                cached_text, limit=config.max_article_length
-                            ),
-                            "image": cached["image"],
-                            "published": cached["published"].isoformat()
-                            if cached.get("published")
-                            else None,
-                        }
+            if entry.link in cache_read_failures:
+                return None
+
+            cached = cached_articles.get(entry.link)
+            cached_text = cached.get("text") if cached else None
+            if cached and cached_text is not None:
+                logger.debug("Cache hit for %s", entry.link)
+                return {
+                    "url": cached["url"],
+                    "category": entry.category,
+                    "title": cached["title"],
+                    "summary": cached["summary"] or entry.summary or "",
+                    "text": truncate_text(cached_text, limit=config.max_article_length),
+                    "image": cached["image"],
+                    "published": cached["published"].isoformat()
+                    if cached.get("published")
+                    else None,
+                }
 
             content = fetch_article_content(entry.link, extractor=config.extractor)
             raw_payload = {
@@ -194,8 +215,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                 raw_payload["image"] = content.image
 
             if session_factory and content.text:
-                with session_factory() as session:
-                    db.upsert_article(session, raw_payload)
+                raw_cache_payloads.append(raw_payload)
 
             output_payload = dict(raw_payload)
             if content.text:
@@ -217,6 +237,15 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             res = future.result()
             if res:
                 output.append(res)
+
+    if session_factory and raw_cache_payloads:
+        try:
+            with session_factory() as session:
+                db.upsert_articles(session, raw_cache_payloads)
+        except Exception:
+            logger.exception(
+                "Bulk article cache write failed; continuing without cache"
+            )
 
     logger.info("Completed processing. Outputting %d articles as JSON.", len(output))
     # Sort by published date descending (newest first)
