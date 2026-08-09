@@ -60,6 +60,8 @@ def test_container_smoke_harness_checks_every_offline_invariant():
     assert "docker image inspect" in smoke
     assert "docker history" in smoke
     module = (ROOT / "scripts/container_smoke.py").read_text(encoding="utf-8")
+    assert "sys.path.insert" in module
+    assert "Path(__file__).resolve().parents[1]" in module
     for expected in (
         "pkgutil.iter_modules",
         "prepare_tokenizer",
