@@ -9,11 +9,14 @@ import os
 from pathlib import Path
 import pkgutil
 import socket
+import sys
 import tempfile
 
-import rss_morning
-from rss_morning import cli
-from rss_morning.articles import prepare_tokenizer, truncate_text
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import rss_morning  # noqa: E402
+from rss_morning import cli  # noqa: E402
+from rss_morning.articles import prepare_tokenizer, truncate_text  # noqa: E402
 
 
 def _deny_socket(*_args, **_kwargs):
