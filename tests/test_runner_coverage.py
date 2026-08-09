@@ -147,6 +147,20 @@ def test_execute_database_disabled_when_configuration_is_incomplete(monkeypatch)
     )
 
 
+@pytest.mark.parametrize("limit", [0, -1])
+def test_execute_rejects_nonpositive_article_limit_before_work(monkeypatch, limit):
+    monkeypatch.setattr(
+        runner,
+        "_collect_entries",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("article work must not start")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="max_article_length must be positive"):
+        runner.execute(config(max_article_length=limit))
+
+
 def test_execute_prefilter_none_fails_open(monkeypatch):
     monkeypatch.setattr(
         runner, "_collect_entries", lambda *_args, **_kwargs: [{"url": "original"}]
