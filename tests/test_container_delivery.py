@@ -1,0 +1,78 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).parents[1]
+
+
+def _requirements(path: str) -> set[str]:
+    return {
+        line.split("==", 1)[0].lower()
+        for raw in (ROOT / path).read_text(encoding="utf-8").splitlines()
+        if (line := raw.strip()) and not line.startswith(("#", "-"))
+    }
+
+
+def test_dependency_inputs_and_locks_separate_runtime_from_development():
+    direct = (ROOT / "requirements.in").read_text(encoding="utf-8")
+    runtime = _requirements("requirements.txt")
+    development = _requirements("requirements-dev.txt")
+    forbidden = {
+        "pytest",
+        "pytest-cov",
+        "mypy",
+        "ruff",
+        "pre-commit",
+        "virtualenv",
+    }
+
+    assert "# generated" in (ROOT / "requirements.txt").read_text().lower()
+    assert "pip-compile" in (ROOT / "requirements.txt").read_text()
+    assert "google-genai" in direct
+    assert "newspaper3k" in direct
+    assert "trafilatura" in direct
+    assert runtime.isdisjoint(forbidden)
+    assert forbidden - {"virtualenv"} <= development
+    assert (ROOT / "requirements-dev.txt").read_text().startswith("-r requirements.txt")
+
+
+def test_dockerfile_is_multistage_runtime_only_and_nonroot():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert " AS builder" in dockerfile
+    assert " AS runtime" in dockerfile
+    builder, runtime = dockerfile.split(" AS runtime", 1)
+    assert "build-essential" in builder
+    assert "build-essential" not in runtime
+    assert "pip wheel" in builder
+    assert "--no-index" in runtime and "--find-links" in runtime
+    assert "COPY . ." not in dockerfile
+    assert 'tiktoken.get_encoding("cl100k_base")' in runtime
+    assert "USER appuser" in runtime
+    assert 'org.opencontainers.image.source="' in runtime
+    assert "FASTEMBED_CACHE_PATH=/app/data/fastembed_cache" in runtime
+
+
+def test_container_smoke_harness_checks_every_offline_invariant():
+    smoke = (ROOT / "scripts/container-smoke.sh").read_text(encoding="utf-8")
+    assert "--network none" in smoke
+    assert "--help" in smoke
+    assert "rss_morning.container_smoke" in smoke
+    module = (ROOT / "rss_morning/container_smoke.py").read_text(encoding="utf-8")
+    for expected in (
+        "pkgutil.iter_modules",
+        "prepare_tokenizer",
+        "truncate_text",
+        "os.geteuid()",
+        "pytest",
+        "OPENROUTER_API_KEY",
+        "--load-articles",
+        "--llm-dry-run",
+        "socket.socket",
+    ):
+        assert expected in module
+
+
+def test_ci_builds_and_runs_offline_container_smoke():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "container-smoke.sh" in workflow
+    assert "docker image inspect" in workflow
+    assert "docker history" in workflow
