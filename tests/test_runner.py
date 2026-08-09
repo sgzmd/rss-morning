@@ -966,6 +966,7 @@ def test_article_cache_uses_one_bulk_read_and_write_outside_workers(monkeypatch)
         lambda _session, urls: bulk_reads.append(list(urls)) or {"hit": cached_hit},
         raising=False,
     )
+    monkeypatch.setattr(runner.db, "get_feed_http_states", lambda *_args: {})
     monkeypatch.setattr(
         runner.db,
         "upsert_articles",
@@ -994,6 +995,6 @@ def test_article_cache_uses_one_bulk_read_and_write_outside_workers(monkeypatch)
     assert bulk_reads == [["hit", "new", "metadata"]]
     assert len(bulk_writes) == 1
     assert [payload["url"] for payload in bulk_writes[0]] == ["new"]
-    assert session_threads == [main_thread, main_thread]
+    assert session_threads == [main_thread, main_thread, main_thread]
     assert [item["url"] for item in output] == ["new", "metadata", "hit"]
     assert output[2]["category"] == "B"

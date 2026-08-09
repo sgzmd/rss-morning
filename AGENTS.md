@@ -28,6 +28,8 @@ Feed downloads and article downloads use separate thread pools. `concurrency` co
 
 Both download stages use the shared bounded HTTP client. It keeps a session per worker thread, retries safe transient GET failures, limits concurrent requests per hostname, and rejects responses beyond their configured byte limit. Article extractors receive already-downloaded HTML and do not open their own connections.
 
+With the database enabled, feed HTTP state is bulk-read before feed workers and bulk-written afterward. Successful bodies, redirect targets, fetch timestamps, ETags, and Last-Modified values are keyed by the original configured feed URL. A 304 uses the stored body; missing or corrupt stored bytes cause one unconditional recovery request. Network failures do not serve stale feed content by default.
+
 One failed feed or article is logged and skipped. Pre-filter errors fail open and keep the original articles. Failed LLM batches are logged and omitted. Email failures are logged and do not fail the run. Errors in top-level configuration or orchestration return exit code 1.
 
 ## Main files
@@ -179,7 +181,7 @@ Email templates accept both raw article lists and summarized objects. Markdown i
 
 ## Database behavior
 
-When enabled, SQLAlchemy creates `articles` and `embeddings` tables. Articles are keyed by URL. Embeddings are keyed by URL plus the configured model string. Vectors are JSON encoded into binary columns.
+When enabled, SQLAlchemy creates `articles`, `embeddings`, and `feed_http_cache` tables. Articles are keyed by URL. Feed HTTP state is keyed by the original configured feed URL. Embeddings are keyed by URL plus the configured model string. Vectors are JSON encoded into binary columns.
 
 A successful extraction caches its full, untruncated article text. Output-specific token truncation happens on a copy after the cache write. Article cache reads are batched before workers start, workers never receive database sessions, and successful new extractions are batch-written in one transaction after workers finish. A cache write failure is logged without changing digest output. A cached article with text supplies its saved title, text, image, summary, and publication date, but uses the category from the current feed entry. Legacy rows with `NULL` content and new metadata-only extraction failures are treated as cache misses, so extraction is retried on later runs. There is no cache expiry. Changing extraction behavior does not refresh existing successful rows automatically.
 

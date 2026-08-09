@@ -34,6 +34,7 @@ class DownloadRequest:
     url: str
     accepted_content_types: tuple[str, ...] | None = None
     allow_missing_content_type: bool = True
+    headers: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,7 @@ class HttpClient:
         *,
         accepted_content_types: Sequence[str] | None = None,
         allow_missing_content_type: bool = True,
+        headers: Mapping[str, str] | None = None,
     ) -> DownloadResponse:
         """Download one GET response with bounded retries, concurrency, and bytes."""
         request = DownloadRequest(
@@ -125,6 +127,7 @@ class HttpClient:
             if accepted_content_types
             else None,
             allow_missing_content_type=allow_missing_content_type,
+            headers=headers,
         )
         return self.download(request)
 
@@ -137,12 +140,15 @@ class HttpClient:
         semaphore = self._host_semaphore(hostname.lower())
         with semaphore:
             try:
+                request_headers = {"User-Agent": "RSS-Morning/1.0"}
+                if request.headers:
+                    request_headers.update(request.headers)
                 response = self._session().get(
                     request.url,
                     timeout=(self.connect_timeout, self.read_timeout),
                     stream=True,
                     allow_redirects=True,
-                    headers={"User-Agent": "RSS-Morning/1.0"},
+                    headers=request_headers,
                 )
                 response.raise_for_status()
                 headers = {str(k).lower(): str(v) for k, v in response.headers.items()}
