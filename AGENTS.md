@@ -26,6 +26,8 @@ main.py
 
 Feed downloads and article downloads use separate thread pools. `concurrency` controls both pools. Feed entries are limited per feed, merged, sorted by publication time, and deduplicated by URL before article pages are downloaded.
 
+Both download stages use the shared bounded HTTP client. It keeps a session per worker thread, retries safe transient GET failures, limits concurrent requests per hostname, and rejects responses beyond their configured byte limit. Article extractors receive already-downloaded HTML and do not open their own connections.
+
 One failed feed or article is logged and skipped. Pre-filter errors fail open and keep the original articles. Failed LLM batches are logged and omitted. Email failures are logged and do not fail the run. Errors in top-level configuration or orchestration return exit code 1.
 
 ## Main files
@@ -110,6 +112,7 @@ Recognized settings are:
 - `<max-article-length>`: maximum article text tokens; default `100`.
 - `<extractor>`: `newspaper` or `trafilatura`; unknown values currently fall back to Newspaper.
 - `<concurrency>`: worker count for feed and article pools; default `10`.
+- `<http>`: positive connect/read timeouts, feed/article byte limits, non-negative retry/backoff settings, and positive per-host concurrency. Defaults are `5`, `20`, `5242880`, `10485760`, `2`, `0.5`, and `2`, respectively.
 - `<prompt file="..."/>`: prompt file. It is required when summaries are enabled. Inline prompt text is not supported.
 - `<pre-filter>`: `enabled`, optional `queries-file`, optional `embeddings-path`, and `cluster-threshold`.
 - `<embeddings>`: `provider` and `model`. `fastembed` is the default provider. Any provider value other than `fastembed` selects OpenAI.

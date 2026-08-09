@@ -8,13 +8,14 @@ from datetime import datetime, timezone
 from typing import Iterable, List, Optional
 
 import feedparser
-import requests
 from bs4 import BeautifulSoup
 import re
 
+from .http_client import DownloadError, HttpClient
 from .models import FeedConfig, FeedEntry
 
 logger = logging.getLogger(__name__)
+_DEFAULT_HTTP_CLIENT = HttpClient(max_bytes=5_242_880)
 
 
 def to_datetime(value: Optional[time.struct_time]) -> datetime:
@@ -24,14 +25,24 @@ def to_datetime(value: Optional[time.struct_time]) -> datetime:
     return datetime.fromtimestamp(time.mktime(value), tz=timezone.utc)
 
 
-def fetch_feed_entries(feed: FeedConfig) -> List[FeedEntry]:
+def fetch_feed_entries(
+    feed: FeedConfig, http_client: Optional[HttpClient] = None
+) -> List[FeedEntry]:
     """Fetch entries from a single RSS feed definition."""
     logger.info("Fetching feed '%s' (%s)", feed.title, feed.url)
     try:
-        response = requests.get(feed.url, timeout=10.0)
-        response.raise_for_status()
-        response_content = response.content
-    except requests.RequestException as e:
+        response = (http_client or _DEFAULT_HTTP_CLIENT).get(
+            feed.url,
+            accepted_content_types=(
+                "application/rss+xml",
+                "application/atom+xml",
+                "application/xml",
+                "text/xml",
+            ),
+            allow_missing_content_type=True,
+        )
+        response_content = response.body
+    except DownloadError as e:
         logger.warning("Failed to fetch feed '%s' (%s): %s", feed.title, feed.url, e)
         return []
 

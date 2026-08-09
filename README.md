@@ -95,6 +95,13 @@ workers start. If its cache is unavailable offline, the run continues with a
 deterministic character-limit approximation and logs one warning without article
 content.
 
+Feed and article downloads use a shared bounded HTTP layer with one reusable
+session per worker thread. The `<http>` section configures separate connect/read
+timeouts, feed/article byte limits, bounded transient GET retries with backoff, and
+the maximum concurrent requests to one hostname. See the example configuration
+for the conservative defaults. Newspaper and Trafilatura parse the same supplied
+HTML, so extractor libraries do not perform additional uncontrolled downloads.
+
 Environment values can be stored in the configured environment XML file:
 
 ```xml

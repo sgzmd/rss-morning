@@ -235,3 +235,62 @@ def test_parse_app_config_empty_optional_sections_keep_defaults(tmp_path):
     assert config.pre_filter.queries_file is None
     assert config.pre_filter.cluster_threshold == 0.8
     assert config.logging.file is None
+    assert config.http.connect_timeout == 5
+    assert config.http.read_timeout == 20
+    assert config.http.max_feed_bytes == 5_242_880
+    assert config.http.max_article_bytes == 10_485_760
+    assert config.http.retries == 2
+    assert config.http.backoff_seconds == 0.5
+    assert config.http.per_host_concurrency == 2
+
+
+def test_parse_app_config_http_settings(tmp_path):
+    config_file = tmp_path / "config.xml"
+    config_file.write_text(
+        """<config><feeds>feeds.xml</feeds><http>
+        <connect-timeout>1.5</connect-timeout>
+        <read-timeout>7</read-timeout>
+        <max-feed-bytes>123</max-feed-bytes>
+        <max-article-bytes>456</max-article-bytes>
+        <retries>4</retries>
+        <backoff-seconds>0.25</backoff-seconds>
+        <per-host-concurrency>3</per-host-concurrency>
+        </http></config>""",
+        encoding="utf-8",
+    )
+
+    config = parse_app_config(str(config_file))
+
+    assert config.http.connect_timeout == 1.5
+    assert config.http.read_timeout == 7
+    assert config.http.max_feed_bytes == 123
+    assert config.http.max_article_bytes == 456
+    assert config.http.retries == 4
+    assert config.http.backoff_seconds == 0.25
+    assert config.http.per_host_concurrency == 3
+
+
+@pytest.mark.parametrize(
+    "setting,value,message",
+    [
+        ("connect-timeout", "0", "timeouts"),
+        ("read-timeout", "0", "timeouts"),
+        ("max-feed-bytes", "0", "byte limits"),
+        ("max-article-bytes", "0", "byte limits"),
+        ("retries", "-1", "retry settings"),
+        ("backoff-seconds", "-1", "retry settings"),
+        ("per-host-concurrency", "0", "per-host concurrency"),
+    ],
+)
+def test_parse_app_config_rejects_invalid_http_settings(
+    tmp_path, setting, value, message
+):
+    config_file = tmp_path / "config.xml"
+    config_file.write_text(
+        f"<config><feeds>feeds.xml</feeds><http><{setting}>{value}</{setting}>"
+        "</http></config>",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        parse_app_config(str(config_file))

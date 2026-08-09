@@ -27,7 +27,9 @@ def test_execute_standard_flow(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -65,7 +67,9 @@ def test_execute_summary_flow(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -122,7 +126,9 @@ def test_execute_uses_custom_email_subject(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -161,7 +167,9 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -239,7 +247,9 @@ def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -308,7 +318,9 @@ def test_execute_save_articles_writes_file(monkeypatch, tmp_path):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -383,7 +395,7 @@ def test_execute_limit_applies_per_feed(monkeypatch):
         ],
     }
 
-    def fake_fetch(feed):
+    def fake_fetch(feed, **_kwargs):
         return list(feed_entries[feed.url])
 
     monkeypatch.setattr(runner, "fetch_feed_entries", fake_fetch)
@@ -449,7 +461,7 @@ def test_execute_raises_when_no_entries(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
 
-    def fake_fetch(feed):
+    def fake_fetch(feed, **_kwargs):
         return []
 
     monkeypatch.setattr(runner, "fetch_feed_entries", fake_fetch)
@@ -486,7 +498,7 @@ def test_execute_with_database_caching(monkeypatch, tmp_path):
     monkeypatch.setattr(
         runner,
         "fetch_feed_entries",
-        lambda feed: [_feed_entry("https://example.com/db")],
+        lambda feed, **_kwargs: [_feed_entry("https://example.com/db")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -541,7 +553,7 @@ def test_execute_truncates_cached_content(monkeypatch, tmp_path):
     monkeypatch.setattr(
         runner,
         "fetch_feed_entries",
-        lambda feed: [_feed_entry("https://example.com/db-trunc")],
+        lambda feed, **_kwargs: [_feed_entry("https://example.com/db-trunc")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -613,7 +625,9 @@ def test_cached_article_without_text_is_retried_and_kept_as_metadata(
     )
     feed_item = _feed_entry("https://example.com/missing-text")
     feed_item.category = "New"
-    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: [feed_item])
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda _feed, **_kwargs: [feed_item]
+    )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
     )
@@ -670,7 +684,9 @@ def test_successful_extraction_caches_raw_text_before_output_truncation(
         runner, "parse_feeds_config", lambda _path: [FeedConfig("Cat", "Feed", "url")]
     )
     feed_item = _feed_entry("https://example.com/raw-cache")
-    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: [feed_item])
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda _feed, **_kwargs: [feed_item]
+    )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
     )
@@ -724,7 +740,9 @@ def test_failed_extraction_is_not_written_to_article_cache(monkeypatch, tmp_path
         runner, "parse_feeds_config", lambda _path: [FeedConfig("Cat", "Feed", "url")]
     )
     feed_item = _feed_entry("https://example.com/not-cached")
-    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: [feed_item])
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda _feed, **_kwargs: [feed_item]
+    )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
     )
@@ -762,7 +780,9 @@ def test_cached_article_restores_fields_but_feed_category_wins(monkeypatch, tmp_
         "parse_feeds_config",
         lambda _path: [FeedConfig("Current category", "Feed", "url")],
     )
-    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: [feed_item])
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda _feed, **_kwargs: [feed_item]
+    )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
     )
@@ -826,7 +846,11 @@ def test_cache_read_failure_drops_only_affected_article(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_feed_entries",
-        lambda _feed: [_feed_entry("bad"), _feed_entry("good"), _feed_entry("miss")],
+        lambda _feed, **_kwargs: [
+            _feed_entry("bad"),
+            _feed_entry("good"),
+            _feed_entry("miss"),
+        ],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
@@ -896,7 +920,7 @@ def test_article_cache_uses_one_bulk_read_and_write_outside_workers(monkeypatch)
         "parse_feeds_config",
         lambda _path: [FeedConfig("Cat", "Feed", "feed")],
     )
-    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed: entries)
+    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed, **_kwargs: entries)
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda values, _limit, _cutoff: values
     )

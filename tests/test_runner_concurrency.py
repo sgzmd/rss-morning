@@ -33,7 +33,7 @@ def test_execute_runs_feed_and_article_stages_in_parallel(monkeypatch):
     feed_probe = _ConcurrentCallProbe(item_count)
     article_probe = _ConcurrentCallProbe(item_count)
 
-    def fetch_feed_entries(feed):
+    def fetch_feed_entries(feed, **_kwargs):
         feed_probe.rendezvous()
         return [
             FeedEntry(
