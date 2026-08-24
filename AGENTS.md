@@ -227,4 +227,5 @@ Do not silently build new behavior around these settings; either preserve curren
 - Do not log prompts, article bodies, credentials, connection strings, or full third-party responses at INFO level.
 - Keep HTML escaped or sanitized. The existing Jinja environment autoescapes HTML, and Markdown output is cleaned with Bleach.
 - Preserve unrelated local and ignored files. This repository commonly contains private configs, feeds, logs, databases, caches, and output snapshots.
+- Do not commit or document deployment hostnames, environment nicknames, server paths, cron schedules, recipient addresses, or infrastructure topology. Keep deployment and live-run evidence environment-neutral.
 - Prefer focused changes. If a known gap is outside the requested work, note it instead of folding a broad cleanup into the patch.
