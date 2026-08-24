@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import concurrent.futures
 from typing import Any, List, Optional, Tuple, cast
 
-from .articles import fetch_article_content, truncate_text
+from .articles import fetch_article_content, prepare_tokenizer, truncate_text
 from .config import parse_feeds_config
-from .emailing import send_email_report
+from .emailing import EmailDeliveryResult, send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
-from .summaries import generate_summary
+from .http_client import HttpClient
+from .metrics import RunStats
+from .summaries import SummarySettings, generate_summary
 from . import db
 
 logger = logging.getLogger(__name__)
@@ -29,6 +32,9 @@ class RunConfig:
     max_age_hours: Optional[float]
     summary: bool
     pre_filter: bool = False
+    pre_filter_mode: str = "full-text"
+    candidate_multiplier: int = 3
+    max_cluster_size: int = 5
     pre_filter_embeddings_path: Optional[str] = None
     pre_filter_queries_file: Optional[str] = None
     email_to: Optional[str] = None
@@ -45,9 +51,30 @@ class RunConfig:
     database_connection_string: Optional[str] = None
     embedding_provider: str = "fastembed"
     embedding_model: str = "intfloat/multilingual-e5-large"
-    llm_provider: str = "gemini"
-    llm_model: str = "gemini-flash-latest"
+    llm_provider: str = "openrouter"
+    llm_model: str = "bytedance-seed/seed-2.0-mini"
+    llm_fallback_models: tuple[str, ...] = (
+        "z-ai/glm-4.7-flash",
+        "openai/gpt-4o-mini",
+    )
+    llm_routing: str = "price"
+    llm_max_input_price_per_million: float = 0.20
+    llm_max_output_price_per_million: float = 0.75
+    llm_require_structured_output: bool = True
+    llm_max_batch_articles: int = 20
+    llm_max_input_tokens: int = 30_000
+    llm_request_timeout_seconds: float = 90
+    llm_max_attempts: int = 3
+    llm_max_split_depth: int = 6
+    llm_cache_enabled: bool = True
     llm_dry_run: bool = False
+    http_connect_timeout: float = 5
+    http_read_timeout: float = 20
+    max_feed_bytes: int = 5_242_880
+    max_article_bytes: int = 10_485_760
+    http_retries: int = 2
+    http_backoff_seconds: float = 0.5
+    http_per_host_concurrency: int = 2
 
 
 @dataclass
@@ -57,6 +84,28 @@ class RunResult:
     output_text: str
     email_payload: Any
     is_summary: bool
+    stats: RunStats | None = None
+
+
+def _create_prefilter(config: RunConfig, session_factory=None, stats=None):
+    from .prefilter import EmbeddingArticleFilter
+
+    emb_config_cls = type(EmbeddingArticleFilter.CONFIG)
+    emb_config = emb_config_cls(
+        model=config.embedding_model,
+        provider=config.embedding_provider,
+        batch_size=EmbeddingArticleFilter.CONFIG.batch_size,
+        threshold=EmbeddingArticleFilter.CONFIG.threshold,
+        max_article_length=config.max_article_length,
+        max_cluster_size=config.max_cluster_size,
+    )
+    return EmbeddingArticleFilter(
+        query_embeddings_path=config.pre_filter_embeddings_path,
+        queries_file=config.pre_filter_queries_file,
+        config=emb_config,
+        session_factory=session_factory,
+        stats=stats,
+    )
 
 
 def _load_articles_from_file(path: str) -> List[dict]:
@@ -93,8 +142,13 @@ def _save_articles_to_file(path: str, articles: List[dict]) -> None:
     logger.info("Saved %d articles to %s", len(serialisable), location)
 
 
-def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
+def _collect_entries(
+    config: RunConfig, session_factory=None, stats: RunStats | None = None
+) -> List[dict]:
+    stats = stats or RunStats()
+    feed_started = stats.start()
     feeds = parse_feeds_config(config.feeds_file)
+    stats.set("feeds", configured=len(feeds))
     if not feeds:
         raise RuntimeError("No feeds found in the configuration.")
 
@@ -107,10 +161,62 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
 
     selected_entries = []
     any_entries_fetched = False
+    feed_cache_states = {}
+    feed_cache_updates = []
+    feed_cache_updates_lock = threading.Lock()
+
+    if session_factory:
+        try:
+            with session_factory() as session:
+                feed_cache_states = db.get_feed_http_states(
+                    session, [feed.url for feed in feeds]
+                )
+        except Exception:
+            logger.exception(
+                "Bulk feed HTTP cache read failed; fetching unconditionally"
+            )
+
+    def record_feed_cache_update(state):
+        with feed_cache_updates_lock:
+            feed_cache_updates.append(state)
+
+    feed_http_client = HttpClient(
+        connect_timeout=config.http_connect_timeout,
+        read_timeout=config.http_read_timeout,
+        max_bytes=config.max_feed_bytes,
+        retries=config.http_retries,
+        backoff_seconds=config.http_backoff_seconds,
+        per_host_concurrency=config.http_per_host_concurrency,
+    )
+    article_http_client = HttpClient(
+        connect_timeout=config.http_connect_timeout,
+        read_timeout=config.http_read_timeout,
+        max_bytes=config.max_article_bytes,
+        retries=config.http_retries,
+        backoff_seconds=config.http_backoff_seconds,
+        per_host_concurrency=config.http_per_host_concurrency,
+        stats=stats,
+        page_requests=True,
+    )
 
     def process_feed(feed):
+        result_reported = False
+
+        def record_result(success: bool) -> None:
+            nonlocal result_reported
+            result_reported = True
+            stats.add("feeds", **({"successful": 1} if success else {"failed": 1}))
+
         try:
-            entries = fetch_feed_entries(feed)
+            entries = fetch_feed_entries(
+                feed,
+                http_client=feed_http_client,
+                cached_state=feed_cache_states.get(feed.url),
+                on_cache_update=record_feed_cache_update if session_factory else None,
+                on_result=record_result,
+            )
+            if not result_reported:
+                record_result(True)
             if not entries:
                 logger.info("No entries retrieved for feed %s", feed.url)
                 return []
@@ -121,6 +227,8 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             )
             return per_feed_entries
         except Exception:
+            if not result_reported:
+                record_result(False)
             logger.exception("Failed to process feed %s", feed.url)
             return []
 
@@ -133,6 +241,15 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             if entries:
                 any_entries_fetched = True
                 selected_entries.extend(entries)
+
+    if session_factory and feed_cache_updates:
+        try:
+            with session_factory() as session:
+                db.upsert_feed_http_states(session, feed_cache_updates)
+        except Exception:
+            logger.exception(
+                "Bulk feed HTTP cache write failed; continuing without cache"
+            )
 
     if not any_entries_fetched:
         raise RuntimeError("No entries were retrieved from the configured feeds.")
@@ -149,33 +266,116 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
         unique_entries.append(entry)
         seen_links.add(entry.link)
 
+    stats.set(
+        "entries",
+        before_deduplication=len(selected_entries),
+        after_deduplication=len(unique_entries),
+    )
+    stats.complete_stage("feed", feed_started)
+    extraction_started = stats.start()
+
     logger.info("Fetching article text for %d selected entries", len(unique_entries))
+    prepare_tokenizer()
 
     output = []
+    raw_cache_payloads = []
+    cached_articles = {}
+    cache_read_failures = set()
+
+    if session_factory:
+        urls = [entry.link for entry in unique_entries]
+        try:
+            with session_factory() as session:
+                cached_articles = db.get_articles(session, urls)
+        except Exception:
+            logger.exception(
+                "Bulk article cache read failed; checking entries individually"
+            )
+            for entry in unique_entries:
+                try:
+                    with session_factory() as session:
+                        cached = db.get_article(session, entry.link)
+                    if cached:
+                        cached_articles[entry.link] = cached
+                except Exception:
+                    logger.exception("Failed to read article cache for %s", entry.link)
+                    cache_read_failures.add(entry.link)
+
+    if config.pre_filter and config.pre_filter_mode == "metadata-first":
+        metadata_articles = []
+        for entry in unique_entries:
+            cached = cached_articles.get(entry.link)
+            payload = {
+                "url": entry.link,
+                "category": entry.category,
+                "title": cached.get("title") if cached else entry.title,
+                "summary": (cached.get("summary") if cached else None)
+                or entry.summary
+                or "",
+                "published": entry.published.isoformat() if entry.published else None,
+            }
+            if cached and cached.get("text") is not None:
+                payload["text"] = cached["text"]
+            metadata_articles.append(payload)
+        prefilter_started = stats.start()
+        try:
+            selector = _create_prefilter(config, session_factory, stats)
+            selected_metadata = selector.select_metadata_candidates(
+                metadata_articles,
+                candidate_multiplier=config.candidate_multiplier,
+            )
+            selected_urls = {str(item.get("url")) for item in selected_metadata}
+            unique_entries = [
+                entry for entry in unique_entries if entry.link in selected_urls
+            ]
+            stats.set(
+                "prefilter",
+                input_articles=len(metadata_articles),
+                metadata_candidates=len(unique_entries),
+            )
+            logger.info(
+                "Metadata-first stage retained %d of %d entries for page download",
+                len(unique_entries),
+                len(metadata_articles),
+            )
+        except Exception:
+            logger.exception(
+                "Metadata-first prefilter failed; using full-text compatibility path"
+            )
+        finally:
+            stats.complete_stage("prefilter", prefilter_started)
 
     def process_entry(entry):
         try:
-            if session_factory:
-                with session_factory() as session:
-                    cached = db.get_article(session, entry.link)
-                    if cached:
-                        logger.debug("Cache hit for %s", entry.link)
-                        return {
-                            "url": cached["url"],
-                            "category": entry.category,
-                            "title": cached["title"],
-                            "summary": cached["summary"] or entry.summary or "",
-                            "text": truncate_text(
-                                cached["text"], limit=config.max_article_length
-                            ),
-                            "image": cached["image"],
-                            "published": cached["published"].isoformat()
-                            if cached.get("published")
-                            else None,
-                        }
+            if entry.link in cache_read_failures:
+                return None
 
-            content = fetch_article_content(entry.link, extractor=config.extractor)
-            payload = {
+            cached = cached_articles.get(entry.link)
+            cached_text = cached.get("text") if cached else None
+            if cached and cached_text is not None:
+                stats.add("articles", cache_hits=1)
+                logger.debug("Cache hit for %s", entry.link)
+                return {
+                    "url": cached["url"],
+                    "category": entry.category,
+                    "title": cached["title"],
+                    "summary": cached["summary"] or entry.summary or "",
+                    "text": truncate_text(cached_text, limit=config.max_article_length),
+                    "image": cached["image"],
+                    "published": cached["published"].isoformat()
+                    if cached.get("published")
+                    else None,
+                }
+
+            stats.add("articles", cache_misses=1)
+            if cached:
+                stats.add("articles", retried_null_content=1)
+            content = fetch_article_content(
+                entry.link,
+                extractor=config.extractor,
+                http_client=article_http_client,
+            )
+            raw_payload = {
                 "url": entry.link,
                 "category": entry.category,
                 "title": entry.title,
@@ -183,22 +383,27 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                 "published": entry.published.isoformat() if entry.published else None,
             }
             if content.text:
-                payload["text"] = truncate_text(
-                    content.text, limit=config.max_article_length
-                )
+                stats.add("articles", successful_extractions=1)
+                raw_payload["text"] = content.text
             else:
+                stats.add("articles", extraction_failures=1)
                 logger.info(
                     "Article text unavailable; including metadata only: %s", entry.link
                 )
             if content.image:
-                payload["image"] = content.image
+                raw_payload["image"] = content.image
 
-            if session_factory:
-                with session_factory() as session:
-                    db.upsert_article(session, payload)
+            if session_factory and content.text:
+                raw_cache_payloads.append(raw_payload)
 
-            return payload
+            output_payload = dict(raw_payload)
+            if content.text:
+                output_payload["text"] = truncate_text(
+                    content.text, limit=config.max_article_length
+                )
+            return output_payload
         except Exception:
+            stats.add("articles", extraction_failures=1)
             logger.exception("Failed to process article content for %s", entry.link)
             return None
 
@@ -213,11 +418,21 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             if res:
                 output.append(res)
 
+    if session_factory and raw_cache_payloads:
+        try:
+            with session_factory() as session:
+                db.upsert_articles(session, raw_cache_payloads)
+        except Exception:
+            logger.exception(
+                "Bulk article cache write failed; continuing without cache"
+            )
+
     logger.info("Completed processing. Outputting %d articles as JSON.", len(output))
     # Sort by published date descending (newest first)
     output.sort(key=lambda x: x.get("published") or "", reverse=True)
     # Then sort by category ascending (stable sort preserves published order within category)
     output.sort(key=lambda x: x.get("category") or "")
+    stats.complete_stage("extraction", extraction_started)
     return output
 
 
@@ -259,8 +474,20 @@ def _build_default_email_subject() -> str:
     return "RSS Mailer update for " + timestamp.strftime("%Y-%m-%d at %H:%M")
 
 
-def execute(config: RunConfig) -> RunResult:
+def _finish_run_metrics(stats: RunStats) -> None:
+    try:
+        stats.finish()
+        stats.emit()
+    except Exception:  # noqa: BLE001 - telemetry must never fail the digest
+        logger.warning("Operational metrics finalization unavailable")
+
+
+def execute(config: RunConfig, *, stats: RunStats | None = None) -> RunResult:
     """Run the application logic and return the result payload."""
+    stats = stats or RunStats()
+    if config.max_article_length <= 0:
+        raise ValueError("max_article_length must be positive")
+
     session_factory = None
     if config.database_enabled:
         if not config.database_connection_string:
@@ -275,32 +502,21 @@ def execute(config: RunConfig) -> RunResult:
     if config.load_articles_path:
         articles = _load_articles_from_file(config.load_articles_path)
     else:
-        articles = _collect_entries(config, session_factory=session_factory)
+        articles = _collect_entries(
+            config, session_factory=session_factory, stats=stats
+        )
 
     if config.save_articles_path:
         _save_articles_to_file(config.save_articles_path, articles)
 
     if config.pre_filter:
         logger.info("Applying embedding pre-filter to %d articles", len(articles))
+        prefilter_started = stats.start()
+        if stats.prefilter.input_articles == 0:
+            stats.set("prefilter", input_articles=len(articles))
+        stats.set("prefilter", full_text_candidates=len(articles))
 
-        from .prefilter import EmbeddingArticleFilter
-
-        # Create a config object with the runtime settings.
-        emb_config_cls = type(EmbeddingArticleFilter.CONFIG)
-        emb_config = emb_config_cls(
-            model=config.embedding_model,
-            provider=config.embedding_provider,
-            batch_size=EmbeddingArticleFilter.CONFIG.batch_size,
-            threshold=EmbeddingArticleFilter.CONFIG.threshold,
-            max_article_length=config.max_article_length,
-        )
-
-        filter_layer = EmbeddingArticleFilter(
-            query_embeddings_path=config.pre_filter_embeddings_path,
-            queries_file=config.pre_filter_queries_file,
-            config=emb_config,
-            session_factory=session_factory,
-        )
+        filter_layer = _create_prefilter(config, session_factory, stats)
         filtered_articles = filter_layer.filter(
             list(articles), cluster_threshold=config.cluster_threshold
         )
@@ -315,17 +531,55 @@ def execute(config: RunConfig) -> RunResult:
                 len(articles),
             )
             articles = cast(List[dict], filtered_articles)
+            stats.set(
+                "prefilter",
+                representatives=len(articles),
+                clustered_duplicates=sum(
+                    len(item.get("other_urls", []))
+                    for item in articles
+                    if isinstance(item.get("other_urls", []), list)
+                ),
+            )
+        stats.complete_stage("prefilter", prefilter_started)
 
     email_payload: Any = articles
     is_summary_payload = False
 
     if config.summary:
+        summary_started = stats.start()
         if not config.system_prompt:
             logger.warning(
                 "Summary requested but no system prompt provided using default."
             )
             raise ValueError("Summary requested but no system_prompt configured.")
 
+        cache_get = None
+        cache_put = None
+        if session_factory and config.llm_cache_enabled:
+
+            def cache_get(identity: str) -> Optional[str]:
+                with session_factory() as session:
+                    return db.get_llm_batch_cache(session, identity)
+
+            def cache_put(identity: str, payload: str) -> None:
+                with session_factory() as session:
+                    db.upsert_llm_batch_cache(session, identity, payload)
+
+        summary_settings = SummarySettings(
+            provider=config.llm_provider,
+            model=config.llm_model,
+            fallback_models=config.llm_fallback_models,
+            routing=config.llm_routing,
+            max_input_price_per_million=config.llm_max_input_price_per_million,
+            max_output_price_per_million=config.llm_max_output_price_per_million,
+            require_structured_output=config.llm_require_structured_output,
+            max_batch_articles=config.llm_max_batch_articles,
+            max_input_tokens=config.llm_max_input_tokens,
+            request_timeout_seconds=config.llm_request_timeout_seconds,
+            max_attempts=config.llm_max_attempts,
+            max_split_depth=config.llm_max_split_depth,
+            cache_enabled=config.llm_cache_enabled,
+        )
         summary_output, summary_data = cast(
             Tuple[str, Optional[dict]],
             generate_summary(
@@ -333,17 +587,25 @@ def execute(config: RunConfig) -> RunResult:
                 config.system_prompt,
                 return_dict=True,
                 dry_run=config.llm_dry_run,
-                provider=config.llm_provider,
-                model=config.llm_model,
+                settings=summary_settings,
+                cache_get=cache_get,
+                cache_put=cache_put,
+                stats=stats,
             ),
         )
+        stats.complete_stage("summary", summary_started)
         output_text = summary_output
 
         if config.llm_dry_run:
             logger.info("LLM dry run completed. Exiting without sending email.")
-            return RunResult(
-                output_text=output_text, email_payload=None, is_summary=True
+            result = RunResult(
+                output_text=output_text,
+                email_payload=None,
+                is_summary=True,
+                stats=stats,
             )
+            _finish_run_metrics(stats)
+            return result
 
         if summary_data is not None:
             summary_data = _attach_summary_images(summary_data, articles)
@@ -356,17 +618,31 @@ def execute(config: RunConfig) -> RunResult:
         output_text = json.dumps(articles, indent=2, ensure_ascii=False)
 
     if config.email_to:
+        email_started = stats.start()
         subject = config.email_subject or _build_default_email_subject()
-        send_email_report(
+        delivery = send_email_report(
             payload=email_payload,
             is_summary=is_summary_payload,
             to_address=config.email_to,
             from_address=config.email_from,
             subject=subject,
         )
+        if isinstance(delivery, EmailDeliveryResult):
+            stats.add(
+                "email",
+                attempted=int(delivery.attempted),
+                sent=int(delivery.sent),
+                failed=int(delivery.failed),
+            )
+        else:
+            stats.add("email", attempted=1, sent=1)
+        stats.complete_stage("email", email_started)
 
-    return RunResult(
+    result = RunResult(
         output_text=output_text,
         email_payload=email_payload,
         is_summary=is_summary_payload,
+        stats=stats,
     )
+    _finish_run_metrics(stats)
+    return result

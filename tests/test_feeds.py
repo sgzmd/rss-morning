@@ -14,19 +14,17 @@ def _reload_feeds_with_stub(monkeypatch, entries):
     )
     monkeypatch.setitem(sys.modules, "feedparser", stub_feedparser)
 
-    # Stub requests
-    mock_response = types.SimpleNamespace(
-        content=b"mock content",
-        raise_for_status=lambda: None,
-    )
-    stub_requests = types.SimpleNamespace(
-        get=lambda url, timeout=None: mock_response,
-        RequestException=Exception,
-    )
-    monkeypatch.setitem(sys.modules, "requests", stub_requests)
-
     sys.modules.pop("rss_morning.feeds", None)
-    return importlib.import_module("rss_morning.feeds")
+    feeds_module = importlib.import_module("rss_morning.feeds")
+    feeds_module._DEFAULT_HTTP_CLIENT = types.SimpleNamespace(
+        get=lambda *_args, **_kwargs: types.SimpleNamespace(
+            status=200,
+            body=b"mock content",
+            final_url="https://feed.example.com",
+            headers={},
+        )
+    )
+    return feeds_module
 
 
 def test_fetch_feed_entries_strips_html_from_summary(monkeypatch):
@@ -115,32 +113,118 @@ def test_select_recent_entries_deduplicates_and_applies_cutoff(monkeypatch):
 
 
 def test_fetch_feed_entries_handles_request_exception(monkeypatch):
-    # Setup stub that raises RequestException
-    _ = types.SimpleNamespace()
+    feeds_module = _reload_feeds_with_stub(monkeypatch, [])
 
-    # We need a proper exception class that looks like requests.RequestException
-    class MockRequestException(Exception):
-        pass
-
-    stub_requests = types.SimpleNamespace(
-        get=lambda url, timeout=None: (_ for _ in ()).throw(
-            MockRequestException("Timeout")
-        ),
-        RequestException=MockRequestException,
-    )
-
-    monkeypatch.setitem(sys.modules, "requests", stub_requests)
-
-    # Feedparser stub shouldn't matter as it won't be reached, but we provide it for import safety
-    stub_feedparser = types.SimpleNamespace(parse=lambda *args: None)
-    monkeypatch.setitem(sys.modules, "feedparser", stub_feedparser)
-
-    sys.modules.pop("rss_morning.feeds", None)
-    feeds_module = importlib.import_module("rss_morning.feeds")
+    class FailingClient:
+        def get(self, *_args, **_kwargs):
+            raise feeds_module.DownloadError("Timeout")
 
     feed = FeedConfig(
         category="Cat", title="Feed Title", url="https://timeout.example.com"
     )
-    results = feeds_module.fetch_feed_entries(feed)
+    outcomes = []
+    results = feeds_module.fetch_feed_entries(
+        feed, http_client=FailingClient(), on_result=outcomes.append
+    )
 
     assert results == []
+    assert outcomes == [False]
+
+
+def test_fetch_feed_entries_uses_injected_http_client(monkeypatch):
+    feeds_module = _reload_feeds_with_stub(monkeypatch, [])
+    calls = []
+
+    class Client:
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return types.SimpleNamespace(
+                status=200,
+                body=b"<rss />",
+                final_url=url,
+                headers={},
+            )
+
+    feed = FeedConfig(category="Cat", title="Feed", url="https://feed.example.com")
+
+    outcomes = []
+    assert (
+        feeds_module.fetch_feed_entries(
+            feed, http_client=Client(), on_result=outcomes.append
+        )
+        == []
+    )
+    assert outcomes == [True]
+    assert calls == [
+        (
+            feed.url,
+            {
+                "accepted_content_types": (
+                    "application/rss+xml",
+                    "application/atom+xml",
+                    "application/xml",
+                    "text/xml",
+                ),
+                "allow_missing_content_type": True,
+            },
+        )
+    ]
+
+
+def test_fetch_feed_entries_covers_missing_fields_and_date_fallbacks(monkeypatch):
+    stamp = time.gmtime(1)
+    entries = [
+        types.SimpleNamespace(link=None, title="No link"),
+        types.SimpleNamespace(
+            link="https://example.com/bad-content",
+            title="Bad content",
+            summary=None,
+            summary_detail=None,
+            content=[None],
+            published_parsed=None,
+            updated_parsed=None,
+            created_parsed=None,
+        ),
+        types.SimpleNamespace(
+            link="https://example.com/updated",
+            title="Updated",
+            summary=None,
+            summary_detail=None,
+            content=None,
+            published_parsed=None,
+            updated_parsed=stamp,
+        ),
+        types.SimpleNamespace(
+            link="https://example.com/created",
+            title="Created",
+            summary=None,
+            summary_detail=None,
+            content=None,
+            published_parsed=None,
+            updated_parsed=None,
+            created_parsed=stamp,
+        ),
+    ]
+    feeds_module = _reload_feeds_with_stub(monkeypatch, entries)
+
+    results = feeds_module.fetch_feed_entries(
+        FeedConfig(category="Cat", title="Feed", url="https://feed.example.com")
+    )
+
+    assert [item.summary for item in results] == [None, None, None]
+    assert results[0].published == datetime.min.replace(tzinfo=timezone.utc)
+    assert results[1].published == feeds_module.to_datetime(stamp)
+    assert results[2].published == feeds_module.to_datetime(stamp)
+
+
+def test_select_recent_entries_stops_at_limit_without_cutoff(monkeypatch):
+    feeds_module = _reload_feeds_with_stub(monkeypatch, [])
+    now = datetime.now(timezone.utc)
+    entries = [
+        FeedEntry(link="1", category="C", title="A", published=now),
+        FeedEntry(link="2", category="C", title="B", published=now),
+    ]
+
+    assert [item.link for item in feeds_module.select_recent_entries(entries, 1)] == [
+        "1"
+    ]

@@ -1,6 +1,8 @@
 """Tests for the database abstraction layer."""
 
 import json
+from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,6 +17,7 @@ def session():
     session = SessionLocal()
     yield session
     session.close()
+    engine.dispose()
 
 
 def test_upsert_and_get_article(session):
@@ -114,3 +117,152 @@ def test_upsert_and_get_embeddings(session):
 
     cached = db.get_embeddings(session, [url1], backend)
     assert cached[url1] == json.dumps(new_vec1).encode("utf-8")
+
+
+def test_empty_database_operations_are_noops(session):
+    assert db.init_engine(None) is None
+    assert db.get_article(session, "missing") is None
+    assert db.get_embeddings(session, [], "backend") == {}
+    db.upsert_article(session, {})
+    db.upsert_articles(session, [{}, {"url": ""}])
+    db.upsert_embeddings(session, {}, "backend")
+
+
+def test_legacy_null_content_rows_remain_readable(session):
+    db.upsert_article(session, {"url": "legacy", "text": None, "title": "Legacy"})
+
+    assert db.get_article(session, "legacy") == {
+        "url": "legacy",
+        "title": "Legacy",
+        "text": None,
+        "image": None,
+        "summary": None,
+        "published": None,
+    }
+
+
+def test_get_articles_returns_url_mapping_and_handles_empty_input(session):
+    db.upsert_article(session, {"url": "one", "text": "first"})
+    db.upsert_article(session, {"url": "two", "text": "second"})
+
+    assert db.get_articles(session, []) == {}
+    cached = db.get_articles(session, ["two", "missing", "one"])
+    assert list(cached) == ["one", "two"]
+    assert cached["one"]["text"] == "first"
+    assert cached["two"]["text"] == "second"
+
+
+def test_upsert_articles_inserts_and_updates_with_one_commit(session, monkeypatch):
+    db.upsert_article(session, {"url": "existing", "text": "old"})
+    original_commit = session.commit
+    commits = []
+
+    def commit_once():
+        commits.append(True)
+        original_commit()
+
+    monkeypatch.setattr(session, "commit", commit_once)
+    db.upsert_articles(
+        session,
+        [
+            {"url": "existing", "text": "new"},
+            {"url": "created", "text": "created text"},
+            {},
+        ],
+    )
+
+    assert commits == [True]
+    assert db.get_article(session, "existing")["text"] == "new"
+    assert db.get_article(session, "created")["text"] == "created text"
+
+
+def test_upsert_articles_rolls_back_entire_batch_on_failure():
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.commit.side_effect = RuntimeError("batch failed")
+
+    with pytest.raises(RuntimeError, match="batch failed"):
+        db.upsert_articles(
+            session,
+            [{"url": "one", "text": "first"}, {"url": "two", "text": "second"}],
+        )
+
+    session.commit.assert_called_once_with()
+    session.rollback.assert_called_once_with()
+
+
+def test_upsert_article_accepts_datetime_and_preserves_date_on_undated_update(session):
+    published = datetime(2025, 1, 2, tzinfo=timezone.utc)
+    url = "https://example.com/datetime"
+    db.upsert_article(session, {"url": url})
+    db.upsert_article(session, {"url": url, "published": published})
+    db.upsert_article(session, {"url": url, "title": "updated"})
+
+    cached = db.get_article(session, url)
+    assert cached is not None
+    assert cached["published"] == published.replace(tzinfo=None)
+
+
+@pytest.mark.parametrize(
+    "operation,args",
+    [
+        (db.upsert_article, ({"url": "https://example.com/fail"},)),
+        (db.upsert_embeddings, ({"url": b"vector"}, "backend")),
+    ],
+)
+def test_upsert_rolls_back_commit_failures(operation, args):
+    session = MagicMock()
+    session.execute.return_value.scalar_one_or_none.return_value = None
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.commit.side_effect = RuntimeError("commit failed")
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        operation(session, *args)
+
+    session.rollback.assert_called_once_with()
+
+
+def test_embedding_v2_bulk_cache_exact_identity_update_and_empty(session):
+    assert db.get_embeddings_v2(session, {}, "backend") == {}
+    db.upsert_embeddings_v2(session, [])
+    record = {
+        "url": "url",
+        "input_hash": "hash",
+        "backend_identity": "provider:model:v1",
+        "dimension": 2,
+        "vector": b"12345678",
+    }
+    db.upsert_embeddings_v2(session, [record])
+    assert (
+        db.get_embeddings_v2(session, {"url": "other-hash"}, "provider:model:v1") == {}
+    )
+    assert (
+        db.get_embeddings_v2(session, {"url": "hash"}, "other-provider:model:v1") == {}
+    )
+
+    record["dimension"] = 1
+    record["vector"] = b"1234"
+    db.upsert_embeddings_v2(session, [record])
+    cached = db.get_embeddings_v2(session, {"url": "hash"}, "provider:model:v1")
+    assert cached["url"]["dimension"] == 1
+    assert cached["url"]["vector"] == b"1234"
+
+
+def test_embedding_v2_batch_rolls_back_on_commit_failure():
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.commit.side_effect = RuntimeError("v2 failed")
+    with pytest.raises(RuntimeError, match="v2 failed"):
+        db.upsert_embeddings_v2(
+            session,
+            [
+                {
+                    "url": "url",
+                    "input_hash": "hash",
+                    "backend_identity": "backend",
+                    "dimension": 1,
+                    "vector": b"1234",
+                }
+            ],
+        )
+    session.rollback.assert_called_once_with()

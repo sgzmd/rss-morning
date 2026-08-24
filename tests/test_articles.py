@@ -1,5 +1,8 @@
+import concurrent.futures
 import importlib
 import sys
+import threading
+import time
 import types
 
 
@@ -19,9 +22,8 @@ def _install_article_dependencies(
             self.text = ""
             self.top_image = ""
 
-        def download(self):
-            if download_error:
-                raise download_error
+        def set_html(self, html):
+            self.html = html
 
         def parse(self):
             if parse_error_factory:
@@ -52,7 +54,19 @@ def _install_article_dependencies(
     monkeypatch.setitem(sys.modules, "newspaper.article", fake_article_module)
 
     sys.modules.pop("rss_morning.articles", None)
-    return importlib.import_module("rss_morning.articles"), FakeArticleException
+    articles_module = importlib.import_module("rss_morning.articles")
+
+    class FakeHttpClient:
+        def get(self, url, **_kwargs):
+            if download_error or "fail" in url:
+                error = download_error or Exception("download failed")
+                raise articles_module.DownloadError("download failed") from error
+            return types.SimpleNamespace(
+                body=f"<html>{url}</html>".encode(), final_url=url
+            )
+
+    articles_module._DEFAULT_HTTP_CLIENT = FakeHttpClient()
+    return articles_module, FakeArticleException
 
 
 def test_fetch_article_content_returns_text_and_image(monkeypatch):
@@ -96,11 +110,6 @@ def test_fetch_article_content_trafilatura(monkeypatch):
             self.image = image
 
     class FakeTrafilatura:
-        def fetch_url(self, url):
-            if "fail" in url:
-                return None
-            return f"<html>{url}</html>"
-
         def extract(self, content, include_comments=False):
             return f"Extracted text from {content}"
 
@@ -168,3 +177,117 @@ def test_truncate_text(monkeypatch):
 
     truncated_default = articles_module.truncate_text(original_text)
     assert len(encoder.encode(truncated_default)) == 100
+
+
+def test_truncate_text_returns_short_input_unchanged(monkeypatch):
+    articles_module, _ = _install_article_dependencies(monkeypatch)
+    encoder = types.SimpleNamespace(
+        encode=lambda value: list(value), decode=lambda tokens: "".join(tokens)
+    )
+    monkeypatch.setattr(articles_module.tiktoken, "get_encoding", lambda _name: encoder)
+
+    assert articles_module.truncate_text("short", limit=5) == "short"
+
+
+def test_newspaper_empty_text_and_image(monkeypatch):
+    articles_module, _ = _install_article_dependencies(
+        monkeypatch, article_text="   ", top_image="   "
+    )
+
+    assert articles_module.fetch_article_content("https://example.com") == (
+        articles_module.ArticleContent(text=None, image=None)
+    )
+
+
+def test_trafilatura_empty_text_without_metadata(monkeypatch):
+    articles_module, _ = _install_article_dependencies(monkeypatch)
+    fake = types.SimpleNamespace(
+        extract=lambda *_args, **_kwargs: None,
+        extract_metadata=lambda _downloaded: None,
+    )
+    monkeypatch.setattr(articles_module, "trafilatura", fake)
+
+    assert articles_module.fetch_article_content(
+        "https://example.com", extractor="trafilatura"
+    ) == articles_module.ArticleContent(text=None, image=None)
+
+
+def test_trafilatura_unexpected_error_is_recoverable(monkeypatch):
+    articles_module, _ = _install_article_dependencies(monkeypatch)
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(articles_module, "_download_html", fail)
+
+    assert articles_module.fetch_article_content(
+        "https://example.com", extractor="trafilatura"
+    ) == articles_module.ArticleContent(text=None, image=None)
+
+
+def test_trafilatura_native_extraction_is_serialized(monkeypatch):
+    articles_module, _ = _install_article_dependencies(monkeypatch)
+    state_lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    class FakeTrafilatura:
+        def extract(self, content, include_comments=False):
+            nonlocal active, max_active
+            with state_lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.02)
+            with state_lock:
+                active -= 1
+            return content
+
+        @staticmethod
+        def extract_metadata(_content):
+            return None
+
+    monkeypatch.setattr(articles_module, "trafilatura", FakeTrafilatura())
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(
+            executor.map(
+                lambda index: articles_module.fetch_article_content(
+                    f"https://example.com/{index}", extractor="trafilatura"
+                ),
+                range(8),
+            )
+        )
+
+    assert all(result.text for result in results)
+    assert max_active == 1
+
+
+def test_article_extractors_use_supplied_html_and_redirect_url(monkeypatch):
+    articles_module, _ = _install_article_dependencies(
+        monkeypatch, top_image="images/lead.jpg"
+    )
+    calls = []
+
+    class Client:
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return types.SimpleNamespace(
+                body=b"<html>supplied document</html>",
+                final_url="https://redirected.example/news/story",
+            )
+
+    content = articles_module.fetch_article_content(
+        "https://example.com/start", http_client=Client()
+    )
+
+    assert content.text == "Article body"
+    assert content.image == "https://redirected.example/news/images/lead.jpg"
+    assert calls == [
+        (
+            "https://example.com/start",
+            {
+                "accepted_content_types": ("text/html", "application/xhtml+xml"),
+                "allow_missing_content_type": True,
+            },
+        )
+    ]

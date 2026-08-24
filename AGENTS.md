@@ -14,17 +14,23 @@ main.py
   -> runner.py: coordinate the run
      -> config.py: read OPML feeds
      -> feeds.py: fetch feeds and select recent entries
+     -> prefilter.py: optionally screen metadata-first candidates
      -> articles.py: fetch, extract, and trim article pages
      -> db.py: optionally cache articles
-     -> prefilter.py: optionally score and group articles
+     -> prefilter.py: optionally score and cluster full-text articles
         -> embeddings.py: FastEmbed or OpenAI vectors
         -> db.py: optionally cache article vectors
      -> summaries.py: optionally ask Gemini or OpenRouter for JSON summaries
      -> emailing.py: optionally send rendered templates through Resend
+     -> metrics.py: collect content-free counts and stage timings
   -> cli.py: print final JSON
 ```
 
 Feed downloads and article downloads use separate thread pools. `concurrency` controls both pools. Feed entries are limited per feed, merged, sorted by publication time, and deduplicated by URL before article pages are downloaded.
+
+Both download stages use the shared bounded HTTP client. It keeps a session per worker thread, retries safe transient GET failures, limits concurrent requests per hostname, and rejects responses beyond their configured byte limit. Article extractors receive already-downloaded HTML and do not open their own connections.
+
+With the database enabled, feed HTTP state is bulk-read before feed workers and bulk-written afterward. Successful bodies, redirect targets, fetch timestamps, ETags, and Last-Modified values are keyed by the original configured feed URL. A 304 uses the stored body; missing or corrupt stored bytes cause one unconditional recovery request. Network failures do not serve stale feed content by default.
 
 One failed feed or article is logged and skipped. Pre-filter errors fail open and keep the original articles. Failed LLM batches are logged and omitted. Email failures are logged and do not fail the run. Errors in top-level configuration or orchestration return exit code 1.
 
@@ -41,13 +47,14 @@ One failed feed or article is logged and skipped. Pre-filter errors fail open an
 - `rss_morning/summaries.py`: Gemini/OpenRouter batching, response schema, and text cleanup.
 - `rss_morning/db.py`: SQLAlchemy article and embedding cache.
 - `rss_morning/emailing.py`: Resend integration.
+- `rss_morning/metrics.py`: private operational counts, provider usage, and durations.
 - `rss_morning/renderers.py`, `rss_morning/templating.py`, `rss_morning/templates/`: HTML and text email rendering.
-- `rss_morning/prefilter_cli.py`: legacy query-embedding export command; see known gaps below.
+- `rss_morning/prefilter_cli.py`: exports validated version-2 query embeddings consumed by the runtime.
 - `tests/`: unit tests. External network and API work should be replaced with fakes.
 
 ## Setup and checks
 
-CI uses Python 3.11. The Docker image uses Python 3.12. Use either unless a dependency proves otherwise.
+CI uses Python 3.11 and 3.12. The Docker image uses Python 3.12. Use either unless a dependency proves otherwise.
 
 ```bash
 python3 -m venv .venv
@@ -59,16 +66,20 @@ python main.py --help
 Before handing off a change, run checks that match its scope:
 
 ```bash
-ruff check .
-ruff format --check .
-mypy rss_morning main.py
-pytest
+python -m pip install -r requirements-dev.txt
+make check
 ```
 
-`make test` runs the hermetic suite. `make live-e2e` sources the ignored
+`requirements.in` lists direct runtime dependencies and generates the pinned `requirements.txt`; `requirements-dev.in` layers development tools and generates the complete pinned `requirements-dev.txt`. Regenerate both with `make lock` using the development environment. Never hand-edit transitive lock entries.
+
+`make check` runs Ruff, formatting, mypy, and the hermetic test suite with 100%
+statement and branch coverage over `rss_morning` and `main.py`. `make test` runs
+the hermetic suite without coverage. `make live-e2e` sources the ignored
 `env.fish`, checks for `OPENROUTER_API_KEY`, enables the opt-in live test, and
 runs it with streaming DEBUG logs and a long traceback. `ENV_FISH` can override
 the Fish environment file path.
+
+`make container-smoke` builds the multi-stage Python 3.12 image and runs every smoke check with networking disabled. It prints image bytes, the installed package list, and layer history. Docker must be available before a container change can be declared complete.
 
 The pre-commit config applies Ruff fixes and formatting, then runs pytest and mypy using the active Python environment.
 
@@ -108,15 +119,23 @@ Recognized settings are:
 - `<max-age-hours>`: optional positive age cutoff.
 - `<summary>`: `true` or `false`; default `false`.
 - `<max-article-length>`: maximum article text tokens; default `100`.
-- `<extractor>`: `newspaper` or `trafilatura`; unknown values currently fall back to Newspaper.
+- `<extractor>`: `newspaper` or `trafilatura`; other values are rejected.
 - `<concurrency>`: worker count for feed and article pools; default `10`.
+- `<http>`: positive connect/read timeouts, feed/article byte limits, non-negative retry/backoff settings, and positive per-host concurrency. Defaults are `5`, `20`, `5242880`, `10485760`, `2`, `0.5`, and `2`, respectively.
 - `<prompt file="..."/>`: prompt file. It is required when summaries are enabled. Inline prompt text is not supported.
-- `<pre-filter>`: `enabled`, optional `queries-file`, optional `embeddings-path`, and `cluster-threshold`.
-- `<embeddings>`: `provider` and `model`. `fastembed` is the default provider. Any provider value other than `fastembed` selects OpenAI.
-- `<llm>`: summary `provider` (`gemini` or `openrouter`) and model. Defaults to Gemini with `gemini-flash-latest`.
+- `<pre-filter>`: `enabled`, `mode` (`full-text` default or opt-in `metadata-first`), positive `candidate-multiplier` (default `3`), positive `max-cluster-size` (default `5`), optional `queries-file`, optional compatible version-2 `embeddings-path`, and `cluster-threshold` cosine similarity in `[0, 1]`.
+- `<embeddings>`: nonempty `model` and `provider`, which must be `fastembed` or `openai`. `fastembed` is the default.
+- `<llm>`: summary provider and resilience/cost controls. It defaults to OpenRouter with `bytedance-seed/seed-2.0-mini`, ordered fallbacks `z-ai/glm-4.7-flash` and `openai/gpt-4o-mini`, `price` routing, $0.20/M input and $0.75/M output caps, required structured output, 20 articles/30,000 estimated input tokens per batch, a 90-second timeout, three attempts, split depth six, and exact-batch caching. Direct Gemini is available only when explicitly selected.
 - `<database>`: `enabled` and a SQLAlchemy `connection-string`.
-- `<email>`: `to`, `from`, and `subject`.
+- `<email>`: `to`, `from`, and `subject`. A recipient requires either a configured sender or `RESEND_FROM_EMAIL` after the optional env XML is loaded.
 - `<logging>`: `level` and `file`.
+
+INFO logs include content-free per-stage and final operational metrics: feed,
+deduplication, article/cache, page-byte, prefilter/clustering, embedding/cache,
+LLM/cache/token, email, and duration fields. `RunResult.stats` exposes the same
+internal object without changing stdout JSON. Metrics must never contain prompts,
+article bodies, credentials, connection strings, provider response bodies, or full
+email bodies, and telemetry failure must fail open.
 
 The env XML format is:
 
@@ -127,6 +146,8 @@ The env XML format is:
 ```
 
 Values from this file overwrite variables already present in the process environment.
+
+Configuration is parsed and validated before feed parsing, database setup, worker creation, or provider-client construction. Booleans accept only `true` or `false`; invalid values report the exact XML path and safe value. Summary mode requires a nonempty prompt file. Feedparser timestamp tuples are converted as UTC with `calendar.timegm`, so results do not depend on the process timezone; missing dates remain the minimum UTC datetime and sort last.
 
 The feed file is OPML. Nested non-feed outlines provide categories. Feed outlines require `type="rss"` and `xmlUrl`. Entries without a URL or title are skipped. Entries without a date sort as the oldest possible date.
 
@@ -146,6 +167,7 @@ Query files can be JSON or plain text:
 - OpenAI embeddings use `OPENAI_API_KEY` when the provider is not `fastembed`.
 - Resend uses `RESEND_API_KEY`. The sender comes from the XML email `from` value or `RESEND_FROM_EMAIL`.
 - FastEmbed runs locally but may download its model on first use. `FASTEMBED_CACHE_PATH` controls its cache in Docker.
+- Article truncation initializes one shared `cl100k_base` encoder before article workers start. Docker prewarms it under `TIKTOKEN_CACHE_DIR`. If initialization fails offline, truncation uses a deterministic character-limit approximation and logs one content-free warning.
 
 Never commit real config files, env XML, API keys, feed lists, prompts, logs, databases, snapshots, model caches, or generated output. Most are already ignored. Treat ignored files as user data: inspect only when needed, do not rewrite them casually, and never print secrets.
 
@@ -165,27 +187,35 @@ text       extracted and token-trimmed article text, possibly absent
 image      absolute lead image URL, possibly absent
 ```
 
-The pre-filter may add `prefilter_score`, `prefilter_match`, and `other_urls`. It embeds `title + summary + text`, compares the vector with each query-category centroid, applies the fixed default threshold `0.5`, and keeps up to five articles per matching category. The best article in each category lists the other retained URLs and cosine distances.
+The pre-filter may add `prefilter_score`, `prefilter_match`, and `other_urls`. It embeds `title + summary + text`, compares the vector with each query-category centroid, and applies the fixed relevance threshold `0.5`. Matching candidates are relevance-sorted and greedily clustered within each category; up to five representatives are returned, while semantically duplicate URLs and cosine distances are attached once to the nearest representative. Exact relevance ties prefer newer publication timestamps and then lexical URLs.
+
+Version-2 precomputed query files record `format_version`, provider, model,
+preprocessing version, dimension, and category/query/vector entries for the exact
+configured query set. Any mismatch or invalid vector makes the runtime recompute
+query centroids safely.
+
+In opt-in `metadata-first` mode, deduplicated entries are screened before page downloads. Cached successful text is used when available; uncached entries use title and feed summary. Up to `candidate-multiplier * max_cluster_size` candidates per category proceed to extraction and the normal full-text filter. A first-stage error falls back to the full-text compatibility path. Snapshot replay never invokes feed or page HTTP in either mode.
 
 Without summaries, stdout is a JSON list of article dictionaries.
 
-With summaries, stdout is an object with `summaries` and, when the LLM supplies it, `exec_summary`. Each summary item contains `url`, `category`, and a nested `summary` with `title`, `rank-reasoning`, `what`, `so-what`, and `now-what`. LLM output is stripped of HTML. The runner restores a source image when the summary item has none.
+With summaries, stdout is an object with `summaries` and, when the LLM supplies it, `exec_summary`. Each summary item contains `url`, a source-restored `category`, and a nested `summary` with `title`, `rank-reasoning`, `what`, `so-what`, and `now-what`. Every returned URL must exactly match the submitted batch, all required strings must be present, and HTML is stripped from every summary field. The runner restores a source image when the summary item has none.
 
 Email templates accept both raw article lists and summarized objects. Markdown in summary fields is rendered and sanitized before it enters the HTML email.
 
 ## Database behavior
 
-When enabled, SQLAlchemy creates `articles` and `embeddings` tables. Articles are keyed by URL. Embeddings are keyed by URL plus the configured model string. Vectors are JSON encoded into binary columns.
+When enabled, SQLAlchemy creates `articles`, legacy `embeddings`, `embeddings_v2`, `feed_http_cache`, and `llm_batch_cache` tables. Articles are keyed by URL. Feed HTTP state is keyed by the original configured feed URL. Runtime embedding hits require the URL, SHA-256 hash of the exact composed input, and an identity containing provider, model, and preprocessing version. V2 vectors are compact float32 bytes with an explicit dimension; legacy model-only JSON vectors are not trusted. LLM cache entries are complete validated batch responses keyed by the exact prompt, ordered input, schema version, provider, model chain, routing, structured-output requirement, and price caps. Dry runs bypass this cache.
 
-A cached article supplies its saved title, text, image, summary, and publication date, but uses the category from the current feed entry. There is no cache expiry. Changing extraction behavior does not refresh existing rows automatically.
+The default OpenRouter price/capability snapshot is dated 2026-08-09 and is a
+test/documentation fixture, not a runtime dependency. Runtime request price caps
+remain authoritative when provider catalog data changes.
+
+A successful extraction caches its full, untruncated article text. Output-specific token truncation happens on a copy after the cache write. Article cache reads are batched before workers start, workers never receive database sessions, and successful new extractions are batch-written in one transaction after workers finish. A cache write failure is logged without changing digest output. A cached article with text supplies its saved title, text, image, summary, and publication date, but uses the category from the current feed entry. Legacy rows with `NULL` content and new metadata-only extraction failures are treated as cache misses, so extraction is retried on later runs. There is no cache expiry. Changing extraction behavior does not refresh existing successful rows automatically.
 
 ## Known gaps and misleading settings
 
 Do not silently build new behavior around these settings; either preserve current behavior or fix it with tests and documentation:
 
-- `pre-filter/embeddings-path` is parsed and passed through, but the current filter ignores precomputed query embeddings.
-- `cluster-threshold` is parsed and passed to the filter, but current grouping does not use it.
-- `rss_morning.prefilter_cli` exports a legacy format that the runtime does not consume.
 - `<logging><file>` is parsed, but `cli.py` ignores it. Only `--log-file` currently enables file logging. `RSS_MORNING_LOG_STDOUT=1` disables file logging, despite its name; the default `StreamHandler` writes to stderr.
 
 ## Change rules
@@ -197,4 +227,5 @@ Do not silently build new behavior around these settings; either preserve curren
 - Do not log prompts, article bodies, credentials, connection strings, or full third-party responses at INFO level.
 - Keep HTML escaped or sanitized. The existing Jinja environment autoescapes HTML, and Markdown output is cleaned with Bleach.
 - Preserve unrelated local and ignored files. This repository commonly contains private configs, feeds, logs, databases, caches, and output snapshots.
+- Do not commit or document deployment hostnames, environment nicknames, server paths, cron schedules, recipient addresses, or infrastructure topology. Keep deployment and live-run evidence environment-neutral.
 - Prefer focused changes. If a known gap is outside the requested work, note it instead of folding a broad cleanup into the patch.

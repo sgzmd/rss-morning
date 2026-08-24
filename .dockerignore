@@ -2,9 +2,16 @@
 .gitignore
 .dockerignore
 venv/
+.venv*/
+.agent-state/
 __pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 *.pyc
 *.pyo
+*.db
+*.log
 dist/
 build/
 *.egg-info/

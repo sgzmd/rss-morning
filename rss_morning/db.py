@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy import (
     DateTime,
+    Integer,
     LargeBinary,
     String,
     Text,
@@ -53,6 +54,46 @@ class EmbeddingModel(Base):
     )
 
 
+class FeedHttpCacheModel(Base):
+    """Last successfully downloaded representation of one configured feed URL."""
+
+    __tablename__ = "feed_http_cache"
+
+    configured_url: Mapped[str] = mapped_column(String, primary_key=True)
+    final_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    etag: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_modified: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    body: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class EmbeddingModelV2(Base):
+    """Content- and backend-specific compact embedding cache."""
+
+    __tablename__ = "embeddings_v2"
+
+    url: Mapped[str] = mapped_column(String, primary_key=True)
+    input_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    backend_identity: Mapped[str] = mapped_column(String, primary_key=True)
+    dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    vector: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class LLMBatchCacheModel(Base):
+    """Validated response for one exact ordered summary batch."""
+
+    __tablename__ = "llm_batch_cache"
+
+    identity: Mapped[str] = mapped_column(String, primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
 def init_engine(connection_string: Optional[str]) -> Optional[Engine]:
     """Initialize the database engine."""
     if not connection_string:
@@ -73,60 +114,236 @@ def get_session_factory(engine: Engine) -> sessionmaker[Session]:
 
 def get_article(session: Session, url: str) -> Optional[dict]:
     """Retrieve an article from the cache."""
-    stmt = select(ArticleModel).where(ArticleModel.url == url)
-    result = session.execute(stmt).scalar_one_or_none()
-    if not result:
-        return None
+    return get_articles(session, [url]).get(url)
 
+
+def get_articles(session: Session, urls: List[str]) -> Dict[str, dict]:
+    """Retrieve cached articles for all requested URLs in one query."""
+    if not urls:
+        return {}
+
+    stmt = select(ArticleModel).where(ArticleModel.url.in_(urls))
+    results = session.execute(stmt).scalars().all()
     return {
-        "url": result.url,
-        "title": result.title,
-        "text": result.content,
-        "image": result.image,
-        "summary": result.summary,
-        "published": result.published,
+        result.url: {
+            "url": result.url,
+            "title": result.title,
+            "text": result.content,
+            "image": result.image,
+            "summary": result.summary,
+            "published": result.published,
+        }
+        for result in results
     }
 
 
 def upsert_article(session: Session, data: dict) -> None:
     """Insert or update an article in the cache."""
-    url = data.get("url")
-    if not url:
+    if not data.get("url"):
         return
 
-    stmt = select(ArticleModel).where(ArticleModel.url == url)
-    existing = session.execute(stmt).scalar_one_or_none()
+    upsert_articles(session, [data])
 
-    raw_published = data.get("published")
-    published_val: Optional[datetime] = None
-    if isinstance(raw_published, datetime):
-        published_val = raw_published
-    elif isinstance(raw_published, str):
-        try:
-            published_val = datetime.fromisoformat(raw_published)
-        except ValueError:
-            logger.warning("Ignoring invalid publication date for %s", url)
 
-    if existing:
-        existing.title = data.get("title")
-        existing.content = data.get("text")
-        existing.image = data.get("image")
-        existing.summary = data.get("summary")
-        if published_val:
-            existing.published = published_val
-        existing.updated_at = datetime.now(timezone.utc)
+def upsert_articles(session: Session, payloads: List[dict]) -> None:
+    """Insert or update multiple cached articles in one transaction."""
+    valid_payloads = [data for data in payloads if data.get("url")]
+    if not valid_payloads:
+        return
+
+    urls = [str(data["url"]) for data in valid_payloads]
+    stmt = select(ArticleModel).where(ArticleModel.url.in_(urls))
+    existing_by_url = {
+        article.url: article for article in session.execute(stmt).scalars().all()
+    }
+
+    for data in valid_payloads:
+        url = str(data["url"])
+        raw_published = data.get("published")
+        published_val: Optional[datetime] = None
+        if isinstance(raw_published, datetime):
+            published_val = raw_published
+        elif isinstance(raw_published, str):
+            try:
+                published_val = datetime.fromisoformat(raw_published)
+            except ValueError:
+                logger.warning("Ignoring invalid publication date for %s", url)
+
+        existing = existing_by_url.get(url)
+        if existing:
+            existing.title = data.get("title")
+            existing.content = data.get("text")
+            existing.image = data.get("image")
+            existing.summary = data.get("summary")
+            if published_val:
+                existing.published = published_val
+            existing.updated_at = datetime.now(timezone.utc)
+        else:
+            session.add(
+                ArticleModel(
+                    url=url,
+                    title=data.get("title"),
+                    content=data.get("text"),
+                    image=data.get("image"),
+                    summary=data.get("summary"),
+                    published=published_val,
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def get_feed_http_states(session: Session, urls: List[str]) -> Dict[str, dict]:
+    """Bulk-load conditional HTTP state by original configured feed URL."""
+    if not urls:
+        return {}
+
+    stmt = select(FeedHttpCacheModel).where(FeedHttpCacheModel.configured_url.in_(urls))
+    results = session.execute(stmt).scalars().all()
+    return {
+        row.configured_url: {
+            "configured_url": row.configured_url,
+            "final_url": row.final_url,
+            "etag": row.etag,
+            "last_modified": row.last_modified,
+            "body": row.body,
+            "fetched_at": row.fetched_at,
+        }
+        for row in results
+    }
+
+
+def upsert_feed_http_states(session: Session, states: List[dict]) -> None:
+    """Atomically insert or replace successful feed download states."""
+    valid_states = [
+        state
+        for state in states
+        if state.get("configured_url") and isinstance(state.get("body"), bytes)
+    ]
+    if not valid_states:
+        return
+
+    urls = [str(state["configured_url"]) for state in valid_states]
+    stmt = select(FeedHttpCacheModel).where(FeedHttpCacheModel.configured_url.in_(urls))
+    existing_by_url = {
+        row.configured_url: row for row in session.execute(stmt).scalars().all()
+    }
+    for state in valid_states:
+        configured_url = str(state["configured_url"])
+        final_url = state.get("final_url")
+        etag = state.get("etag")
+        last_modified = state.get("last_modified")
+        body = state["body"]
+        fetched_at = state.get("fetched_at") or datetime.now(timezone.utc)
+        existing = existing_by_url.get(configured_url)
+        if existing:
+            existing.final_url = final_url
+            existing.etag = etag
+            existing.last_modified = last_modified
+            existing.body = body
+            existing.fetched_at = fetched_at
+        else:
+            session.add(
+                FeedHttpCacheModel(
+                    configured_url=configured_url,
+                    final_url=final_url,
+                    etag=etag,
+                    last_modified=last_modified,
+                    body=body,
+                    fetched_at=fetched_at,
+                )
+            )
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def get_llm_batch_cache(session: Session, identity: str) -> Optional[str]:
+    """Read one exact LLM batch response."""
+    row = session.get(LLMBatchCacheModel, identity)
+    return row.payload if row else None
+
+
+def upsert_llm_batch_cache(session: Session, identity: str, payload: str) -> None:
+    """Atomically insert or replace one validated LLM batch response."""
+    row = session.get(LLMBatchCacheModel, identity)
+    if row:
+        row.payload = payload
+        row.created_at = datetime.now(timezone.utc)
     else:
-        new_article = ArticleModel(
-            url=url,
-            title=data.get("title"),
-            content=data.get("text"),
-            image=data.get("image"),
-            summary=data.get("summary"),
-            published=published_val,
-            updated_at=datetime.now(timezone.utc),
-        )
-        session.add(new_article)
+        session.add(LLMBatchCacheModel(identity=identity, payload=payload))
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
 
+
+def get_embeddings_v2(
+    session: Session, input_hashes: Dict[str, str], backend_identity: str
+) -> Dict[str, dict]:
+    """Return exact content/backend cache hits keyed in caller URL order."""
+    if not input_hashes:
+        return {}
+    stmt = select(EmbeddingModelV2).where(
+        EmbeddingModelV2.url.in_(list(input_hashes)),
+        EmbeddingModelV2.backend_identity == backend_identity,
+    )
+    rows = session.execute(stmt).scalars().all()
+    return {
+        row.url: {
+            "input_hash": row.input_hash,
+            "dimension": row.dimension,
+            "vector": row.vector,
+        }
+        for row in rows
+        if input_hashes.get(row.url) == row.input_hash
+    }
+
+
+def upsert_embeddings_v2(session: Session, records: List[dict]) -> None:
+    """Atomically store compact versioned embedding records."""
+    if not records:
+        return
+    urls = [str(record["url"]) for record in records]
+    identities = [str(record["backend_identity"]) for record in records]
+    stmt = select(EmbeddingModelV2).where(
+        EmbeddingModelV2.url.in_(urls),
+        EmbeddingModelV2.backend_identity.in_(identities),
+    )
+    existing = {
+        (row.url, row.input_hash, row.backend_identity): row
+        for row in session.execute(stmt).scalars().all()
+    }
+    for record in records:
+        key = (
+            str(record["url"]),
+            str(record["input_hash"]),
+            str(record["backend_identity"]),
+        )
+        row = existing.get(key)
+        if row:
+            row.dimension = int(record["dimension"])
+            row.vector = bytes(record["vector"])
+            row.created_at = datetime.now(timezone.utc)
+        else:
+            session.add(
+                EmbeddingModelV2(
+                    url=key[0],
+                    input_hash=key[1],
+                    backend_identity=key[2],
+                    dimension=int(record["dimension"]),
+                    vector=bytes(record["vector"]),
+                )
+            )
     try:
         session.commit()
     except Exception:

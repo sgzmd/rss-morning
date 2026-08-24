@@ -1,6 +1,7 @@
 import requests.adapters  # noqa: F401
 
 import json
+import threading
 from datetime import datetime, timezone, timedelta
 
 import pytest
@@ -26,7 +27,9 @@ def test_execute_standard_flow(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -64,7 +67,9 @@ def test_execute_summary_flow(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -121,7 +126,9 @@ def test_execute_uses_custom_email_subject(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -160,7 +167,9 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -188,6 +197,7 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
                 batch_size=None,
                 threshold=None,
                 max_article_length=None,
+                max_cluster_size=None,
             ):
                 self.model = model
                 self.provider = provider
@@ -238,7 +248,9 @@ def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -307,7 +319,9 @@ def test_execute_save_articles_writes_file(monkeypatch, tmp_path):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
     monkeypatch.setattr(
-        runner, "fetch_feed_entries", lambda feed: [_feed_entry("https://example.com")]
+        runner,
+        "fetch_feed_entries",
+        lambda feed, **_kwargs: [_feed_entry("https://example.com")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -382,7 +396,7 @@ def test_execute_limit_applies_per_feed(monkeypatch):
         ],
     }
 
-    def fake_fetch(feed):
+    def fake_fetch(feed, **_kwargs):
         return list(feed_entries[feed.url])
 
     monkeypatch.setattr(runner, "fetch_feed_entries", fake_fetch)
@@ -448,7 +462,7 @@ def test_execute_raises_when_no_entries(monkeypatch):
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
 
-    def fake_fetch(feed):
+    def fake_fetch(feed, **_kwargs):
         return []
 
     monkeypatch.setattr(runner, "fetch_feed_entries", fake_fetch)
@@ -485,7 +499,7 @@ def test_execute_with_database_caching(monkeypatch, tmp_path):
     monkeypatch.setattr(
         runner,
         "fetch_feed_entries",
-        lambda feed: [_feed_entry("https://example.com/db")],
+        lambda feed, **_kwargs: [_feed_entry("https://example.com/db")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -540,7 +554,7 @@ def test_execute_truncates_cached_content(monkeypatch, tmp_path):
     monkeypatch.setattr(
         runner,
         "fetch_feed_entries",
-        lambda feed: [_feed_entry("https://example.com/db-trunc")],
+        lambda feed, **_kwargs: [_feed_entry("https://example.com/db-trunc")],
     )
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
@@ -602,3 +616,386 @@ def test_execute_truncates_cached_content(monkeypatch, tmp_path):
     # Should be truncated to 10 chars
     assert len(payload[0]["text"]) == 10
     assert payload[0]["text"] == long_text[:10]
+
+
+def test_cached_article_without_text_is_retried_and_kept_as_metadata(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda _path: [FeedConfig("New", "Feed", "url")]
+    )
+    feed_item = _feed_entry("https://example.com/missing-text")
+    feed_item.category = "New"
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda _feed, **_kwargs: [feed_item]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    fetch_calls = []
+
+    def failed_extract(url, **_kwargs):
+        fetch_calls.append(url)
+        return ArticleContent(text=None, image=None)
+
+    monkeypatch.setattr(runner, "fetch_article_content", failed_extract)
+    connection = f"sqlite:///{tmp_path / 'cache.db'}"
+    engine = runner.db.init_engine(connection)
+    assert engine is not None
+    session_factory = runner.db.get_session_factory(engine)
+    with session_factory() as session:
+        runner.db.upsert_article(
+            session,
+            {
+                "url": feed_item.link,
+                "title": "Old title",
+                "text": None,
+                "image": "old.jpg",
+            },
+        )
+
+    result = execute(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=1,
+            max_age_hours=None,
+            summary=False,
+            database_enabled=True,
+            database_connection_string=connection,
+        )
+    )
+
+    assert fetch_calls == [feed_item.link]
+    assert json.loads(result.output_text) == [
+        {
+            "url": feed_item.link,
+            "category": "New",
+            "title": "Title",
+            "summary": "Summary",
+            "published": "2024-01-01T00:00:00+00:00",
+        }
+    ]
+    engine.dispose()
+
+
+def test_successful_extraction_caches_raw_text_before_output_truncation(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda _path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    feed_item = _feed_entry("https://example.com/raw-cache")
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda _feed, **_kwargs: [feed_item]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    raw_text = "abcdefghijklmnopqrstuvwxyz"
+    fetch_calls = []
+
+    def extract(url, **_kwargs):
+        fetch_calls.append(url)
+        return ArticleContent(text=raw_text, image="image.jpg")
+
+    monkeypatch.setattr(runner, "fetch_article_content", extract)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, limit: text[:limit])
+    connection = f"sqlite:///{tmp_path / 'raw-cache.db'}"
+    first_config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=1,
+        max_age_hours=None,
+        summary=False,
+        database_enabled=True,
+        database_connection_string=connection,
+        max_article_length=10,
+    )
+
+    first = execute(first_config)
+    assert json.loads(first.output_text)[0]["text"] == raw_text[:10]
+
+    engine = runner.db.init_engine(connection)
+    assert engine is not None
+    session_factory = runner.db.get_session_factory(engine)
+    with session_factory() as session:
+        cached = runner.db.get_article(session, feed_item.link)
+    assert cached is not None
+    assert cached["text"] == raw_text
+
+    fetch_calls.clear()
+    second = execute(
+        RunConfig(
+            **{
+                **first_config.__dict__,
+                "max_article_length": 100,
+            }
+        )
+    )
+    assert json.loads(second.output_text)[0]["text"] == raw_text
+    assert fetch_calls == []
+    engine.dispose()
+
+
+def test_failed_extraction_is_not_written_to_article_cache(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda _path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    feed_item = _feed_entry("https://example.com/not-cached")
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda _feed, **_kwargs: [feed_item]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda *_args, **_kwargs: ArticleContent(text=None, image=None),
+    )
+    connection = f"sqlite:///{tmp_path / 'failed.db'}"
+
+    execute(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=1,
+            max_age_hours=None,
+            summary=False,
+            database_enabled=True,
+            database_connection_string=connection,
+        )
+    )
+
+    engine = runner.db.init_engine(connection)
+    assert engine is not None
+    session_factory = runner.db.get_session_factory(engine)
+    with session_factory() as session:
+        assert runner.db.get_article(session, feed_item.link) is None
+    engine.dispose()
+
+
+def test_cached_article_restores_fields_but_feed_category_wins(monkeypatch, tmp_path):
+    feed_item = _feed_entry("https://example.com/restored")
+    feed_item.category = "Current category"
+    monkeypatch.setattr(
+        runner,
+        "parse_feeds_config",
+        lambda _path: [FeedConfig("Current category", "Feed", "url")],
+    )
+    monkeypatch.setattr(
+        runner, "fetch_feed_entries", lambda _feed, **_kwargs: [feed_item]
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("cache hit must not fetch")
+        ),
+    )
+    monkeypatch.setattr(runner, "truncate_text", lambda text, limit: text)
+    connection = f"sqlite:///{tmp_path / 'restored.db'}"
+    engine = runner.db.init_engine(connection)
+    assert engine is not None
+    session_factory = runner.db.get_session_factory(engine)
+    published = datetime(2023, 5, 6, tzinfo=timezone.utc)
+    with session_factory() as session:
+        runner.db.upsert_article(
+            session,
+            {
+                "url": feed_item.link,
+                "title": "Cached title",
+                "summary": "Cached summary",
+                "text": "Cached text",
+                "image": "cached.jpg",
+                "published": published,
+            },
+        )
+
+    result = execute(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=1,
+            max_age_hours=None,
+            summary=False,
+            database_enabled=True,
+            database_connection_string=connection,
+        )
+    )
+
+    assert json.loads(result.output_text) == [
+        {
+            "url": feed_item.link,
+            "category": "Current category",
+            "title": "Cached title",
+            "summary": "Cached summary",
+            "text": "Cached text",
+            "image": "cached.jpg",
+            "published": "2023-05-06T00:00:00",
+        }
+    ]
+    engine.dispose()
+
+
+def test_cache_read_failure_drops_only_affected_article(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "parse_feeds_config",
+        lambda _path: [FeedConfig("Cat", "Feed", "url")],
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_feed_entries",
+        lambda _feed, **_kwargs: [
+            _feed_entry("bad"),
+            _feed_entry("good"),
+            _feed_entry("miss"),
+        ],
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, _limit, _cutoff: entries
+    )
+    monkeypatch.setattr(runner.db, "init_engine", lambda _connection: object())
+
+    class SessionContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        runner.db, "get_session_factory", lambda _engine: SessionContext
+    )
+
+    def get_article(_session, url):
+        if url == "bad":
+            raise RuntimeError("cache read failed")
+        if url == "miss":
+            return None
+        return {
+            "url": "good",
+            "title": "Cached",
+            "text": "cached text",
+            "image": None,
+            "summary": None,
+            "published": None,
+        }
+
+    monkeypatch.setattr(runner.db, "get_article", get_article)
+    monkeypatch.setattr(runner.db, "upsert_article", lambda *_args: None)
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda *_args, **_kwargs: ArticleContent(text="text", image=None),
+    )
+    monkeypatch.setattr(runner, "truncate_text", lambda text, limit: text)
+
+    result = execute(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=2,
+            max_age_hours=None,
+            summary=False,
+            database_enabled=True,
+            database_connection_string="sqlite://",
+        )
+    )
+
+    assert {item["url"] for item in json.loads(result.output_text)} == {"good", "miss"}
+
+
+def test_article_cache_uses_one_bulk_read_and_write_outside_workers(monkeypatch):
+    now = datetime(2025, 1, 3, tzinfo=timezone.utc)
+    entries = [
+        FeedEntry("hit", "B", "Hit feed title", now, "Hit feed summary"),
+        FeedEntry("new", "A", "New", now - timedelta(hours=1), "New summary"),
+        FeedEntry(
+            "metadata", "A", "Metadata", now - timedelta(hours=2), "Metadata summary"
+        ),
+        FeedEntry("new", "A", "Duplicate", now - timedelta(hours=3), "Duplicate"),
+    ]
+    monkeypatch.setattr(
+        runner,
+        "parse_feeds_config",
+        lambda _path: [FeedConfig("Cat", "Feed", "feed")],
+    )
+    monkeypatch.setattr(runner, "fetch_feed_entries", lambda _feed, **_kwargs: entries)
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda values, _limit, _cutoff: values
+    )
+    monkeypatch.setattr(runner, "prepare_tokenizer", lambda: None)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, limit: text[:limit])
+
+    def extract(url, **_kwargs):
+        if url == "metadata":
+            return ArticleContent(text=None, image=None)
+        if url == "hit":
+            raise AssertionError("cache hit must not fetch")
+        return ArticleContent(text="new full text", image="new.jpg")
+
+    monkeypatch.setattr(runner, "fetch_article_content", extract)
+    main_thread = threading.get_ident()
+    session_threads = []
+
+    class SessionContext:
+        def __enter__(self):
+            session_threads.append(threading.get_ident())
+            return object()
+
+        def __exit__(self, *_args):
+            return None
+
+    class SessionFactory:
+        def __call__(self):
+            return SessionContext()
+
+    bulk_reads = []
+    bulk_writes = []
+    cached_hit = {
+        "url": "hit",
+        "title": "Cached title",
+        "text": "cached text",
+        "image": "cached.jpg",
+        "summary": "Cached summary",
+        "published": now,
+    }
+    monkeypatch.setattr(
+        runner.db,
+        "get_articles",
+        lambda _session, urls: bulk_reads.append(list(urls)) or {"hit": cached_hit},
+        raising=False,
+    )
+    monkeypatch.setattr(runner.db, "get_feed_http_states", lambda *_args: {})
+    monkeypatch.setattr(
+        runner.db,
+        "upsert_articles",
+        lambda _session, payloads: bulk_writes.append(list(payloads)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        runner.db,
+        "get_article",
+        lambda _session, url: cached_hit if url == "hit" else None,
+    )
+    monkeypatch.setattr(runner.db, "upsert_article", lambda *_args: None)
+
+    output = runner._collect_entries(
+        RunConfig(
+            feeds_file="feeds.xml",
+            limit=10,
+            max_age_hours=None,
+            summary=False,
+            max_article_length=100,
+            concurrency=3,
+        ),
+        session_factory=SessionFactory(),
+    )
+
+    assert bulk_reads == [["hit", "new", "metadata"]]
+    assert len(bulk_writes) == 1
+    assert [payload["url"] for payload in bulk_writes[0]] == ["new"]
+    assert session_threads == [main_thread, main_thread, main_thread]
+    assert [item["url"] for item in output] == ["new", "metadata", "hit"]
+    assert output[2]["category"] == "B"

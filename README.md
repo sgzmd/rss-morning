@@ -9,7 +9,7 @@ Resend.
 
 ## Requirements
 
-- Python 3.11 (CI) or Python 3.12 (Docker)
+- Python 3.11 or Python 3.12 (CI covers both; Docker uses 3.12)
 - A Google Gemini or OpenRouter API key when its summary provider is enabled
 - An OpenAI API key only when the OpenAI embedding provider is selected
 - A Resend API key only when an email recipient is configured
@@ -37,8 +37,12 @@ intend to run. Paths in that file are resolved relative to the config file.
 Run the application with:
 
 ```bash
-python main.py --config configs/config.xml
+make production
 ```
+
+This runs the full configured pipeline, including email delivery when enabled.
+Use `CONFIG=path/to/config.xml make production` to select another configuration.
+The equivalent direct command is `python main.py --config configs/config.xml`.
 
 Use `python main.py --help` as the authoritative CLI reference. The supported
 runtime options are:
@@ -51,6 +55,30 @@ runtime options are:
 - `--llm-dry-run`
 - `--send-email-from-json PATH`
 
+## Development checks
+
+Install the pinned development toolchain on top of the runtime dependencies:
+
+```bash
+python -m pip install -r requirements-dev.txt
+```
+
+`requirements.in` contains only direct production dependencies;
+`requirements.txt` is its reproducibly generated pinned runtime lock.
+`requirements-dev.in` adds test, lint, type, hook, and lock-generation tools, and
+`requirements-dev.txt` is the corresponding complete pinned development lock.
+After intentionally changing an input file, install the development lock and run
+`make lock` to regenerate both outputs. Do not edit transitive lock entries by
+hand.
+
+`make test` runs the hermetic suite and excludes the opt-in live end-to-end
+test. `make coverage` requires 100% statement and branch coverage across
+`rss_morning` and `main.py`. Run the complete local/CI gate with:
+
+```bash
+make check
+```
+
 Without summaries, stdout is a JSON list of articles. With summaries enabled, it
 is an object containing `summaries` and, when supplied by the LLM, `exec_summary`.
 Operational logs are written to stderr.
@@ -61,6 +89,49 @@ The main XML configuration controls feed selection, concurrency, extraction,
 filtering, summaries, caching, logging, and email. See
 [`configs/config.xml.example`](configs/config.xml.example) for the complete
 structure.
+
+Core defaults and bounds are: `limit=10`, `max-article-length=100`, and
+`concurrency=10` (all integers at least one); optional `max-age-hours` must be
+positive; `extractor` is `newspaper` or `trafilatura`; and booleans are exactly
+`true` or `false`. HTTP defaults are 5-second connect, 20-second read, 5,242,880
+feed bytes, 10,485,760 article bytes, two retries, 0.5-second backoff, and two
+requests per hostname. Timeouts/byte limits/per-host concurrency must be positive;
+retry count and backoff may be zero. Prefilter mode defaults to `full-text`, its
+candidate multiplier and maximum cluster size default to three and five, and its
+cluster threshold is inclusive from zero through one. Embeddings use `fastembed`
+by default (`openai` is the other valid provider). The LLM defaults and bounds are
+described under **Safe development workflow** and shown in the example XML.
+
+When the database cache is enabled, successful full-text extractions are stored
+before output token truncation. Later runs can therefore request a larger output
+limit without downloading the page again. Metadata-only extraction failures and
+legacy cache rows with no text are treated as misses and retried; the current feed
+category always overrides cached metadata. Cache reads are batched before article
+workers start, and successful new extractions are written in one transaction after
+the workers finish.
+
+Embedding vectors use the separate `embeddings_v2` table. A cache hit requires
+matching article content, provider, model, and preprocessing version; vectors are
+stored as validated float32 bytes with their dimension. The older model-only
+`embeddings` table remains untouched but is not used by the runtime filter.
+
+Token truncation uses one shared `cl100k_base` encoder initialized before article
+workers start. If its cache is unavailable offline, the run continues with a
+deterministic character-limit approximation and logs one warning without article
+content.
+
+Feed and article downloads use a shared bounded HTTP layer with one reusable
+session per worker thread. The `<http>` section configures separate connect/read
+timeouts, feed/article byte limits, bounded transient GET retries with backoff, and
+the maximum concurrent requests to one hostname. See the example configuration
+for the conservative defaults. Retries cover connection/read failures and `429`,
+`500`, `502`, `503`, and `504` responses. Redirects are followed, the final URL is
+retained, and the same body-byte limit still applies. Newspaper and Trafilatura parse the same supplied
+HTML, so extractor libraries do not perform additional uncontrolled downloads.
+When the database cache is enabled, successful feed responses and their ETag or
+Last-Modified validators are stored by the original configured URL. Later runs use
+conditional requests; a 304 re-parses the stored bounded body, while a missing or
+corrupt body triggers one unconditional recovery request.
 
 Environment values can be stored in the configured environment XML file:
 
@@ -79,6 +150,7 @@ external integrations use:
 - `RESEND_API_KEY` for email delivery
 - `RESEND_FROM_EMAIL` as the fallback sender address
 - `FASTEMBED_CACHE_PATH` for the local FastEmbed model cache
+- `TIKTOKEN_CACHE_DIR` for the prewarmed article-tokenizer cache
 
 Do not commit populated configuration, environment files, feed lists, prompts,
 snapshots, databases, logs, or model caches.
@@ -113,9 +185,42 @@ python main.py --config configs/config.xml --load-articles articles.json
 ```
 
 `--llm-dry-run` prepares the LLM payload and exits before the model request and
-before email delivery. It reports preparation at INFO level; the full prompt and
-article input are available only at DEBUG level. Use DEBUG logs only where that
-data is appropriate.
+before email delivery or cache access. It reports preparation at INFO level; the
+full prompt and article input are available only at DEBUG level. Use DEBUG logs
+only where that data is appropriate.
+
+Summaries default to an OpenRouter chain of
+`bytedance-seed/seed-2.0-mini`, `z-ai/glm-4.7-flash`, then
+`openai/gpt-4o-mini`. Requests require structured JSON output, preserve that
+fallback order, prefer price routing, and cap list prices at $0.20/M input and
+$0.75/M output tokens. The committed model price/capability snapshot came from
+the OpenRouter models API on 2026-08-09; runtime price caps remain authoritative
+if catalog prices change. The `<llm>` section can change the chain, routing
+(`price`, `throughput`, or `latency`), price caps, batch count/token limits,
+timeout, bounded attempts/split depth, and exact-batch caching. Direct Gemini is
+available only when explicitly selected.
+
+Failed transient requests are retried with bounded backoff, then multi-article
+batches are split up to the configured depth. Returned URLs must exactly match
+the submitted batch, required fields must be complete, and only fully validated
+responses are cached. Provider model and usage data are retained for internal
+cost metrics and do not change stdout JSON.
+
+At INFO level, each run emits content-free operational metrics to stderr: feed
+success/failure and deduplication counts; article, embedding, and exact-LLM cache
+outcomes; page request bytes; prefilter candidates, representatives, and duplicates;
+LLM batches, calls, retries, splits, estimates, and provider usage; email outcomes;
+and stage/total durations. Prompts, article bodies, credentials, connection strings,
+provider response bodies, and rendered email bodies are excluded. The same internal
+object is available as `RunResult.stats`; telemetry failure never changes digest
+success or stdout JSON.
+
+Candidate quality evaluation uses only the committed synthetic corpus and
+requires explicit approval because it makes paid calls:
+
+```bash
+RUN_PAID_LLM_EVAL=1 PROMPT=path/to/synthetic-prompt.md make llm-eval
+```
 
 ## Live end-to-end test
 
@@ -133,9 +238,9 @@ the opt-in test, streams DEBUG logs, and requests a verbose, unshortened pytest
 traceback. Use `ENV_FISH=path/to/file.fish make live-e2e` if the Fish environment
 file has a different name.
 
-The bounded defaults are `BAAI/bge-small-en-v1.5` for local embeddings and
-`mistralai/mistral-nemo` for summaries. Override the summary model without editing
-the harness:
+The bounded live-test defaults are `BAAI/bge-small-en-v1.5` for local embeddings
+and `bytedance-seed/seed-2.0-mini` for summaries. Override the summary model
+without editing the harness:
 
 ```fish
 set -lx OPENROUTER_E2E_MODEL openai/gpt-oss-20b
@@ -158,6 +263,25 @@ docker build -t rss-morning:local .
 docker run --rm rss-morning:local --help
 ```
 
+The multi-stage build compiles or downloads wheels in a builder stage. The final
+Python 3.12 slim stage installs only the pinned runtime wheels and runtime shared
+libraries, copies only application and smoke-harness files, and contains no
+compiler or development tooling. It prewarms `cl100k_base` under
+`TIKTOKEN_CACHE_DIR`; `/app/data`, including the FastEmbed model-cache directory,
+is writable by the unprivileged `appuser`.
+
+Run all required offline image checks and print the image size, installed package
+list, and layer history with:
+
+```bash
+make container-smoke
+```
+
+This builds `rss-morning:smoke`, disables networking, checks CLI help, imports
+every runtime module, exercises cached token truncation, verifies the non-root
+user and absence of development packages, and runs a synthetic snapshot LLM dry
+run without credentials or sockets. CI runs the same harness.
+
 For Compose, copy `docker-compose.example.override.yml` to the ignored
 `docker-compose.override.yml`, create the local files shown in **Setup**, and run:
 
@@ -165,15 +289,17 @@ For Compose, copy `docker-compose.example.override.yml` to the ignored
 docker compose run --rm rss-morning
 ```
 
-The image runs as an unprivileged user. Compose persists only the FastEmbed cache;
-mount any desired database or output location explicitly.
+Compose persists only the writable FastEmbed cache; mount any desired database or
+output location explicitly.
 
 ## Architecture
 
 `main.py` delegates configuration and output handling to `rss_morning.cli`. The
 pipeline in `rss_morning.runner` calls the feed and article download boundaries,
 then optionally invokes the database cache, embedding pre-filter, configured LLM
-summary, and Resend delivery modules. HTML and text email output is produced by
+summary, and Resend delivery modules. `rss_morning.metrics` collects content-free
+stage counters and timings without entering JSON output. HTML and text email output
+is produced by
 Jinja templates in `rss_morning/templates`.
 
 Failures fetching an individual feed or article are logged and skipped. Pre-filter
@@ -181,13 +307,37 @@ failures keep the original articles, failed LLM batches are omitted, and email
 failures are logged without failing the run. Top-level configuration or pipeline
 errors return exit code 1.
 
+Configuration parsing is strict and completes before feeds, databases, worker
+pools, or model clients are opened. Numeric limits must be in range, booleans
+must be exactly `true` or `false`, and provider/model/enumeration values must be
+supported and nonempty. Error messages name the invalid XML path and safe value.
+Enabling summaries requires a nonempty prompt file. Configuring an email recipient
+also requires either `<email><from>` or `RESEND_FROM_EMAIL` (including values
+loaded from the configured environment file).
+
+The pre-filter may load a compatible version-2 query-vector file from
+`pre-filter/embeddings-path`; stale or corrupt files are ignored and recomputed.
+The JSON records format version, provider, model, preprocessing version, vector
+dimension, and one category/query/vector entry per configured query. Compatibility
+requires all metadata and the exact query set to match.
+Within each matched category, candidates are ordered by relevance and greedily
+clustered using `cluster-threshold` as cosine similarity in the inclusive `[0, 1]`
+range, with `max-cluster-size` defaulting to five. Only representatives proceed to summarization, while duplicate source URLs
+and their distances remain in the representative's `other_urls` field.
+
+`pre-filter/mode` defaults to `full-text`, preserving the original behavior of
+downloading every selected page before filtering. Opt-in `metadata-first` embeds
+uncached feed titles and summaries first (while using cached full text when
+available), retains up to `candidate-multiplier * max_cluster_size` candidates per
+category, and downloads only those pages before normal full-text scoring. If the
+first stage fails, the run falls back to the full-text path.
+
+Feedparser date tuples are interpreted as UTC directly, independent of the
+machine's local timezone. Entries without a date use the minimum UTC timestamp
+and sort last.
+
 ## Known compatibility gaps
 
-- `pre-filter/embeddings-path` and `cluster-threshold` are parsed for compatibility,
-  but the current runtime filter does not use the precomputed query file or the
-  grouping threshold.
-- `rss_morning.prefilter_cli` writes a legacy embedding format that the runtime
-  does not consume.
 - The XML logging `file` value is parsed but only the `--log-file` CLI option
   currently enables file logging.
 - The AWS deployment guide may contain historical CLI examples; validate commands

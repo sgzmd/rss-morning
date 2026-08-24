@@ -116,6 +116,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             env_vars = parse_env_config(app_config.env_file)
             os.environ.update(env_vars)
 
+        if (
+            app_config.email.to_addr
+            and not app_config.email.from_addr
+            and not os.environ.get("RESEND_FROM_EMAIL")
+        ):
+            raise ValueError(
+                "Invalid <email/from> value 'missing'; expected a sender or RESEND_FROM_EMAIL"
+            )
+
         # Determine logging settings (CLI overrides Config)
         log_level = args.log_level or app_config.logging.level
         log_file = args.log_file
@@ -132,6 +141,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             max_age_hours=app_config.max_age_hours,
             summary=app_config.summary,
             pre_filter=app_config.pre_filter.enabled,
+            pre_filter_mode=app_config.pre_filter.mode,
+            candidate_multiplier=app_config.pre_filter.candidate_multiplier,
+            max_cluster_size=app_config.pre_filter.max_cluster_size,
             pre_filter_embeddings_path=app_config.pre_filter.embeddings_path,
             pre_filter_queries_file=app_config.pre_filter.queries_file,
             email_to=app_config.email.to_addr,
@@ -150,7 +162,25 @@ def main(argv: Optional[List[str]] = None) -> int:
             embedding_model=app_config.embeddings.model,
             llm_provider=app_config.llm.provider,
             llm_model=app_config.llm.model,
+            llm_fallback_models=app_config.llm.fallback_models,
+            llm_routing=app_config.llm.routing,
+            llm_max_input_price_per_million=app_config.llm.max_input_price_per_million,
+            llm_max_output_price_per_million=app_config.llm.max_output_price_per_million,
+            llm_require_structured_output=app_config.llm.require_structured_output,
+            llm_max_batch_articles=app_config.llm.max_batch_articles,
+            llm_max_input_tokens=app_config.llm.max_input_tokens,
+            llm_request_timeout_seconds=app_config.llm.request_timeout_seconds,
+            llm_max_attempts=app_config.llm.max_attempts,
+            llm_max_split_depth=app_config.llm.max_split_depth,
+            llm_cache_enabled=app_config.llm.cache_enabled,
             llm_dry_run=args.llm_dry_run,
+            http_connect_timeout=app_config.http.connect_timeout,
+            http_read_timeout=app_config.http.read_timeout,
+            max_feed_bytes=app_config.http.max_feed_bytes,
+            max_article_bytes=app_config.http.max_article_bytes,
+            http_retries=app_config.http.retries,
+            http_backoff_seconds=app_config.http.backoff_seconds,
+            http_per_host_concurrency=app_config.http.per_host_concurrency,
         )
 
         if args.send_email_from_json:
@@ -178,7 +208,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         result = execute(config)
     except ValueError as exc:
-        parser.error(str(exc))
+        logger.error("%s", exc)
+        return 1
     except (RuntimeError, FileNotFoundError) as exc:
         logger.error("%s", exc)
         return 1

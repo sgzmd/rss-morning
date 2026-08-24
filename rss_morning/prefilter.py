@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
+import os
 import random
+import tempfile
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
@@ -22,6 +26,7 @@ import numpy as np
 from openai import OpenAI
 
 from .embeddings import EmbeddingBackend, FastEmbedBackend, OpenAIEmbeddingBackend
+from .metrics import RunStats
 from . import db
 
 logger = logging.getLogger(__name__)
@@ -33,6 +38,17 @@ MutableArticle = MutableMapping[str, object]
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_QUERIES_FILE = PROJECT_ROOT / "queries.txt"
 EXAMPLE_QUERIES_FILE = PROJECT_ROOT / "queries.example.txt"
+PREPROCESSING_VERSION = "article-text-v1"
+QUERY_EMBEDDING_FORMAT_VERSION = 2
+_CENTROID_CACHE_SIZE = 32
+
+
+class EmbeddingValidationError(ValueError):
+    """An embedding backend or cached vector violated the vector contract."""
+
+
+def _embedding_input_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _load_queries_from_path(path: Path) -> Dict[str, Tuple[str, ...]]:
@@ -111,9 +127,7 @@ class EmbeddingArticleFilter:
 
     CONFIG = _EmbeddingConfig()
     DEFAULT_QUERIES: Dict[str, Tuple[str, ...]] = load_queries()
-    _cached_centroids: Dict[
-        Tuple[Tuple[Tuple[str, Tuple[str, ...]], ...], str], Dict[str, np.ndarray]
-    ] = {}
+    _cached_centroids: OrderedDict[object, Dict[str, np.ndarray]] = OrderedDict()
 
     @dataclass
     class _ScoredArticle:
@@ -132,9 +146,11 @@ class EmbeddingArticleFilter:
         queries: Optional[Mapping[str, Sequence[str]]] = None,
         config: Optional[_EmbeddingConfig] = None,
         session_factory=None,
+        stats: RunStats | None = None,
     ):
         self._config = config or self.CONFIG
         self._session_factory = session_factory
+        self._stats = stats
         if backend is not None and client is not None:
             logger.info(
                 "EmbeddingArticleFilter received both backend and client; backend takes precedence."
@@ -151,6 +167,7 @@ class EmbeddingArticleFilter:
             loaded_queries = self.DEFAULT_QUERIES
 
         self._queries: Dict[str, Tuple[str, ...]] = loaded_queries
+        self._precomputed_centroids: Optional[Dict[str, np.ndarray]] = None
         if backend is not None:
             self._backend = backend
         elif self._config.provider == "fastembed":
@@ -166,12 +183,66 @@ class EmbeddingArticleFilter:
                 batch_size=self._config.batch_size,
             )
 
-        # Removed query_embeddings_path loading for now as logic changed significantly
-        # If we need it back, we need to restructure the cache format.
+        if query_embeddings_path:
+            try:
+                self._precomputed_centroids = self._load_query_embeddings(
+                    Path(query_embeddings_path)
+                )
+            except Exception as exc:  # noqa: BLE001 - optional cache boundary
+                logger.warning(
+                    "Ignoring precomputed query embeddings (%s)", type(exc).__name__
+                )
 
     @property
     def queries(self) -> Dict[str, Tuple[str, ...]]:
         return self._queries
+
+    def select_metadata_candidates(
+        self,
+        articles: Iterable[Article],
+        *,
+        candidate_multiplier: int,
+    ) -> List[MutableArticle]:
+        """Select a bounded metadata candidate set before article page downloads."""
+        if candidate_multiplier <= 0:
+            raise ValueError("candidate_multiplier must be positive")
+        materialized: List[MutableArticle] = [dict(article) for article in articles]
+        if not materialized:
+            return []
+        centroids = self._get_category_centroids()
+        if not centroids:
+            raise EmbeddingValidationError("metadata stage has no query centroids")
+        texts = [self._compose_article_text(article) for article in materialized]
+        urls = [str(article.get("url") or "") for article in materialized]
+        vectors = self._embed_texts(texts, urls=urls)
+        selected_by_category: Dict[
+            str, List[EmbeddingArticleFilter._ScoredArticle]
+        ] = {}
+        for article, vector in zip(materialized, vectors):
+            array = np.asarray(vector, dtype=float)
+            norm = float(np.linalg.norm(array))
+            array = array / norm if norm else np.zeros_like(array)
+            category, score = self._score_against_centroids(array, centroids)
+            if score < self._config.threshold:
+                continue
+            assert category is not None
+            article["category"] = category
+            article["prefilter_match"] = category
+            article["prefilter_score"] = score
+            selected_by_category.setdefault(category, []).append(
+                self._ScoredArticle(score, article, array, category)
+            )
+
+        limit = candidate_multiplier * self._config.max_cluster_size
+        selected: List[MutableArticle] = []
+        for items in selected_by_category.values():
+            items.sort(key=lambda item: str(item.article.get("url") or ""))
+            items.sort(
+                key=lambda item: str(item.article.get("published") or ""), reverse=True
+            )
+            items.sort(key=lambda item: item.score, reverse=True)
+            selected.extend(item.article for item in items[:limit])
+        return selected
 
     def filter(
         self,
@@ -181,10 +252,13 @@ class EmbeddingArticleFilter:
         rng: Optional[random.Random] = None,
     ) -> List[MutableArticle]:
         """Return the list of articles that pass the embedding filter."""
-        materialized: List[MutableArticle] = [dict(article) for article in articles]
-        if not materialized:
+        if cluster_threshold is not None and not 0 <= cluster_threshold <= 1:
+            raise ValueError("cluster_threshold must be between 0 and 1")
+        pristine: List[MutableArticle] = [dict(article) for article in articles]
+        if not pristine:
             logger.info("Embedding pre-filter received no articles.")
             return []
+        materialized: List[MutableArticle] = [dict(article) for article in pristine]
 
         try:
             centroids = self._get_category_centroids()
@@ -204,14 +278,6 @@ class EmbeddingArticleFilter:
                 else:
                     arr = np.zeros_like(arr)
                 article_vectors.append(arr)
-
-            if not article_vectors:
-                logger.warning(
-                    "Embedding pre-filter failed to obtain article embeddings; "
-                    "returning original %d articles",
-                    len(materialized),
-                )
-                return materialized
 
             threshold = self._config.threshold
             # We will group scored items by category
@@ -241,39 +307,50 @@ class EmbeddingArticleFilter:
                     scored_by_category[best_cat] = []
                 scored_by_category[best_cat].append(item)
 
-            retained = []
+            retained: List[MutableArticle] = []
             max_size = self._config.max_cluster_size
+            similarity_threshold = (
+                cluster_threshold if cluster_threshold is not None else 1.0
+            )
 
-            for category, items in scored_by_category.items():
-                # Sort descending by score
-                items.sort(key=lambda x: x.score, reverse=True)
+            for _category, items in scored_by_category.items():
+                # Exact ties prefer newer publication timestamps, then lexical URLs.
+                items.sort(key=lambda item: str(item.article.get("url") or ""))
+                items.sort(
+                    key=lambda item: str(item.article.get("published") or ""),
+                    reverse=True,
+                )
+                items.sort(key=lambda item: item.score, reverse=True)
 
-                # Keep top N
-                kept_items = items[:max_size]
+                representatives: List[EmbeddingArticleFilter._ScoredArticle] = []
+                for item in items:
+                    nearest = None
+                    nearest_similarity = float("-inf")
+                    for representative in representatives:
+                        similarity = self._cosine(item.vector, representative.vector)
+                        if similarity > nearest_similarity:
+                            nearest = representative
+                            nearest_similarity = similarity
 
-                if kept_items:
-                    kernel = kept_items[0]
-                    others = kept_items[1:]
-
-                    # Calculate distances for others
-                    other_entries = []
-                    for other in others:
-                        cosine = self._cosine(kernel.vector, other.vector)
-                        dist = max(0.0, 1.0 - cosine)
-                        other_entries.append(
+                    if (
+                        nearest is not None
+                        and nearest_similarity >= similarity_threshold
+                    ):
+                        duplicates = nearest.article["other_urls"]
+                        assert isinstance(duplicates, list)
+                        duplicates.append(
                             {
-                                "url": str(other.article.get("url") or ""),
-                                "distance": round(dist, 4),
+                                "url": str(item.article.get("url") or ""),
+                                "distance": round(
+                                    max(0.0, 1.0 - nearest_similarity), 4
+                                ),
                             }
                         )
-                        # Ensure others have empty other_urls
-                        other.article["other_urls"] = []
+                    elif len(representatives) < max_size:
+                        item.article["other_urls"] = []
+                        representatives.append(item)
 
-                    kernel.article["other_urls"] = other_entries
-
-                    # Add all kept items to retained list
-                    for item in kept_items:
-                        retained.append(item.article)
+                retained.extend(item.article for item in representatives)
 
             logger.info(
                 "Embedding pre-filter retained %d articles across %d categories",
@@ -285,16 +362,19 @@ class EmbeddingArticleFilter:
             logger.exception(
                 "Embedding pre-filter encountered an error; returning all articles."
             )
-            return materialized
+            return pristine
 
     def _get_category_centroids(self) -> Dict[str, np.ndarray]:
         """Fetch and cache centroids for the security query categories."""
+        if self._precomputed_centroids is not None:
+            return self._precomputed_centroids
         # Use a tuple of sorted items as a stable key for caching
         queries_key = tuple(sorted((k, tuple(v)) for k, v in self._queries.items()))
-        key = (queries_key, self._config.model)
+        key = (queries_key, self._backend_identity())
 
         cached = self.__class__._cached_centroids.get(key)
         if cached is not None:
+            self.__class__._cached_centroids.move_to_end(key)
             return cached
 
         centroids = {}
@@ -313,28 +393,136 @@ class EmbeddingArticleFilter:
             centroids[category] = mean_vec
 
         self.__class__._cached_centroids[key] = centroids
+        while len(self.__class__._cached_centroids) > _CENTROID_CACHE_SIZE:
+            self.__class__._cached_centroids.popitem(last=False)
         return centroids
+
+    def _backend_identity(self) -> str:
+        return ":".join(
+            (self._config.provider, self._config.model, PREPROCESSING_VERSION)
+        )
+
+    def _load_query_embeddings(self, path: Path) -> Dict[str, np.ndarray]:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        expected = (
+            payload.get("format_version") == QUERY_EMBEDDING_FORMAT_VERSION
+            and payload.get("provider") == self._config.provider
+            and payload.get("model") == self._config.model
+            and payload.get("preprocessing_version") == PREPROCESSING_VERSION
+        )
+        if not expected:
+            raise EmbeddingValidationError("incompatible query embedding metadata")
+        dimension = payload.get("dimension")
+        if not isinstance(dimension, int) or dimension <= 0:
+            raise EmbeddingValidationError("invalid query embedding dimension")
+        entries = payload.get("entries")
+        if not isinstance(entries, list):
+            raise EmbeddingValidationError("invalid query embedding entries")
+        expected_pairs = {
+            (category, query)
+            for category, queries in self._queries.items()
+            for query in queries
+        }
+        vectors: Dict[str, List[np.ndarray]] = {}
+        seen = set()
+        for entry in entries:
+            pair = (entry.get("category"), entry.get("query"))
+            vector = np.asarray(entry.get("vector"), dtype=float)
+            if (
+                pair in seen
+                or pair not in expected_pairs
+                or vector.shape != (dimension,)
+                or not np.all(np.isfinite(vector))
+            ):
+                raise EmbeddingValidationError("invalid query embedding entry")
+            seen.add(pair)
+            vectors.setdefault(str(pair[0]), []).append(vector)
+        if seen != expected_pairs:
+            raise EmbeddingValidationError("query embedding file is incomplete")
+        centroids = {}
+        for category, items in vectors.items():
+            mean = np.mean(np.stack(items), axis=0)
+            norm = float(np.linalg.norm(mean))
+            centroids[category] = mean / norm if norm else np.zeros_like(mean)
+        return centroids
+
+    def _embed_backend(
+        self, texts: Sequence[str], expected_dimension: Optional[int] = None
+    ) -> List[List[float]]:
+        started = self._stats.start() if self._stats is not None else 0.0
+        vectors = self._backend.embed(texts)
+        if self._stats is not None:
+            self._stats.add(
+                "embeddings",
+                provider_calls=1,
+                provider=self._config.provider,
+                model=self._config.model,
+                duration_seconds=max(0.0, self._stats.clock() - started),
+            )
+        if len(vectors) != len(texts):
+            raise EmbeddingValidationError(
+                f"embedding count {len(vectors)} does not match input count {len(texts)}"
+            )
+        if not vectors:
+            return []
+        dimensions = {len(vector) for vector in vectors}
+        if 0 in dimensions or len(dimensions) != 1:
+            raise EmbeddingValidationError(
+                "embedding dimensions must be identical and nonzero"
+            )
+        dimension = next(iter(dimensions))
+        if expected_dimension is not None and dimension != expected_dimension:
+            raise EmbeddingValidationError(
+                "embedding dimension does not match cached vectors"
+            )
+        return [[float(value) for value in vector] for vector in vectors]
 
     def _embed_texts(
         self, texts: Sequence[str], urls: Optional[Sequence[str]] = None
     ) -> List[List[float]]:
         """Generate normalised embedding vectors for the given texts."""
         if not self._session_factory or not urls:
-            return self._backend.embed(texts)
+            return self._embed_backend(texts)
 
-        backend_key = self._config.model
+        if len(urls) != len(texts):
+            raise EmbeddingValidationError(
+                "URL count does not match embedding input count"
+            )
+
+        backend_identity = self._backend_identity()
+        input_hashes = {
+            str(url): _embedding_input_hash(text) for text, url in zip(texts, urls)
+        }
         with self._session_factory() as session:
-            cached = db.get_embeddings(session, list(urls), backend_key)
+            cached = db.get_embeddings_v2(session, input_hashes, backend_identity)
 
         # Determine which texts need embedding
         missing_indices = []
         missing_texts = []
         ordered_vectors: List[Optional[List[float]]] = [None] * len(texts)
 
-        for idx, (text, url) in enumerate(zip(texts, urls)):
-            if url in cached:
+        expected_dimension = None
+        for idx, (text, raw_url) in enumerate(zip(texts, urls)):
+            url = str(raw_url)
+            record = cached.get(url)
+            if record:
                 try:
-                    ordered_vectors[idx] = json.loads(cached[url].decode("utf-8"))
+                    dimension = int(record["dimension"])
+                    raw_vector = bytes(record["vector"])
+                    if dimension <= 0 or len(raw_vector) != dimension * 4:
+                        raise EmbeddingValidationError("corrupt cached vector")
+                    cached_vector = np.frombuffer(raw_vector, dtype=np.float32).astype(
+                        float
+                    )
+                    if (
+                        expected_dimension is not None
+                        and dimension != expected_dimension
+                    ):
+                        raise EmbeddingValidationError(
+                            "cached vector dimension mismatch"
+                        )
+                    expected_dimension = dimension
+                    ordered_vectors[idx] = cached_vector.tolist()
                 except Exception:
                     logger.warning("Failed to decode vector for %s, re-embedding", url)
                     missing_indices.append(idx)
@@ -343,28 +531,44 @@ class EmbeddingArticleFilter:
                 missing_indices.append(idx)
                 missing_texts.append(text)
 
+        if self._stats is not None:
+            self._stats.add(
+                "embeddings",
+                cache_hits=len(texts) - len(missing_indices),
+                cache_misses=len(missing_indices),
+            )
+
         if missing_texts:
             logger.info("Computing embeddings for %d new articles", len(missing_texts))
-            new_vectors = self._backend.embed(missing_texts)
+            new_vectors = self._embed_backend(missing_texts, expected_dimension)
 
-            to_upsert = {}
+            to_upsert = []
             for i, vector in enumerate(new_vectors):
                 original_idx = missing_indices[i]
                 ordered_vectors[original_idx] = vector
-                url = urls[original_idx]
-                to_upsert[url] = json.dumps(vector).encode("utf-8")
+                url = str(urls[original_idx])
+                compact = np.asarray(vector, dtype=np.float32)
+                to_upsert.append(
+                    {
+                        "url": url,
+                        "input_hash": input_hashes[url],
+                        "backend_identity": backend_identity,
+                        "dimension": len(vector),
+                        "vector": compact.tobytes(),
+                    }
+                )
 
             with self._session_factory() as session:
-                db.upsert_embeddings(session, to_upsert, backend_key)
+                db.upsert_embeddings_v2(session, to_upsert)
 
         # Ensure correct return type (all floats)
-        final_vectors = []
+        final_vectors: List[List[float]] = []
         for v in ordered_vectors:
             if v is None:
-                pass
+                raise EmbeddingValidationError("missing embedding vector")
             final_vectors.append(v)
 
-        return final_vectors  # type: ignore
+        return final_vectors
 
     def _compose_article_text(self, article: Mapping[str, object]) -> str:
         title = str(article.get("title") or "")
@@ -395,7 +599,9 @@ class EmbeddingArticleFilter:
 
     @staticmethod
     def _dot(left: np.ndarray, right: np.ndarray) -> float:
-        return sum(lft * rght for lft, rght in zip(left, right))
+        if left.shape != right.shape or left.ndim != 1:
+            raise EmbeddingValidationError("embedding dimension mismatch")
+        return float(np.dot(left, right))
 
     def _build_other_urls(
         self,
@@ -440,6 +646,7 @@ def export_security_query_embeddings(
     *,
     config: Optional[_EmbeddingConfig] = None,
     client: Optional[OpenAI] = None,
+    backend: Optional[EmbeddingBackend] = None,
     queries_file: Optional[str] = None,
     queries: Optional[Mapping[str, Sequence[str]]] = None,
 ) -> Path:
@@ -447,21 +654,52 @@ def export_security_query_embeddings(
     export_config = config or EmbeddingArticleFilter.CONFIG
     filter_layer = EmbeddingArticleFilter(
         client=client,
+        backend=backend,
         config=export_config,
         queries_file=queries_file,
         queries=queries,
     )
-    query_list = list(filter_layer.queries)
+    pairs = [
+        (category, query)
+        for category, query_values in filter_layer.queries.items()
+        for query in query_values
+    ]
+    query_list = [query for _category, query in pairs]
     embeddings = filter_layer._embed_texts(query_list)
+    dimension = len(embeddings[0]) if embeddings else 0
 
     payload: Dict[str, object] = {
+        "format_version": QUERY_EMBEDDING_FORMAT_VERSION,
+        "provider": export_config.provider,
         "model": export_config.model,
-        "threshold": export_config.threshold,
-        "queries": query_list,
-        "embeddings": embeddings,
+        "preprocessing_version": PREPROCESSING_VERSION,
+        "dimension": dimension,
+        "entries": [
+            {"category": category, "query": query, "vector": vector}
+            for (category, query), vector in zip(pairs, embeddings)
+        ],
     }
 
     destination = Path(output_path)
-    destination.write_text(json.dumps(payload, indent=2))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            json.dump(payload, temporary, indent=2)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, destination)
+    except Exception:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
     logger.info("Exported %d query embeddings to %s", len(embeddings), destination)
     return destination

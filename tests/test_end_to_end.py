@@ -37,7 +37,7 @@ def test_cli_pipeline_without_external_side_effects(monkeypatch, tmp_path, capsy
     feed_calls = []
     article_calls = []
 
-    def fake_fetch_feed(feed):
+    def fake_fetch_feed(feed, **_kwargs):
         feed_calls.append(feed)
         return [
             FeedEntry(
@@ -49,7 +49,7 @@ def test_cli_pipeline_without_external_side_effects(monkeypatch, tmp_path, capsy
             )
         ]
 
-    def fake_fetch_article(url, extractor):
+    def fake_fetch_article(url, extractor, **_kwargs):
         article_calls.append((url, extractor))
         return ArticleContent(
             text="Article body", image="https://articles.example/hero.jpg"

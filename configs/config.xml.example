@@ -3,12 +3,27 @@
     <feeds>../feeds.xml</feeds>
     <env>env.xml</env>
     <limit>10</limit>
+    <!-- Optional; when present it must be positive. -->
     <max-age-hours>24</max-age-hours>
     <summary>false</summary>
+    <max-article-length>100</max-article-length>
     <extractor>newspaper</extractor>
     <concurrency>10</concurrency>
+    <http>
+        <connect-timeout>5</connect-timeout>
+        <read-timeout>20</read-timeout>
+        <max-feed-bytes>5242880</max-feed-bytes>
+        <max-article-bytes>10485760</max-article-bytes>
+        <retries>2</retries>
+        <backoff-seconds>0.5</backoff-seconds>
+        <per-host-concurrency>2</per-host-concurrency>
+    </http>
     <pre-filter>
         <enabled>false</enabled>
+        <!-- full-text is the compatibility default; metadata-first reduces page downloads -->
+        <mode>full-text</mode>
+        <candidate-multiplier>3</candidate-multiplier>
+        <max-cluster-size>5</max-cluster-size>
         <embeddings-path>../query_embeddings.json</embeddings-path>
         <queries-file>../queries.txt</queries-file>
         <cluster-threshold>0.8</cluster-threshold>
@@ -17,10 +32,28 @@
         <provider>fastembed</provider>
         <model>intfloat/multilingual-e5-large</model>
     </embeddings>
+    <database>
+        <enabled>false</enabled>
+        <connection-string>sqlite:///data/rss-morning.db</connection-string>
+    </database>
     <llm>
-        <!-- gemini uses GOOGLE_API_KEY/GEMINI_API_KEY; openrouter uses OPENROUTER_API_KEY -->
-        <provider>gemini</provider>
-        <model>gemini-flash-latest</model>
+        <!-- OpenRouter is the default. Direct Gemini remains available explicitly. -->
+        <provider>openrouter</provider>
+        <model>bytedance-seed/seed-2.0-mini</model>
+        <fallback-models>
+            <model>z-ai/glm-4.7-flash</model>
+            <model>openai/gpt-4o-mini</model>
+        </fallback-models>
+        <routing>price</routing>
+        <max-input-price-per-million>0.20</max-input-price-per-million>
+        <max-output-price-per-million>0.75</max-output-price-per-million>
+        <require-structured-output>true</require-structured-output>
+        <max-batch-articles>20</max-batch-articles>
+        <max-input-tokens>30000</max-input-tokens>
+        <request-timeout-seconds>90</request-timeout-seconds>
+        <max-attempts>3</max-attempts>
+        <max-split-depth>6</max-split-depth>
+        <cache-enabled>true</cache-enabled>
     </llm>
     <email>
         <to></to>
@@ -29,6 +62,7 @@
     </email>
     <logging>
         <level>INFO</level>
+        <!-- Known compatibility gap: use --log-file to enable file logging. -->
         <file>../logs/rss-morning.log</file>
     </logging>
     <prompt file="../prompt.md" />
