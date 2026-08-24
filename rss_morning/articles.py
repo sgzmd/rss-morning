@@ -22,6 +22,7 @@ _DEFAULT_HTTP_CLIENT = HttpClient(max_bytes=10_485_760)
 _ENCODER_UNINITIALIZED = object()
 _encoder: Any = _ENCODER_UNINITIALIZED
 _encoder_lock = threading.Lock()
+_trafilatura_lock = threading.Lock()
 
 
 def _get_encoder() -> Any | None:
@@ -91,9 +92,12 @@ def _fetch_with_trafilatura(
     try:
         downloaded, final_url = _download_html(url, http_client)
 
-        text = trafilatura.extract(downloaded, include_comments=False)
-
-        metadata = trafilatura.extract_metadata(downloaded)
+        # Trafilatura delegates to native XML/HTML parsers that can corrupt process
+        # state when extraction runs concurrently in multiple worker threads.
+        # Keep downloads parallel, but serialize the native extraction boundary.
+        with _trafilatura_lock:
+            text = trafilatura.extract(downloaded, include_comments=False)
+            metadata = trafilatura.extract_metadata(downloaded)
         image = metadata.image if metadata else None
 
         if not text:

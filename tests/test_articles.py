@@ -1,5 +1,8 @@
+import concurrent.futures
 import importlib
 import sys
+import threading
+import time
 import types
 
 
@@ -220,6 +223,43 @@ def test_trafilatura_unexpected_error_is_recoverable(monkeypatch):
     assert articles_module.fetch_article_content(
         "https://example.com", extractor="trafilatura"
     ) == articles_module.ArticleContent(text=None, image=None)
+
+
+def test_trafilatura_native_extraction_is_serialized(monkeypatch):
+    articles_module, _ = _install_article_dependencies(monkeypatch)
+    state_lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    class FakeTrafilatura:
+        def extract(self, content, include_comments=False):
+            nonlocal active, max_active
+            with state_lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.02)
+            with state_lock:
+                active -= 1
+            return content
+
+        @staticmethod
+        def extract_metadata(_content):
+            return None
+
+    monkeypatch.setattr(articles_module, "trafilatura", FakeTrafilatura())
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(
+            executor.map(
+                lambda index: articles_module.fetch_article_content(
+                    f"https://example.com/{index}", extractor="trafilatura"
+                ),
+                range(8),
+            )
+        )
+
+    assert all(result.text for result in results)
+    assert max_active == 1
 
 
 def test_article_extractors_use_supplied_html_and_redirect_url(monkeypatch):
