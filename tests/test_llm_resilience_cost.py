@@ -21,10 +21,10 @@ def _article(number: int, *, text: str = "body") -> dict:
 
 def _payload(articles: list[dict], *, model_category: str = "untrusted") -> dict:
     return {
-        "exec-summary": ["<b>Executive</b>"],
         "summaries": [
             {
                 "url": article["url"],
+                "relevant": True,
                 "category": model_category,
                 "summary": {
                     "title": f"<b>{article['title']}</b>",
@@ -167,25 +167,25 @@ def test_catalog_validation_skips_unsupported_and_over_cap_models():
 def test_batch_planner_is_deterministic_bounded_and_counts_prompt():
     articles = [_article(i, text="x" * 90) for i in range(5)]
     first = summaries.plan_batches(
-        articles, "p" * 80, max_articles=3, max_input_tokens=150
+        articles, "p" * 80, max_articles=3, max_input_tokens=300
     )
     second = summaries.plan_batches(
-        articles, "p" * 80, max_articles=3, max_input_tokens=150
+        articles, "p" * 80, max_articles=3, max_input_tokens=300
     )
     assert first == second
     assert [len(batch) for batch in first] == [2, 2, 1]
     assert all(
-        summaries.estimate_input_tokens("p" * 80, batch) <= 150 for batch in first
+        summaries.estimate_input_tokens("p" * 80, batch) <= 300 for batch in first
     )
 
     oversized = summaries.plan_batches(
         [_article(9, text="x" * 10_000)],
         "prompt",
         max_articles=2,
-        max_input_tokens=100,
+        max_input_tokens=220,
     )
     assert len(oversized) == 1 and len(oversized[0]) == 1
-    assert summaries.estimate_input_tokens("prompt", oversized[0]) <= 100
+    assert summaries.estimate_input_tokens("prompt", oversized[0]) <= 220
 
     with pytest.raises(ValueError, match="positive"):
         summaries.plan_batches([], "", max_articles=0, max_input_tokens=1)
@@ -201,14 +201,16 @@ def test_openrouter_request_has_ordered_fallbacks_caps_and_actual_model_cost(
     class Completions:
         def create(self, **kwargs):
             captured.update(kwargs)
+            name = kwargs["response_format"]["json_schema"]["name"]
+            content = (
+                json.dumps({"executive-summary": "Executive briefing"})
+                if name == "rss_morning_executive_summary"
+                else json.dumps(_payload([article]))
+            )
             return SimpleNamespace(
                 model="z-ai/glm-4.7-flash",
                 usage=SimpleNamespace(prompt_tokens=100, completion_tokens=20),
-                choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content=json.dumps(_payload([article])))
-                    )
-                ],
+                choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
             )
 
     class Client:
@@ -240,7 +242,8 @@ def test_openrouter_request_has_ordered_fallbacks_caps_and_actual_model_cost(
     }
     assert captured["response_format"]["json_schema"]["strict"] is True
     assert metrics == [
-        {"model": "z-ai/glm-4.7-flash", "input_tokens": 100, "output_tokens": 20}
+        {"model": "z-ai/glm-4.7-flash", "input_tokens": 100, "output_tokens": 20},
+        {"model": "z-ai/glm-4.7-flash", "input_tokens": 100, "output_tokens": 20},
     ]
     actual_model = metrics[0]["model"]
     actual_cost = summary_eval.score_result(
@@ -250,7 +253,7 @@ def test_openrouter_request_has_ordered_fallbacks_caps_and_actual_model_cost(
         0,
         summary_eval.CANDIDATES[actual_model],
     )
-    assert actual_cost["list_price_usd"] == pytest.approx(0.000014)
+    assert actual_cost["list_price_usd"] == pytest.approx(0.000028)
     assert "model" not in result and "usage" not in result
 
 
@@ -396,7 +399,7 @@ def test_reconciliation_sanitizes_every_field_restores_order_and_category():
     assert [item["category"] for item in parsed["summaries"]] == [
         a["category"] for a in articles
     ]
-    assert parsed["exec-summary"] == ["Executive"]
+    assert set(parsed) == {"summaries"}
     assert parsed["summaries"][0]["summary"] == {
         "title": "Title 1",
         "rank-reasoning": "Relevant",
@@ -406,16 +409,228 @@ def test_reconciliation_sanitizes_every_field_restores_order_and_category():
     }
 
 
+@pytest.mark.parametrize("parsed", [[], {}, {"executive-summary": "   "}])
+def test_executive_reconciliation_requires_one_nonempty_string(parsed):
+    with pytest.raises(summaries.ResponseValidationError):
+        summaries.reconcile_executive_response(parsed)
+    assert (
+        summaries.reconcile_executive_response(
+            {"executive-summary": " <b>Shared theme</b> "}
+        )
+        == "Shared theme"
+    )
+
+
+def test_executive_synthesis_uses_all_summaries_retries_and_caches():
+    articles = [_article(1), _article(2)]
+    executive_inputs = []
+    sleeps = []
+    writes = []
+    metrics = []
+    stats = MagicMock()
+
+    def executive_request(batch, input_text):
+        executive_inputs.append((batch, input_text))
+        if len(executive_inputs) == 1:
+            return summaries.ProviderResponse("not json", "v/m")
+        return summaries.ProviderResponse(
+            json.dumps({"executive-summary": "<p>One connected briefing.</p>"}),
+            "v/m",
+            11,
+            4,
+        )
+
+    settings = summaries.SummarySettings(
+        model="v/m", fallback_models=(), max_attempts=2
+    )
+    _, result = summaries.generate_summary(
+        articles,
+        "article prompt",
+        return_dict=True,
+        settings=settings,
+        provider_request=lambda batch, _input: summaries.ProviderResponse(
+            json.dumps(_payload(batch)), "v/m", 3, 2
+        ),
+        executive_request=executive_request,
+        sleeper=sleeps.append,
+        jitter=lambda: 0,
+        cache_get=lambda _key: None,
+        cache_put=lambda *args: writes.append(args),
+        metrics_sink=metrics.append,
+        stats=stats,
+    )
+
+    assert result["exec_summary"] == "One connected briefing."
+    assert len(executive_inputs) == 2
+    assert executive_inputs[0][0] == result["summaries"]
+    assert all(article["title"] in executive_inputs[0][1] for article in articles)
+    assert "Do not write a list" in executive_inputs[0][1]
+    assert sleeps == [1.0]
+    assert len(writes) == 2
+    assert json.loads(writes[-1][1]) == {"executive-summary": "One connected briefing."}
+    assert metrics[-1] == {"model": "v/m", "input_tokens": 11, "output_tokens": 4}
+    assert any(
+        call.kwargs == {"retries": 1} for call in stats.record_llm.call_args_list
+    )
+
+
+def test_executive_cache_hit_avoids_synthesis_request():
+    article = _article(1)
+    settings = summaries.SummarySettings(model="v/m", fallback_models=())
+    cached_batch = _payload([article])
+    batch_value = summaries.reconcile_response(cached_batch, [article])
+    batch_key = summaries.cache_identity(settings, "prompt", [article])
+    executive_key = summaries.executive_cache_identity(
+        settings, batch_value["summaries"]
+    )
+    stats = MagicMock()
+
+    _, result = summaries.generate_summary(
+        [article],
+        "prompt",
+        return_dict=True,
+        settings=settings,
+        provider_request=lambda *_: pytest.fail("batch cache must be used"),
+        executive_request=lambda *_: pytest.fail("executive cache must be used"),
+        cache_get=lambda key: {
+            batch_key: json.dumps(cached_batch),
+            executive_key: json.dumps(
+                {"executive-summary": "Cached coherent briefing"}
+            ),
+        }.get(key),
+        stats=stats,
+    )
+
+    assert result["exec_summary"] == "Cached coherent briefing"
+    assert stats.record_llm.call_args_list[-1].kwargs == {"exact_cache_hits": 1}
+
+    _, without_stats = summaries.generate_summary(
+        [article],
+        "prompt",
+        return_dict=True,
+        settings=settings,
+        provider_request=lambda *_: pytest.fail("batch cache must be used"),
+        executive_request=lambda *_: pytest.fail("executive cache must be used"),
+        cache_get=lambda key: {
+            batch_key: json.dumps(cached_batch),
+            executive_key: json.dumps(
+                {"executive-summary": "Cached coherent briefing"}
+            ),
+        }.get(key),
+    )
+    assert without_stats["exec_summary"] == "Cached coherent briefing"
+
+
+def test_executive_failures_do_not_discard_valid_article_summaries():
+    article = _article(1)
+    calls = []
+    writes = []
+
+    def fail_synthesis(_batch, _input):
+        calls.append(True)
+        raise TimeoutError()
+
+    result = json.loads(
+        summaries.generate_summary(
+            [article],
+            "prompt",
+            settings=summaries.SummarySettings(
+                model="v/m", fallback_models=(), max_attempts=2
+            ),
+            provider_request=lambda batch, _input: summaries.ProviderResponse(
+                json.dumps(_payload(batch)), "v/m"
+            ),
+            executive_request=fail_synthesis,
+            sleeper=lambda _delay: None,
+            cache_get=lambda _key: (_ for _ in ()).throw(OSError()),
+            cache_put=lambda *_args: writes.append(True),
+        )
+    )
+
+    assert len(result["summaries"]) == 1
+    assert "exec_summary" not in result
+    assert calls == [True, True]
+    assert writes == [True]
+
+
+def test_executive_rejects_unconfigured_model_and_cache_write_failure():
+    article = _article(1)
+    executive_calls = 0
+
+    def synthesis(_batch, _input):
+        nonlocal executive_calls
+        executive_calls += 1
+        model = "unconfigured/model" if executive_calls == 1 else "v/m"
+        return summaries.ProviderResponse(
+            json.dumps({"executive-summary": "Briefing"}), model
+        )
+
+    result = json.loads(
+        summaries.generate_summary(
+            [article],
+            "prompt",
+            settings=summaries.SummarySettings(
+                model="v/m", fallback_models=(), max_attempts=1
+            ),
+            provider_request=lambda batch, _input: summaries.ProviderResponse(
+                json.dumps(_payload(batch)), "v/m"
+            ),
+            executive_request=synthesis,
+        )
+    )
+    assert "exec_summary" not in result
+
+    result = json.loads(
+        summaries.generate_summary(
+            [article],
+            "prompt",
+            settings=summaries.SummarySettings(
+                model="v/m", fallback_models=(), max_attempts=1
+            ),
+            provider_request=lambda batch, _input: summaries.ProviderResponse(
+                json.dumps(_payload(batch)), "v/m"
+            ),
+            executive_request=synthesis,
+            cache_put=lambda *_args: (_ for _ in ()).throw(OSError()),
+        )
+    )
+    assert result["exec_summary"] == "Briefing"
+
+
+def test_executive_zero_attempt_limit_is_bounded():
+    article = _article(1)
+    settings = summaries.SummarySettings(
+        model="v/m", fallback_models=(), max_attempts=0
+    )
+    cached_batch = _payload([article])
+    batch_key = summaries.cache_identity(settings, "prompt", [article])
+
+    result = json.loads(
+        summaries.generate_summary(
+            [article],
+            "prompt",
+            settings=settings,
+            provider_request=lambda *_: pytest.fail("batch cache must be used"),
+            executive_request=lambda *_: pytest.fail("zero attempts must not call"),
+            cache_get=lambda key: (
+                json.dumps(cached_batch) if key == batch_key else None
+            ),
+        )
+    )
+    assert len(result["summaries"]) == 1
+    assert "exec_summary" not in result
+
+
 @pytest.mark.parametrize(
     "parsed,batch",
     [
         (_payload([_article(1)]), [{"url": ""}]),
         (_payload([_article(1), _article(1)]), [_article(1), _article(1)]),
         ({"summaries": [{"url": 1, "summary": {}}]}, [_article(1)]),
-        ({"summaries": [], "exec-summary": "bad"}, []),
+        ([], []),
     ],
 )
-def test_reconciliation_rejects_invalid_source_or_exec_identity(parsed, batch):
+def test_reconciliation_rejects_invalid_source_identity(parsed, batch):
     with pytest.raises(ValueError):
         summaries.reconcile_response(parsed, batch)
 
@@ -492,7 +707,7 @@ def test_exact_cache_identity_hits_and_all_semantic_inputs_miss():
     ]
     assert all(summaries.cache_identity(*variant) != identity for variant in variants)
 
-    cached = json.dumps(summaries.reconcile_response(_payload([article]), [article]))
+    cached = json.dumps(_payload([article]))
     calls = []
     result = summaries.generate_summary(
         [article],

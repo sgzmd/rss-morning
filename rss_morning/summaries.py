@@ -33,7 +33,7 @@ DEFAULT_OPENROUTER_FALLBACKS = (
     "z-ai/glm-4.7-flash",
     "openai/gpt-4o-mini",
 )
-SUMMARY_SCHEMA_VERSION = "2"
+SUMMARY_SCHEMA_VERSION = "4"
 REQUIRED_SUMMARY_FIELDS = (
     "title",
     "rank-reasoning",
@@ -42,20 +42,24 @@ REQUIRED_SUMMARY_FIELDS = (
     "now-what",
 )
 
+RELEVANCE_DECISION_INSTRUCTION = """For every submitted article, make an explicit relevance decision for the target audience described above.
+
+Return exactly one item for every submitted URL. Set `relevant` to true only when the article is directly useful or actionable for that audience; a pre-filter match or input category is only a candidate signal and must not override your judgment. When `relevant` is false, return an empty category and empty strings for every summary field. When it is true, provide the complete category and summary. Do not invent a security connection for an otherwise irrelevant article."""
+
 SUMMARY_JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["exec-summary", "summaries"],
+    "required": ["summaries"],
     "properties": {
-        "exec-summary": {"type": "array", "items": {"type": "string"}},
         "summaries": {
             "type": "array",
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["url", "category", "summary"],
+                "required": ["url", "relevant", "category", "summary"],
                 "properties": {
                     "url": {"type": "string"},
+                    "relevant": {"type": "boolean"},
                     "category": {"type": "string"},
                     "summary": {
                         "type": "object",
@@ -71,6 +75,19 @@ SUMMARY_JSON_SCHEMA = {
         },
     },
 }
+
+EXECUTIVE_SUMMARY_JSON_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["executive-summary"],
+    "properties": {
+        "executive-summary": {"type": "string", "minLength": 1},
+    },
+}
+
+EXECUTIVE_SUMMARY_PROMPT = """Write one coherent executive briefing that synthesizes the complete news update below.
+
+Use two to four short paragraphs. Connect the strongest shared themes, explain their overall implications, and identify the highest priorities. Do not write a list, recap every story one by one, add a heading, or mention article processing, filtering, or completeness. Do not invent facts. Return only the required structured JSON."""
 
 
 @dataclass(frozen=True)
@@ -144,13 +161,31 @@ def build_summary_input(articles: list[dict]) -> str:
     return json.dumps(prepared, ensure_ascii=False, separators=(",", ":"))
 
 
+def build_executive_summary_input(summaries: list[dict]) -> str:
+    """Prepare a summary-only synthesis input from validated results."""
+    prepared = [
+        {
+            "category": item.get("category", ""),
+            **{
+                field: item.get("summary", {}).get(field, "")
+                for field in REQUIRED_SUMMARY_FIELDS
+            },
+        }
+        for item in summaries
+    ]
+    return json.dumps(prepared, ensure_ascii=False, separators=(",", ":"))
+
+
 def _estimated_tokens(text: str) -> int:
     return max(1, math.ceil(len(text.encode("utf-8")) / 4))
 
 
 def estimate_input_tokens(system_prompt: str, articles: list[dict]) -> int:
     """Return the deterministic conservative token estimate used by planning."""
-    return _estimated_tokens(f"{system_prompt}\n\n{build_summary_input(articles)}")
+    return _estimated_tokens(
+        f"{system_prompt}\n\n{RELEVANCE_DECISION_INSTRUCTION}\n\n"
+        f"{build_summary_input(articles)}"
+    )
 
 
 def _truncate_oversized(article: dict, prompt: str, budget: int) -> dict:
@@ -238,6 +273,26 @@ def cache_identity(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def executive_cache_identity(settings: SummarySettings, summaries: list[dict]) -> str:
+    """Hash every semantic input to one exact executive synthesis response."""
+    semantic_settings = {
+        "kind": "executive-summary",
+        "provider": settings.provider,
+        "model_chain": [settings.model, *settings.fallback_models],
+        "routing": settings.routing,
+        "max_input_price_per_million": settings.max_input_price_per_million,
+        "max_output_price_per_million": settings.max_output_price_per_million,
+        "require_structured_output": settings.require_structured_output,
+        "schema_version": SUMMARY_SCHEMA_VERSION,
+        "prompt_hash": hashlib.sha256(EXECUTIVE_SUMMARY_PROMPT.encode()).hexdigest(),
+        "summaries": summaries,
+    }
+    encoded = json.dumps(
+        semantic_settings, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def reconcile_response(parsed: dict, batch: list[dict]) -> dict:
     """Validate exact identities and restore trusted source data and order."""
     if not isinstance(parsed, dict):
@@ -251,7 +306,7 @@ def reconcile_response(parsed: dict, batch: list[dict]) -> dict:
     source_by_url: dict[str, dict] = {str(article["url"]): article for article in batch}
     if len(source_by_url) != len(batch):
         raise ResponseValidationError("Submitted articles require unique nonempty URLs")
-    returned: dict[str, dict] = {}
+    decisions: dict[str, dict | None] = {}
     for item in raw_summaries:
         if not isinstance(item, dict) or not isinstance(item.get("summary"), dict):
             raise ResponseValidationError("LLM summary item must be an object")
@@ -260,9 +315,26 @@ def reconcile_response(parsed: dict, batch: list[dict]) -> dict:
             raise ResponseValidationError("LLM returned an unknown URL")
         if url not in source_by_url:
             raise ResponseValidationError("LLM returned an unknown URL")
-        if url in returned:
+        if url in decisions:
             raise ResponseValidationError("LLM returned a duplicate URL")
+        relevant = item.get("relevant")
+        if not isinstance(relevant, bool):
+            raise ResponseValidationError(
+                "LLM relevance decision must be true or false"
+            )
+        if not isinstance(item.get("category"), str):
+            raise ResponseValidationError("LLM category must be a string")
         raw_fields = item["summary"]
+        if not relevant:
+            if any(
+                not isinstance(raw_fields.get(field), str)
+                for field in REQUIRED_SUMMARY_FIELDS
+            ):
+                raise ResponseValidationError(
+                    "LLM irrelevant decision has invalid summary fields"
+                )
+            decisions[url] = None
+            continue
         clean_fields = {}
         for field in REQUIRED_SUMMARY_FIELDS:
             value = raw_fields.get(field)
@@ -271,12 +343,12 @@ def reconcile_response(parsed: dict, batch: list[dict]) -> dict:
                     f"LLM summary is missing required field {field}"
                 )
             clean_fields[field] = sanitize_html(value)
-        returned[url] = {
+        decisions[url] = {
             "url": url,
             "category": str(source_by_url[url].get("category") or ""),
             "summary": clean_fields,
         }
-    missing = [url for url in source_by_url if url not in returned]
+    missing = [url for url in source_by_url if url not in decisions]
     if missing:
         identifiers = [
             hashlib.sha256(str(url).encode()).hexdigest()[:12] for url in missing
@@ -285,15 +357,22 @@ def reconcile_response(parsed: dict, batch: list[dict]) -> dict:
             "LLM response omitted %d article(s): %s", len(missing), identifiers
         )
         raise ResponseValidationError("LLM response omitted submitted URLs")
-    exec_summary = parsed.get("exec-summary", [])
-    if not isinstance(exec_summary, list) or any(
-        not isinstance(x, str) for x in exec_summary
-    ):
-        raise ResponseValidationError("LLM exec-summary must be a list of strings")
-    return {
-        "exec-summary": [sanitize_html(item) for item in exec_summary],
-        "summaries": [returned[str(article["url"])] for article in batch],
-    }
+    retained = []
+    for article in batch:
+        decision = decisions[str(article["url"])]
+        if decision is not None:
+            retained.append(decision)
+    return {"summaries": retained}
+
+
+def reconcile_executive_response(parsed: dict) -> str:
+    """Validate and sanitize one coherent executive summary."""
+    if not isinstance(parsed, dict):
+        raise ResponseValidationError("Executive summary response must be an object")
+    value = parsed.get("executive-summary")
+    if not isinstance(value, str) or not value.strip():
+        raise ResponseValidationError("Executive summary must be a nonempty string")
+    return sanitize_html(value).strip()
 
 
 def maximum_provider_attempts(
@@ -338,21 +417,27 @@ def _usage_value(usage: Any, *names: str) -> int:
     return 0
 
 
-def _gemini_schema() -> Any:
+def _gemini_schema(*, executive: bool = False) -> Any:
+    if executive:
+        return types.Schema(
+            type=types.Type.OBJECT,
+            required=["executive-summary"],
+            properties={
+                "executive-summary": types.Schema(type=types.Type.STRING),
+            },
+        )
     return types.Schema(
         type=types.Type.OBJECT,
-        required=["exec-summary", "summaries"],
+        required=["summaries"],
         properties={
-            "exec-summary": types.Schema(
-                type=types.Type.ARRAY, items=types.Schema(type=types.Type.STRING)
-            ),
             "summaries": types.Schema(
                 type=types.Type.ARRAY,
                 items=types.Schema(
                     type=types.Type.OBJECT,
-                    required=["url", "category", "summary"],
+                    required=["url", "relevant", "category", "summary"],
                     properties={
                         "url": types.Schema(type=types.Type.STRING),
+                        "relevant": types.Schema(type=types.Type.BOOLEAN),
                         "category": types.Schema(type=types.Type.STRING),
                         "summary": types.Schema(
                             type=types.Type.OBJECT,
@@ -370,7 +455,7 @@ def _gemini_schema() -> Any:
 
 
 def _make_provider_request(
-    settings: SummarySettings, *, dry_run: bool
+    settings: SummarySettings, *, dry_run: bool, executive: bool = False
 ) -> Callable[[list[dict], str], ProviderResponse]:
     if settings.provider == "gemini":
         if genai is None or types is None:
@@ -392,7 +477,7 @@ def _make_provider_request(
             ]
             config = types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=_gemini_schema(),
+                response_schema=_gemini_schema(executive=executive),
                 http_options=types.HttpOptions(
                     timeout=int(settings.request_timeout_seconds * 1000)
                 ),
@@ -421,9 +506,17 @@ def _make_provider_request(
             response_format={
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "rss_morning_summary",
+                    "name": (
+                        "rss_morning_executive_summary"
+                        if executive
+                        else "rss_morning_summary"
+                    ),
                     "strict": True,
-                    "schema": SUMMARY_JSON_SCHEMA,
+                    "schema": (
+                        EXECUTIVE_SUMMARY_JSON_SCHEMA
+                        if executive
+                        else SUMMARY_JSON_SCHEMA
+                    ),
                 },
             },
             temperature=0,
@@ -490,6 +583,7 @@ def generate_summary(
     *,
     settings: SummarySettings | None = None,
     provider_request: Callable[[list[dict], str], ProviderResponse] | None = None,
+    executive_request: Callable[[list[dict], str], ProviderResponse] | None = None,
     sleeper: Callable[[float], None] = time.sleep,
     jitter: Callable[[], float] = random.random,
     cache_get: Callable[[str], str | None] | None = None,
@@ -504,6 +598,11 @@ def generate_summary(
         return (rendered, empty) if return_dict else rendered
     resolved = _settings_from_legacy(settings, provider, model, batch_size)
     request = provider_request or _make_provider_request(resolved, dry_run=dry_run)
+    synthesis_request = executive_request
+    if synthesis_request is None and provider_request is None:
+        synthesis_request = _make_provider_request(
+            resolved, dry_run=dry_run, executive=True
+        )
     batches = plan_batches(
         articles,
         system_prompt,
@@ -512,14 +611,17 @@ def generate_summary(
     )
     if stats is not None:
         stats.record_llm(
-            planned_batches=len(batches),
+            planned_batches=len(batches) + int(synthesis_request is not None),
             submitted_token_estimate=sum(
                 estimate_input_tokens(system_prompt, batch) for batch in batches
             ),
         )
     if dry_run:
         for index, batch in enumerate(batches, start=1):
-            input_text = f"{system_prompt}\n\n{build_summary_input(batch)}"
+            input_text = (
+                f"{system_prompt}\n\n{RELEVANCE_DECISION_INSTRUCTION}\n\n"
+                f"{build_summary_input(batch)}"
+            )
             logger.info("DRY RUN: Prepared payload for batch %d.", index)
             logger.debug("DRY RUN: LLM request payload: %s", input_text)
         logger.info("DRY RUN: skipping API call.")
@@ -528,7 +630,6 @@ def generate_summary(
         return (rendered, result) if return_dict else rendered
 
     combined: list[dict] = []
-    exec_summaries: list[str] = []
 
     def process(batch: list[dict], depth: int) -> None:
         key = cache_identity(resolved, system_prompt, batch)
@@ -538,7 +639,6 @@ def generate_summary(
                 if cached:
                     valid = reconcile_response(json.loads(cached), batch)
                     combined.extend(valid["summaries"])
-                    exec_summaries.extend(valid["exec-summary"])
                     if stats is not None:
                         stats.record_llm(exact_cache_hits=1)
                     return
@@ -548,7 +648,10 @@ def generate_summary(
         last_error: Exception | None = None
         for attempt in range(resolved.max_attempts):
             try:
-                input_text = f"{system_prompt}\n\n{build_summary_input(batch)}"
+                input_text = (
+                    f"{system_prompt}\n\n{RELEVANCE_DECISION_INSTRUCTION}\n\n"
+                    f"{build_summary_input(batch)}"
+                )
                 logger.debug(
                     "%s request prepared for %d article(s)",
                     resolved.provider,
@@ -570,7 +673,6 @@ def generate_summary(
                     ) from exc
                 valid = reconcile_response(parsed, batch)
                 combined.extend(valid["summaries"])
-                exec_summaries.extend(valid["exec-summary"])
                 if stats is not None:
                     stats.record_llm(
                         provider_input_tokens=response.input_tokens,
@@ -589,7 +691,7 @@ def generate_summary(
                         cache_put(
                             key,
                             json.dumps(
-                                valid, ensure_ascii=False, separators=(",", ":")
+                                parsed, ensure_ascii=False, separators=(",", ":")
                             ),
                         )
                     except Exception:
@@ -616,8 +718,97 @@ def generate_summary(
         process(batch, 0)
 
     final: dict = {"summaries": combined}
-    if exec_summaries:
-        final["exec_summary"] = "\n".join(exec_summaries)
+    if combined and synthesis_request is not None:
+        key = executive_cache_identity(resolved, combined)
+        executive_summary: str | None = None
+        if resolved.cache_enabled and cache_get:
+            try:
+                cached = cache_get(key)
+                if cached:
+                    executive_summary = reconcile_executive_response(json.loads(cached))
+                    if stats is not None:
+                        stats.record_llm(exact_cache_hits=1)
+            except Exception:
+                logger.warning("Ignoring unreadable executive summary cache entry")
+
+        if executive_summary is None:
+            input_text = (
+                f"{EXECUTIVE_SUMMARY_PROMPT}\n\n"
+                f"{build_executive_summary_input(combined)}"
+            )
+            if stats is not None:
+                stats.record_llm(submitted_token_estimate=_estimated_tokens(input_text))
+            last_error: Exception | None = None
+            for attempt in range(resolved.max_attempts):
+                try:
+                    logger.debug(
+                        "%s executive synthesis request prepared for %d summary item(s)",
+                        resolved.provider,
+                        len(combined),
+                    )
+                    logger.debug(
+                        "%s executive synthesis request payload: %s",
+                        resolved.provider,
+                        input_text,
+                    )
+                    if stats is not None:
+                        stats.record_llm(provider_calls=1)
+                    response = synthesis_request(combined, input_text)
+                    if response.model not in {
+                        resolved.model,
+                        *resolved.fallback_models,
+                    }:
+                        raise ValueError(
+                            "Provider returned a model outside the configured chain"
+                        )
+                    try:
+                        parsed = json.loads(response.text)
+                    except json.JSONDecodeError as exc:
+                        raise ResponseValidationError(
+                            "Executive summary response is not valid JSON"
+                        ) from exc
+                    executive_summary = reconcile_executive_response(parsed)
+                    if stats is not None:
+                        stats.record_llm(
+                            provider_input_tokens=response.input_tokens,
+                            provider_output_tokens=response.output_tokens,
+                        )
+                    if metrics_sink:
+                        metrics_sink(
+                            {
+                                "model": response.model,
+                                "input_tokens": response.input_tokens,
+                                "output_tokens": response.output_tokens,
+                            }
+                        )
+                    if resolved.cache_enabled and cache_put:
+                        try:
+                            cache_put(
+                                key,
+                                json.dumps(
+                                    {"executive-summary": executive_summary},
+                                    ensure_ascii=False,
+                                    separators=(",", ":"),
+                                ),
+                            )
+                        except Exception:
+                            logger.warning("Failed to write executive summary cache")
+                    break
+                except Exception as exc:  # noqa: BLE001 - provider boundary
+                    last_error = exc
+                    if not _is_transient(exc) or attempt + 1 >= resolved.max_attempts:
+                        break
+                    if stats is not None:
+                        stats.record_llm(retries=1)
+                    sleeper(_retry_delay(exc, attempt, jitter))
+            if executive_summary is None:
+                logger.warning(
+                    "Executive synthesis failed after bounded attempts: %s",
+                    type(last_error).__name__,
+                )
+
+        if executive_summary:
+            final["exec_summary"] = executive_summary
     rendered = json.dumps(final, ensure_ascii=False, indent=2)
     if not combined:
         logger.warning("No summaries were generated from any batch.")

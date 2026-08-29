@@ -80,8 +80,9 @@ make check
 ```
 
 Without summaries, stdout is a JSON list of articles. With summaries enabled, it
-is an object containing `summaries` and, when supplied by the LLM, `exec_summary`.
-Operational logs are written to stderr.
+is an object containing `summaries` and, when synthesis succeeds, a single
+coherent `exec_summary` string for the complete update. Operational logs are
+written to stderr.
 
 ## Configuration and credentials
 
@@ -201,10 +202,16 @@ timeout, bounded attempts/split depth, and exact-batch caching. Direct Gemini is
 available only when explicitly selected.
 
 Failed transient requests are retried with bounded backoff, then multi-article
-batches are split up to the configured depth. Returned URLs must exactly match
-the submitted batch, required fields must be complete, and only fully validated
-responses are cached. Provider model and usage data are retained for internal
-cost metrics and do not change stdout JSON.
+batches are split up to the configured depth. The model must return one explicit
+boolean relevance decision for every submitted URL. Irrelevant decisions are
+excluded locally; relevant decisions require complete summary fields, and only
+fully validated responses are cached. After all relevant article summaries are
+assembled, one final bounded, cacheable model request synthesizes them into a
+short coherent executive briefing; it does not concatenate per-batch or per-story
+notes. If that final
+synthesis fails, the validated article summaries are still returned. Provider
+model and usage data are retained for internal cost metrics and do not change
+stdout JSON.
 
 At INFO level, each run emits content-free operational metrics to stderr: feed
 success/failure and deduplication counts; article, embedding, and exact-LLM cache
