@@ -60,9 +60,9 @@ def test_live_cli_pipeline_fakes_only_email_delivery(monkeypatch, tmp_path):
         """\
 Summarize every supplied article. Do not omit any article. Preserve each input URL
 and category exactly.
-Return an exec-summary array and a summaries array. For every summary include URL,
-category, and a nested summary with title, rank-reasoning, what, so-what, and
-now-what. Keep every field concise and use plain text.
+Return a summaries array. For every summary include URL, category, and a nested
+summary with title, rank-reasoning, what, so-what, and now-what. Keep every field
+concise and use plain text.
 """,
         encoding="utf-8",
     )

@@ -84,10 +84,10 @@ def test_summary_metrics_count_planning_retries_splits_cache_and_usage(monkeypat
             raise ProviderError(429)
         item = batch[0]
         payload = {
-            "exec-summary": [],
             "summaries": [
                 {
                     "url": item["url"],
+                    "relevant": True,
                     "category": "A",
                     "summary": {
                         "title": "t",
@@ -131,10 +131,10 @@ def test_summary_metrics_count_planning_retries_splits_cache_and_usage(monkeypat
 
     cached_stats = RunStats(clock=Clock())
     cached_payload = {
-        "exec-summary": [],
         "summaries": [
             {
                 "url": articles[0]["url"],
+                "relevant": True,
                 "category": "A",
                 "summary": {
                     "title": "t",
