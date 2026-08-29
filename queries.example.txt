@@ -7,3 +7,11 @@ Innovations in renewable energy storage technology
 Breakthroughs in medical AI diagnostics and patient care
 Supply chain resilience strategies for global manufacturers
 Financial fraud trends targeting online marketplaces
+Workforce identity provider vulnerabilities, session theft, and MFA bypass
+Privileged access, service account, and machine identity compromise
+Endpoint detection evasion and actively exploited Windows or macOS vulnerabilities
+SaaS administrator takeover and malicious OAuth application campaigns
+Cloud IAM privilege escalation and exposed workload credentials
+Actively exploited firewall, VPN, secure gateway, and network appliance vulnerabilities
+Enterprise email compromise, adversary-in-the-middle phishing, and mailbox token theft
+Security tooling supply chain incidents and actionable enterprise mitigations

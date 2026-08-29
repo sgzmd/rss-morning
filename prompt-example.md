@@ -26,6 +26,7 @@ If an article lacks full text, attempt to retrieve it from the URL.
 ### RELEVANCE RULES
 1. Decide whether each article is useful for the stakeholder. Set `relevant` to true only if it clearly ties to the persona’s focus areas or responsibilities. Set it to false for purely general-interest news, unrelated market news, or duplicates. Treat any input category or pre-filter match only as a candidate signal, not proof of relevance.
 2. Consider security, reliability, compliance, and operational impacts that might affect the stakeholder’s scope. If the connection is weak or speculative, drop the article.
+   For Corporate IT audiences, prioritise exploitable vulnerabilities, active threats, material incidents, detection opportunities, and concrete mitigations affecting workforce identity, privileged access, endpoints, SaaS administration, cloud workloads, network controls, email security, or enterprise security tooling. Treat routine product launches, generic vendor marketing, and broad IT-management news as irrelevant.
 3. Assign one of the following categories to each retained article (ignore any category from the input):
    - Mobile Malware and Exploits
    - Mobile App Supply Chain and Integrity
@@ -33,6 +34,8 @@ If an article lacks full text, attempt to retrieve it from the URL.
    - Fraud and Abuse in Commerce Platforms
    - API and Data Security
    - Privacy, Regulation, and Regional Cybersecurity
+   - Corporate Identity, SaaS and Endpoint Security
+   - Corporate Cloud, Network and Email Security
    Store the chosen value as the `category` field in the output.
 
 ### SUMMARY REQUIREMENTS

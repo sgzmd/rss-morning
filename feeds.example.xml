@@ -25,15 +25,27 @@
         <outline text="Account and Identity Specialists" title="Account and Identity Specialists">
             <outline type="rss" text="Troy Hunt" xmlUrl="https://www.troyhunt.com/rss/"
                 htmlUrl="https://www.troyhunt.com" />
-            <outline type="rss" text="Okta Security Blog"
-                xmlUrl="https://www.okta.com/blog/category/security/feed/"
-                htmlUrl="https://www.okta.com/blog/" />
+            <outline type="rss" text="Okta Threat Intelligence"
+                xmlUrl="https://www.okta.com/blog/threat-intelligence.rss"
+                htmlUrl="https://www.okta.com/blog/threat-intelligence/" />
             <outline type="rss" text="Google Security Blog"
                 xmlUrl="https://feeds.feedburner.com/GoogleOnlineSecurityBlog"
                 htmlUrl="https://security.googleblog.com" />
             <outline type="rss" text="Microsoft Security Blog"
                 xmlUrl="https://www.microsoft.com/security/blog/feed/"
                 htmlUrl="https://www.microsoft.com/security/blog/" />
+        </outline>
+        <outline text="Enterprise Security and Threat Intelligence"
+            title="Enterprise Security and Threat Intelligence">
+            <outline type="rss" text="CrowdStrike Blog"
+                xmlUrl="https://www.crowdstrike.com/blog/feed/"
+                htmlUrl="https://www.crowdstrike.com/en-us/blog/" />
+            <outline type="rss" text="Google Threat Intelligence"
+                xmlUrl="https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v"
+                htmlUrl="https://cloud.google.com/blog/topics/threat-intelligence" />
+            <outline type="rss" text="AWS Security Blog"
+                xmlUrl="https://aws.amazon.com/blogs/security/feed/"
+                htmlUrl="https://aws.amazon.com/blogs/security/" />
         </outline>
         <outline text="Community and High Volume (Early Signals)"
             title="Community and High Volume (Early Signals)">
