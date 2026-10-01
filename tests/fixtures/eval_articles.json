@@ -1,0 +1,65 @@
+[
+  {
+    "title": "New Cisco SD-WAN zero-day exploited in-the-wild (CVE-2026-76504)",
+    "summary": "Cisco revealed attackers have exploited a vulnerability in its SD-WAN solution in zero-day attacks affecting Catalyst SD-WAN Manager.",
+    "category": "API and Data Security",
+    "expected_decision": "KEEP",
+    "expected_area": "corporate_it"
+  },
+  {
+    "title": "Nigeria Arrests RaccoonO365 Phishing Developer Linked to Microsoft 365 Attacks",
+    "summary": "Authorities arrested the developer behind the RaccoonO365 PhaaS scheme targeting corporate email accounts and credentials.",
+    "category": "Premium Security News",
+    "expected_decision": "KEEP",
+    "expected_area": "account_security"
+  },
+  {
+    "title": "New critical WatchGuard Firebox firewall flaw exploited in attacks",
+    "summary": "WatchGuard warned customers to patch a critical remote code execution vulnerability in its Firebox enterprise firewalls.",
+    "category": "Premium Security News",
+    "expected_decision": "KEEP",
+    "expected_area": "corporate_it"
+  },
+  {
+    "title": "The vulnerabilities AI finds are the ones attackers want",
+    "summary": "Attackers exploited a flaw found by an AI research agent within four days of disclosure, showing rapid weaponization.",
+    "category": "API and Data Security",
+    "expected_decision": "KEEP",
+    "expected_area": "ai_security"
+  },
+  {
+    "title": "Hong Kong power outages hit Ho Man Tin, disrupting 1,000 households and hotel",
+    "summary": "Equipment malfunction caused power cuts in Kowloon, lasting over four hours overnight.",
+    "category": "General Tech",
+    "expected_decision": "DROP",
+    "expected_area": "other"
+  },
+  {
+    "title": "Need helpppp!!!",
+    "summary": "I am struggling with my computer science homework on algorithms and need someone to explain sorting.",
+    "category": "Community and High Volume",
+    "expected_decision": "DROP",
+    "expected_area": "other"
+  },
+  {
+    "title": "Graduation Project Idea",
+    "summary": "Looking for advice on a final year university project topic in web design or game dev.",
+    "category": "Community and High Volume",
+    "expected_decision": "DROP",
+    "expected_area": "other"
+  },
+  {
+    "title": "AI Agents Are Now Emailing Me with Their Security Concerns",
+    "summary": "Experimenting with autonomous LLM agents that monitor log feeds and email summaries of anomalous events.",
+    "category": "Community and High Volume",
+    "expected_decision": "MAYBE",
+    "expected_area": "ai_security"
+  },
+  {
+    "title": "Instacart to refund $60M over deceptive subscription tactics",
+    "summary": "The FTC reached a settlement with delivery app Instacart over automatic subscription billing practices.",
+    "category": "Legal and Regulatory",
+    "expected_decision": "DROP",
+    "expected_area": "other"
+  }
+]

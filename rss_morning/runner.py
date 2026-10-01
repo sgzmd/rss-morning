@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -278,6 +279,25 @@ def execute(config: RunConfig) -> RunResult:
 
     if config.save_articles_path:
         _save_articles_to_file(config.save_articles_path, articles)
+
+    # Temporary Phase 2 shadow mode evaluation (to be made authoritative in Phase 3)
+    if os.environ.get("JEV_SHADOW_MODE") == "1" and os.environ.get("TYPESAFE_API_KEY"):
+        try:
+            from .classify import classify_entries
+
+            logger.info(
+                "JEV SHADOW MODE: Running shadow classification on %d articles",
+                len(articles),
+            )
+            shadow_results = classify_entries(articles[:20])
+            plausible_count = sum(1 for _, dec in shadow_results if dec.is_plausible)
+            logger.info(
+                "JEV SHADOW MODE: %d of %d evaluated articles judged plausible",
+                plausible_count,
+                len(shadow_results),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("JEV SHADOW MODE encountered error: %s", exc)
 
     if config.pre_filter:
         logger.info("Applying embedding pre-filter to %d articles", len(articles))
