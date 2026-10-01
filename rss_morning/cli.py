@@ -139,8 +139,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             system_prompt=app_config.prompt,
             extractor=app_config.extractor,
             concurrency=app_config.concurrency,
-            database_enabled=app_config.database.enabled,
-            database_connection_string=app_config.database.connection_string,
             llm_dry_run=args.llm_dry_run,
             llm_model=app_config.llm_model,
         )
@@ -164,8 +162,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         config_dict = dataclasses.asdict(config)
         if config_dict.get("system_prompt"):
             config_dict["system_prompt"] = "***MASKED***"
-        if config_dict.get("database_connection_string"):
-            config_dict["database_connection_string"] = "***MASKED***"
 
         logger.info("Active Configuration:\n%s", pprint.pformat(config_dict))
 

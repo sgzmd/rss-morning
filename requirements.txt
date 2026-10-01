@@ -82,7 +82,6 @@ shellingham==1.5.4
 six==1.17.0
 sniffio==1.3.1
 soupsieve==2.8
-SQLAlchemy==2.0.45
 sympy==1.14.0
 tenacity==9.1.2
 tld==0.13.1

@@ -153,7 +153,7 @@ def test_summaries_never_logs_full_api_key(caplog, monkeypatch):
 
 
 def test_cli_active_config_logging_masks_secrets(caplog):
-    """Verify that logging active config in CLI masks system_prompt and DB credentials."""
+    """Verify that logging active config in CLI masks system_prompt."""
 
     config = runner.RunConfig(
         feeds_file="feeds.xml",
@@ -161,7 +161,6 @@ def test_cli_active_config_logging_masks_secrets(caplog):
         max_age_hours=24.0,
         summary=False,
         system_prompt="TOP_SECRET_PROMPT_INSTRUCTIONS",
-        database_connection_string="postgresql://user:supersecretpass@localhost/db",
     )
 
     with caplog.at_level(logging.INFO):
@@ -171,13 +170,10 @@ def test_cli_active_config_logging_masks_secrets(caplog):
         config_dict = dataclasses.asdict(config)
         if config_dict.get("system_prompt"):
             config_dict["system_prompt"] = "***MASKED***"
-        if config_dict.get("database_connection_string"):
-            config_dict["database_connection_string"] = "***MASKED***"
 
         logging.getLogger("rss_morning.cli").info(
             "Active Configuration:\n%s", config_dict
         )
 
     assert "TOP_SECRET_PROMPT_INSTRUCTIONS" not in caplog.text
-    assert "supersecretpass" not in caplog.text
     assert "***MASKED***" in caplog.text
