@@ -28,29 +28,8 @@ WATCH:
   Sources: {{ item.get("source_urls") | join(", ") }}
 
 {% endfor -%}
-----------------------------------------
-
 {% endif %}
-{% if payload.get("exec_summary") %}
-Executive Summary:
-{{ payload.get("exec_summary") }}
-
-----------------------------------------
-
-{% endif %}
-{% set summaries = payload.get("summaries") or [] %}
-{% if summaries %}
-{% for item in summaries -%}
-Title: {{ (item.get("summary") or {}).get("title") or item.get("url") or "Update " ~ loop.index }}
-{% set summary = item.get("summary") or {} -%}
-{% if item.get("image") %}Image: {{ item.get("image") }}{% endif -%}
-{% if summary.get("what") %}What: {{ summary.get("what") }}{% endif -%}
-{% if summary.get("so-what") %}So What: {{ summary.get("so-what") }}{% endif -%}
-{% if summary.get("now-what") %}Now What: {{ summary.get("now-what") }}{% endif -%}
-{% if item.get("url") %}Link: {{ item.get("url") }}{% endif -%}
-
-{% endfor -%}
-{% else %}
+{% if not payload.get("overview") and not payload.get("attention") and not payload.get("watch") %}
 No relevant articles identified.
 {% endif %}
 {% else %}
