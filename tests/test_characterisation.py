@@ -92,17 +92,17 @@ def test_article_extraction_failure_isolation():
 def test_renderer_escapes_malicious_html():
     """Verify HTML email rendering escapes unsafe tags in titles and text."""
     payload = {
-        "summaries": [
+        "overview": "Overview with safe text",
+        "attention": [
             {
-                "url": "https://example.com/safe",
-                "category": "Test<script>alert(1)</script>",
-                "summary": {
-                    "title": "Malicious <script>alert('xss')</script> Title",
-                    "what": "Body with <b>bold</b> and <img src=x onerror=alert(2)>",
-                    "so-what": "Impact",
-                },
+                "title": "Malicious <script>alert('xss')</script> Title",
+                "summary": "Body with <b>bold</b> and <img src=x onerror=alert(2)>",
+                "source_urls": ["https://example.com/safe"],
+                "primary_area": "Test<script>alert(1)</script>",
+                "urgency_rationale": "Rationale",
             }
-        ]
+        ],
+        "watch": [],
     }
 
     html = renderers.build_email_html(payload, is_summary=True)

@@ -6,10 +6,9 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>The Sentinel - Security Brief Email</title>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif:ital,wght@0,400;0,700;1,400&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
         rel="stylesheet" />
     <style>
-        /* RESET STYLES */
         body {
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
@@ -39,17 +38,6 @@
                 width: 100% !important;
             }
 
-            .desktop-thumbnail {
-                display: none !important;
-            }
-
-            .mobile-thumbnail {
-                display: block !important;
-                width: 100% !important;
-                height: auto !important;
-                margin-bottom: 16px !important;
-            }
-
             .header-flex {
                 flex-direction: column !important;
                 align-items: flex-start !important;
@@ -58,16 +46,6 @@
 
             .header-flex>div {
                 text-align: left !important;
-                width: 100% !important;
-            }
-        }
-
-        @media screen and (max-width: 600px) and (-webkit-min-device-pixel-ratio: 2) {
-
-            /* Styles for High-Res Mobile (Mostly Android & iPhone) */
-            .content-wrapper {
-                /*        padding-left: 0 !important;
-        padding-right: 0 !important; */
                 width: 100% !important;
             }
         }
@@ -100,33 +78,25 @@
                         </div>
                     </div>
 
-                    <!-- Executive Summary -->
-                    {% if is_summary and not fallback and payload.get("exec_summary") %}
-                    <div style="margin-bottom: 32px;">
-                        <h3
-                            style="font-size: 14px; font-weight: 700; color: #000000; text-transform: uppercase; margin: 0 0 12px 0; letter-spacing: 0.05em;">
-                            Executive Summary</h3>
-                        <div style="font-size: 16px; line-height: 1.6; color: #333333;">
-                            {{ payload.get("exec_summary") | markdown }}
-                        </div>
-                    </div>
-                    <div style="margin-bottom: 48px;"></div>
-                    {% endif %}
+                    {% if fallback %}
+                    <pre
+                        style="background-color: #f5f5f5; padding: 16px; border-radius: 4px; overflow-x: auto; font-size: 13px; font-family: monospace; color: #333333;">{{ fallback }}</pre>
+                    {% elif is_summary %}
 
                     <!-- Overview -->
-                    {% if is_summary and not fallback and payload.get("overview") %}
+                    {% if payload.get("overview") %}
                     <div style="margin-bottom: 32px; background-color: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #0052cc;">
                         <h3
                             style="font-size: 14px; font-weight: 700; color: #000000; text-transform: uppercase; margin: 0 0 8px 0; letter-spacing: 0.05em;">
                             Today's Overview</h3>
                         <p style="font-size: 16px; line-height: 1.6; color: #333333; margin: 0;">
-                            {{ payload.get("overview") }}
+                            {{ payload.get("overview") | nl2br }}
                         </p>
                     </div>
                     {% endif %}
 
                     <!-- Attention Section -->
-                    {% if is_summary and not fallback and payload.get("attention") %}
+                    {% if payload.get("attention") %}
                     <div style="margin-bottom: 32px;">
                         <h2 style="font-size: 18px; font-weight: 700; color: #d93025; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #d93025; padding-bottom: 6px;">
                             Requires Attention
@@ -135,7 +105,7 @@
                         <div style="margin-bottom: 24px; padding: 16px; background-color: #fff8f7; border: 1px solid #fce8e6; border-radius: 6px;">
                             <span style="font-size: 11px; font-weight: 700; color: #d93025; text-transform: uppercase;">{{ item.get("primary_area") }}</span>
                             <h3 style="font-size: 18px; font-weight: 700; margin: 6px 0 8px 0; color: #111111;">{{ item.get("title") }}</h3>
-                            <p style="font-size: 15px; line-height: 1.5; color: #333333; margin: 0 0 10px 0;">{{ item.get("summary") }}</p>
+                            <p style="font-size: 15px; line-height: 1.5; color: #333333; margin: 0 0 10px 0;">{{ item.get("summary") | nl2br }}</p>
                             <p style="font-size: 14px; line-height: 1.5; color: #555555; margin: 0 0 10px 0;"><strong>Why it matters:</strong> {{ item.get("urgency_rationale") }}</p>
                             {% if item.get("source_urls") %}
                             <div style="font-size: 13px; color: #666666;">
@@ -151,7 +121,7 @@
                     {% endif %}
 
                     <!-- Watch Section -->
-                    {% if is_summary and not fallback and payload.get("watch") %}
+                    {% if payload.get("watch") %}
                     <div style="margin-bottom: 32px;">
                         <h2 style="font-size: 18px; font-weight: 700; color: #5f6368; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #dadce0; padding-bottom: 6px;">
                             Watchlist & Emerging Items
@@ -160,7 +130,7 @@
                         <div style="margin-bottom: 20px; padding: 12px 16px; border-left: 3px solid #dadce0; background-color: #fafafa;">
                             <span style="font-size: 11px; font-weight: 700; color: #5f6368; text-transform: uppercase;">{{ item.get("primary_area") }}</span>
                             <h4 style="font-size: 16px; font-weight: 600; margin: 4px 0 6px 0; color: #222222;">{{ item.get("title") }}</h4>
-                            <p style="font-size: 14px; line-height: 1.5; color: #444444; margin: 0 0 8px 0;">{{ item.get("summary") }}</p>
+                            <p style="font-size: 14px; line-height: 1.5; color: #444444; margin: 0 0 8px 0;">{{ item.get("summary") | nl2br }}</p>
                             {% if item.get("source_urls") %}
                             <div style="font-size: 13px; color: #666666;">
                                 Sources:
@@ -174,93 +144,39 @@
                     </div>
                     {% endif %}
 
-                    {% if fallback %}
-                    <pre
-                        style="background-color: #f5f5f5; padding: 16px; border-radius: 4px; overflow-x: auto; font-size: 13px; font-family: monospace; color: #333333;">{{ fallback }}</pre>
                     {% else %}
-                    <!-- Articles -->
-                    {% set articles = payload.get("summaries", []) if is_summary else payload %}
-
+                    <!-- Raw Articles (when summary is disabled) -->
+                    {% set articles = payload %}
                     {% for item in articles %}
-                    {% set article = item.get("summary", item) if is_summary else item %}
-                    {% set image = item.get("image") or article.get("image") %}
-                    {% set url = item.get("url") or article.get("url") %}
+                    {% set image = item.get("image") %}
+                    {% set url = item.get("url") %}
 
                     <div style="margin-bottom: 40px;">
-                        <!-- Category Tag -->
-                        {% if is_summary %}
-                        <div style="margin-bottom: 8px;">
-                            <span
-                                style="font-size: 11px; font-weight: 700; color: #0052cc; text-transform: uppercase; letter-spacing: 0.05em;">
-                                {{ item.get("category", "General") }}
-                            </span>
-                        </div>
-                        {% endif %}
-
-                        <!-- Title -->
-                        <h2
-                            style="font-size: 20px; font-weight: 700; color: #000000; line-height: 1.3; margin: 0 0 12px 0;">
+                        <h2 style="font-size: 18px; font-weight: 700; color: #000000; line-height: 1.3; margin: 0 0 10px 0;">
                             {% if url %}
-                            <a href="{{ url }}" style="color: #000000; text-decoration: none;">{{
-                                article.get("title") or url }}</a>
+                            <a href="{{ url }}" style="color: #000000; text-decoration: none;">{{ item.get("title") or url }}</a>
                             {% else %}
-                            {{ article.get("title") or url }}
+                            {{ item.get("title") or url }}
                             {% endif %}
                         </h2>
 
-                        <!-- Why It Matters -->
-                        {% if is_summary and article.get("rank-reasoning") %}
-                        <p
-                            style="font-size: 16px; color: #555555; margin: 0 0 16px 0; line-height: 1.5; font-style: italic;">
-                            <strong>Why it matters:</strong> {{ article.get("rank-reasoning") }}
-                        </p>
-                        {% endif %}
-
-                        <!-- Image (Mobile/Desktop Unified for Simplicity) -->
                         {% if image %}
-                        <div style="margin-bottom: 16px;">
+                        <div style="margin-bottom: 12px;">
                             <img src="{{ image }}" alt="Article Image"
                                 style="width: 100%; max-width: 100%; height: auto; border-radius: 4px; display: block;" />
                         </div>
                         {% endif %}
 
-                        <!-- Content -->
-                        <div style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-                            {% if is_summary %}
-                            {{ article.get("what") | markdown }}
-                            {% else %}
-                            {{ (article.get("summary") or article.get("text")) | nl2br }}
-                            {% endif %}
+                        <div style="font-size: 15px; line-height: 1.6; margin-bottom: 12px; color: #444444;">
+                            {{ (item.get("summary") or item.get("text")) | nl2br }}
                         </div>
 
-                        <!-- Impact & Action (Simple Indented Block) -->
-                        {% if is_summary %}
-                        <div style="margin-bottom: 12px;">
-                            <strong
-                                style="font-size: 12px; color: #666666; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 4px;">Impact</strong>
-                            <div style="font-size: 16px; line-height: 1.6; color: #333333;">{{ article.get("so-what") |
-                                markdown }}</div>
-                        </div>
+                        {% if url %}
                         <div>
-                            <strong
-                                style="font-size: 12px; color: #666666; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 4px;">Action
-                                Item</strong>
-                            <div style="font-size: 16px; line-height: 1.6; color: #333333;">{{ article.get("now-what") |
-                                markdown }}</div>
-                        </div>
-                        {% endif %}
-
-                        <!-- Read More Link -->
-                        <div style="margin-top: 12px;">
-                            <a href="{{ url }}"
-                                style="font-size: 14px; font-weight: 600; color: #0052cc; text-decoration: none;">
+                            <a href="{{ url }}" style="font-size: 13px; font-weight: 600; color: #0052cc; text-decoration: none;">
                                 Read more on {{ url | domain }} &#8594;
                             </a>
                         </div>
-
-                        <!-- Separator between articles -->
-                        {% if not loop.last %}
-                        <div style="margin-bottom: 56px;"></div>
                         {% endif %}
                     </div>
                     {% endfor %}
@@ -269,9 +185,8 @@
                     <!-- Footer -->
                     <div
                         style="border-top: 1px solid #eeeeee; padding-top: 24px; text-align: center; margin-top: 40px;">
-                        <p style="font-size: 12px; color: #888888; margin: 0 0 8px 0;">Daily RSS Digest | Internal Use
-                            Only</p>
-                        <p style="font-size: 12px; color: #aaaaaa; margin: 0;">&copy; 2025 Roman Kirillov</p>
+                        <p style="font-size: 12px; color: #888888; margin: 0 0 8px 0;">Daily RSS Digest | Internal Use Only</p>
+                        <p style="font-size: 12px; color: #aaaaaa; margin: 0;">&copy; 2026 Roman Kirillov</p>
                     </div>
 
                 </div>

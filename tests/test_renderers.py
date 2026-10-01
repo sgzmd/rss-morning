@@ -1,83 +1,110 @@
 from rss_morning import renderers
 
 
-def test_build_email_html_for_summary_payload():
+def test_build_email_html_for_edition_payload():
     payload = {
-        "summaries": [
+        "overview": "Calm morning with one critical advisory.",
+        "attention": [
             {
-                "url": "https://example.com/a",
-                "image": "https://example.com/image.jpg",
-                "category": "API and Data Security",
-                "summary": {
-                    "title": "Title",
-                    "what": "Thing",
-                    "so-what": "Impact",
-                    "now-what": "Next",
-                },
+                "title": "Critical Perimeter Auth Bypass",
+                "summary": "Vendors disclosed critical zero-day flaw.",
+                "source_urls": ["https://example.com/vpn-advisory"],
+                "primary_area": "corporate_it",
+                "urgency_rationale": "Active exploitation in the wild.",
             }
-        ]
+        ],
+        "watch": [
+            {
+                "title": "Emerging Phishing Trend",
+                "summary": "Novel technique using SVG files.",
+                "source_urls": ["https://example.com/phish"],
+                "primary_area": "fraud_abuse",
+            }
+        ],
     }
 
     html = renderers.build_email_html(payload, is_summary=True)
 
-    assert "API and Data Security" in html
-    assert "Impact" in html
-    assert "Read more on example.com" in html
-    assert 'src="https://example.com/image.jpg"' in html
+    assert "Calm morning with one critical advisory." in html
+    assert "Requires Attention" in html
+    assert "Critical Perimeter Auth Bypass" in html
+    assert "Active exploitation in the wild." in html
+    assert "corporate_it" in html
+    assert "Watchlist & Emerging Items" in html
+    assert "Emerging Phishing Trend" in html
+    assert "fraud_abuse" in html
+    assert "example.com" in html
 
 
-def test_build_email_text_for_articles_list():
-    payload = [
-        {
-            "title": "Example",
-            "summary": "Summary",
-            "text": "Body",
-            "url": "https://example.com",
-            "image": "https://example.com/hero.jpg",
-        }
-    ]
-
-    text = renderers.build_email_text(payload, is_summary=False)
-
-    assert "Example" in text
-    assert "Body" in text
-    assert "https://example.com/hero.jpg" in text
-
-
-def test_build_email_text_for_summary_includes_image():
+def test_build_email_text_for_edition_payload():
     payload = {
-        "summaries": [
+        "overview": "Calm morning with one critical advisory.",
+        "attention": [
             {
-                "url": "https://example.com/a",
-                "image": "https://example.com/image.jpg",
-                "summary": {
-                    "title": "Title",
-                    "what": "Thing",
-                },
+                "title": "Critical Perimeter Auth Bypass",
+                "summary": "Vendors disclosed critical zero-day flaw.",
+                "source_urls": ["https://example.com/vpn-advisory"],
+                "primary_area": "corporate_it",
+                "urgency_rationale": "Active exploitation in the wild.",
             }
-        ]
+        ],
+        "watch": [
+            {
+                "title": "Emerging Phishing Trend",
+                "summary": "Novel technique using SVG files.",
+                "source_urls": ["https://example.com/phish"],
+                "primary_area": "fraud_abuse",
+            }
+        ],
     }
 
     text = renderers.build_email_text(payload, is_summary=True)
 
-    assert "Image: https://example.com/image.jpg" in text
+    assert "Overview:" in text
+    assert "Calm morning with one critical advisory." in text
+    assert "ATTENTION:" in text
+    assert "Critical Perimeter Auth Bypass [corporate_it]" in text
+    assert "Why it matters: Active exploitation in the wild." in text
+    assert "WATCH:" in text
+    assert "Emerging Phishing Trend [fraud_abuse]" in text
 
 
-def test_build_email_html_includes_article_image():
+def test_build_email_html_for_raw_articles():
     payload = [
         {
-            "title": "Visual Story",
-            "summary": "Summary",
-            "text": "Excerpt",
-            "url": "https://example.com/story",
+            "title": "Raw Story",
+            "summary": "Raw summary",
+            "text": "Raw article text",
+            "url": "https://example.com/raw",
             "image": "https://example.com/hero.jpg",
         }
     ]
 
     html = renderers.build_email_html(payload, is_summary=False)
 
+    assert "Raw Story" in html
+    assert "Raw summary" in html
     assert 'src="https://example.com/hero.jpg"' in html
-    assert "Visual Story" in html
+    assert "Read more on example.com" in html
+
+
+def test_build_email_text_for_raw_articles():
+    payload = [
+        {
+            "title": "Raw Story",
+            "summary": "Raw summary",
+            "text": "Raw article text",
+            "url": "https://example.com/raw",
+            "image": "https://example.com/hero.jpg",
+        }
+    ]
+
+    text = renderers.build_email_text(payload, is_summary=False)
+
+    assert "Title: Raw Story" in text
+    assert "Summary: Raw summary" in text
+    assert "Image: https://example.com/hero.jpg" in text
+    assert "Link: https://example.com/raw" in text
 
 
 def test_build_email_html_handles_fallback():
@@ -88,31 +115,8 @@ def test_build_email_html_handles_fallback():
     assert "<pre" in html
 
 
-def test_build_email_html_includes_exec_summary():
-    payload = {
-        "exec_summary": "Top level summary.",
-        "summaries": [
-            {
-                "url": "https://example.com/a",
-                "summary": {
-                    "title": "Title",
-                    "what": "Thing",
-                },
-            }
-        ],
-    }
-
-    html = renderers.build_email_html(payload, is_summary=True)
-    assert "Top level summary." in html
-    assert "Executive Summary" in html
-
-
-def test_build_email_text_includes_exec_summary():
-    payload = {
-        "exec_summary": "Top level summary.",
-        "summaries": [],
-    }
-
-    text = renderers.build_email_text(payload, is_summary=True)
-    assert "Executive Summary:" in text
-    assert "Top level summary." in text
+def test_build_email_text_handles_fallback():
+    text = renderers.build_email_text(
+        payload="raw text", is_summary=False, fallback="raw text"
+    )
+    assert text.strip() == "raw text"
