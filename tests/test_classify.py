@@ -89,7 +89,7 @@ def test_classify_request_state_and_questions(monkeypatch):
         assert "criteria" in questions["is_relevant"]
 
         assert questions["primary_area"]["type"] == "choice"
-        assert "corporate_it" in questions["primary_area"]["criteria"]
+        assert "corporate_security" in questions["primary_area"]["criteria"]
         assert "other" in questions["primary_area"]["criteria"]
 
 
@@ -215,3 +215,70 @@ def test_eval_fixtures_data_structure():
     assert keep_count >= 3
     assert drop_count >= 3
     assert maybe_count >= 1
+
+
+def test_classify_asymmetric_area_thresholds(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ts-test-key")
+
+    from rss_morning.models import AreaConfig
+
+    areas = {
+        "mobile_security": AreaConfig(
+            key="mobile_security",
+            label="Mobile Security",
+            description="Mobile security",
+            threshold=0.40,
+        ),
+        "other": AreaConfig(
+            key="other",
+            label="Other",
+            description="Other",
+            threshold=0.75,
+        ),
+    }
+
+    # Case 1: mobile_security with prob 0.42 >= 0.40 threshold -> KEEP
+    resp_mobile = MagicMock()
+    resp_mobile.status_code = 200
+    resp_mobile.json.return_value = {
+        "answers": {
+            "is_relevant": {"type": "noul", "noul": 0.42},
+            "primary_area": {
+                "type": "choice",
+                "choice": "mobile_security",
+                "confidence": 0.90,
+            },
+        }
+    }
+
+    with patch("requests.post", return_value=resp_mobile):
+        decision = classify_entry(
+            {"title": "iOS Exploit"},
+            areas=areas,
+        )
+        assert decision.is_plausible is True
+        assert decision.effective_threshold == 0.40
+        assert decision.primary_area == "mobile_security"
+
+    # Case 2: other with prob 0.60 < 0.75 threshold -> DROP
+    resp_other = MagicMock()
+    resp_other.status_code = 200
+    resp_other.json.return_value = {
+        "answers": {
+            "is_relevant": {"type": "noul", "noul": 0.60},
+            "primary_area": {
+                "type": "choice",
+                "choice": "other",
+                "confidence": 0.85,
+            },
+        }
+    }
+
+    with patch("requests.post", return_value=resp_other):
+        decision = classify_entry(
+            {"title": "Routine CVE Patch"},
+            areas=areas,
+        )
+        assert decision.is_plausible is False
+        assert decision.effective_threshold == 0.75
+        assert decision.primary_area == "other"

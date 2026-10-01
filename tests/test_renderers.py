@@ -120,3 +120,99 @@ def test_build_email_text_handles_fallback():
         payload="raw text", is_summary=False, fallback="raw text"
     )
     assert text.strip() == "raw text"
+
+
+def test_prepare_sections_by_area():
+    from rss_morning.models import AreaConfig
+    from rss_morning.renderers import prepare_sections_by_area
+
+    areas = {
+        "mobile_security": AreaConfig(
+            key="mobile_security",
+            label="Mobile Security",
+            description="Mobile",
+            threshold=0.40,
+        ),
+        "corporate_security": AreaConfig(
+            key="corporate_security",
+            label="Corporate Security",
+            description="Corp",
+            threshold=0.45,
+        ),
+        "empty_area": AreaConfig(
+            key="empty_area",
+            label="Empty Area",
+            description="Empty",
+            threshold=0.50,
+        ),
+    }
+
+    payload = {
+        "attention": [
+            {
+                "title": "Corporate Zero-Day",
+                "summary": "Exploit in VPN",
+                "primary_area": "corporate_security",
+                "source_urls": ["https://corp.com"],
+            }
+        ],
+        "watch": [
+            {
+                "title": "iOS Malware",
+                "summary": "New Trojan",
+                "primary_area": "mobile_security",
+                "source_urls": ["https://mobile.com"],
+            }
+        ],
+    }
+
+    sections = prepare_sections_by_area(payload, areas)
+    # Order matches configured areas (mobile_security first, then corporate_security)
+    assert len(sections) == 2
+    assert sections[0]["key"] == "mobile_security"
+    assert sections[0]["label"] == "Mobile Security"
+    assert len(sections[0]["items"]) == 1
+    assert sections[0]["items"][0]["is_attention"] is False
+
+    assert sections[1]["key"] == "corporate_security"
+    assert sections[1]["label"] == "Corporate Security"
+    assert len(sections[1]["items"]) == 1
+    assert sections[1]["items"][0]["is_attention"] is True
+
+
+def test_build_email_html_and_text_with_configured_areas():
+    from rss_morning.models import AreaConfig
+
+    areas = {
+        "mobile_security": AreaConfig(
+            key="mobile_security",
+            label="Mobile Security",
+            description="Mobile",
+            threshold=0.40,
+        )
+    }
+
+    payload = {
+        "overview": "Overview of today",
+        "attention": [
+            {
+                "title": "Severe iOS Spyware",
+                "summary": "In-the-wild zero-click exploit",
+                "source_urls": ["https://example.com/ios"],
+                "primary_area": "mobile_security",
+                "urgency_rationale": "Actively used in attacks",
+            }
+        ],
+        "watch": [],
+    }
+
+    html = renderers.build_email_html(payload, is_summary=True, areas=areas)
+    assert "Mobile Security" in html
+    assert "Severe iOS Spyware" in html
+    assert "Requires Attention" in html
+    assert "Actively used in attacks" in html
+
+    text = renderers.build_email_text(payload, is_summary=True, areas=areas)
+    assert "=== MOBILE SECURITY ===" in text
+    assert "[ATTENTION] Severe iOS Spyware" in text
+    assert "Why it matters: Actively used in attacks" in text

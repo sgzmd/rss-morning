@@ -8,6 +8,28 @@ Overview:
 ----------------------------------------
 
 {% endif %}
+{% if sections %}
+{% for section in sections %}
+=== {{ section.label | upper }} ===
+
+{% for item in section["items"] -%}
+{% if item.is_attention -%}
+[ATTENTION] {{ item.get("title") }}
+{{ item.get("summary") }}
+Why it matters: {{ item.get("urgency_rationale") }}
+Sources: {{ item.get("source_urls") | join(", ") }}
+
+{% else -%}
+* {{ item.get("title") }}
+  {{ item.get("summary") }}
+  Sources: {{ item.get("source_urls") | join(", ") }}
+
+{% endif -%}
+{% endfor -%}
+----------------------------------------
+
+{% endfor %}
+{% elif payload.get("attention") or payload.get("watch") %}
 {% if payload.get("attention") %}
 ATTENTION:
 {% for item in payload.get("attention") -%}
@@ -29,8 +51,10 @@ WATCH:
 
 {% endfor -%}
 {% endif %}
-{% if not payload.get("overview") and not payload.get("attention") and not payload.get("watch") %}
+{% else %}
+{% if not payload.get("overview") %}
 No relevant articles identified.
+{% endif %}
 {% endif %}
 {% else %}
 {% set articles = payload %}

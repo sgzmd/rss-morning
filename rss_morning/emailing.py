@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
+from .models import AreaConfig
 from .renderers import build_email_html, build_email_text
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ def send_email_report(
     to_address: str,
     from_address: Optional[str] = None,
     subject: Optional[str] = None,
+    areas: Optional[Mapping[str, AreaConfig]] = None,
 ) -> None:
     """Send the prepared report via Resend."""
     if resend is None:
@@ -52,13 +54,17 @@ def send_email_report(
     else:
         fallback_text = str(payload)
 
-    html_content = build_email_html(payload, is_summary, fallback=fallback_text)
+    html_content = build_email_html(
+        payload, is_summary, fallback=fallback_text, areas=areas
+    )
     if not html_content:
         logger.warning("Email content is empty; skipping email delivery.")
         return
 
     email_subject = subject or "RSS Morning Briefing"
-    text_content = build_email_text(payload, is_summary, fallback=fallback_text)
+    text_content = build_email_text(
+        payload, is_summary, fallback=fallback_text, areas=areas
+    )
 
     resend.api_key = api_key
     try:

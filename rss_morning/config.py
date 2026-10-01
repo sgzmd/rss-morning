@@ -10,9 +10,66 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 
-from .models import FeedConfig
+from .models import AreaConfig, FeedConfig
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_AREAS: Dict[str, AreaConfig] = {
+    "mobile_security": AreaConfig(
+        key="mobile_security",
+        label="Mobile Security",
+        description=(
+            "Mobile application security, Android and iOS vulnerabilities, "
+            "mobile malware, device attestation, and client integrity."
+        ),
+        threshold=0.40,
+    ),
+    "corporate_security": AreaConfig(
+        key="corporate_security",
+        label="Corporate Security",
+        description=(
+            "Enterprise networking, VPN, SD-WAN, firewalls, identity providers, "
+            "managed devices, browsers, and workplace IT infrastructure."
+        ),
+        threshold=0.45,
+    ),
+    "account_takeover": AreaConfig(
+        key="account_takeover",
+        label="Account Takeover",
+        description=(
+            "Account takeover, credential stuffing, session hijacking, "
+            "password spraying, brute force, and customer identity compromise."
+        ),
+        threshold=0.40,
+    ),
+    "end_user_security": AreaConfig(
+        key="end_user_security",
+        label="End-User Security (Passkeys & Modern Auth)",
+        description=(
+            "Passkeys, FIDO2, WebAuthn, modern authentication methods, "
+            "biometric login, MFA adoption, and end-user identity protection."
+        ),
+        threshold=0.40,
+    ),
+    "ai_security": AreaConfig(
+        key="ai_security",
+        label="AI Security",
+        description=(
+            "AI model vulnerabilities, prompt injection, AI agent safety, "
+            "and security implications of LLMs and generative AI."
+        ),
+        threshold=0.50,
+    ),
+    "other": AreaConfig(
+        key="other",
+        label="Everything Else & Notable CVEs",
+        description=(
+            "General security news, notable CVEs, software vulnerabilities, "
+            "infrastructure, or material not fitting any specific focus area above."
+        ),
+        threshold=0.75,
+    ),
+}
 
 
 @dataclass
@@ -49,6 +106,7 @@ class AppConfig:
     max_article_length: int = 100
     concurrency: int = 10
     llm_model: Optional[str] = None
+    areas: Dict[str, AreaConfig] = field(default_factory=lambda: dict(DEFAULT_AREAS))
 
 
 def parse_feeds_config(path: str) -> List[FeedConfig]:
@@ -169,6 +227,24 @@ def parse_app_config(path: str) -> AppConfig:
         threshold=float(class_dict.get("threshold", 0.50)),
     )
 
+    # Areas
+    areas_raw = data.get("areas") or class_dict.get("areas")
+    if areas_raw and isinstance(areas_raw, dict):
+        parsed_areas: Dict[str, AreaConfig] = {}
+        for k, v in areas_raw.items():
+            if isinstance(v, dict):
+                label = str(v.get("label") or k.replace("_", " ").title())
+                desc = str(v.get("description") or label)
+                th = float(v.get("threshold", classification_config.threshold))
+                parsed_areas[k] = AreaConfig(
+                    key=k, label=label, description=desc, threshold=th
+                )
+        if "other" not in parsed_areas:
+            parsed_areas["other"] = DEFAULT_AREAS["other"]
+        areas = parsed_areas
+    else:
+        areas = dict(DEFAULT_AREAS)
+
     # Email
     email_dict = data.get("email") or {}
     email = EmailConfig(
@@ -217,4 +293,5 @@ def parse_app_config(path: str) -> AppConfig:
         max_article_length=max_article_length,
         concurrency=concurrency,
         llm_model=llm_model,
+        areas=areas,
     )

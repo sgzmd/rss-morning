@@ -95,7 +95,53 @@
                     </div>
                     {% endif %}
 
-                    <!-- Attention Section -->
+                    {% if sections %}
+                    <!-- Grouped by Area -->
+                    {% for section in sections %}
+                    <div style="margin-bottom: 36px;">
+                        <h2 style="font-size: 17px; font-weight: 700; color: #1a73e8; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #1a73e8; padding-bottom: 6px; letter-spacing: 0.03em;">
+                            {{ section.label }}
+                        </h2>
+                        {% for item in section["items"] %}
+                        {% if item.is_attention %}
+                        <div style="margin-bottom: 20px; padding: 16px; background-color: #fff8f7; border: 1px solid #fce8e6; border-left: 4px solid #d93025; border-radius: 6px;">
+                            <div style="margin-bottom: 4px;">
+                                <span style="font-size: 11px; font-weight: 700; color: #d93025; background-color: #fce8e6; padding: 2px 6px; border-radius: 3px; text-transform: uppercase;">Requires Attention</span>
+                            </div>
+                            <h3 style="font-size: 17px; font-weight: 700; margin: 6px 0 8px 0; color: #111111;">{{ item.get("title") }}</h3>
+                            <p style="font-size: 15px; line-height: 1.5; color: #333333; margin: 0 0 10px 0;">{{ item.get("summary") | nl2br }}</p>
+                            {% if item.get("urgency_rationale") %}
+                            <p style="font-size: 14px; line-height: 1.5; color: #555555; margin: 0 0 10px 0;"><strong>Why it matters:</strong> {{ item.get("urgency_rationale") }}</p>
+                            {% endif %}
+                            {% if item.get("source_urls") %}
+                            <div style="font-size: 13px; color: #666666;">
+                                Sources:
+                                {% for s_url in item.get("source_urls") %}
+                                <a href="{{ s_url }}" style="color: #0052cc; text-decoration: underline; margin-right: 8px;">{{ s_url | domain }}</a>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <div style="margin-bottom: 18px; padding: 12px 16px; border-left: 3px solid #dadce0; background-color: #fafafa;">
+                            <h4 style="font-size: 15px; font-weight: 600; margin: 0 0 6px 0; color: #222222;">{{ item.get("title") }}</h4>
+                            <p style="font-size: 14px; line-height: 1.5; color: #444444; margin: 0 0 8px 0;">{{ item.get("summary") | nl2br }}</p>
+                            {% if item.get("source_urls") %}
+                            <div style="font-size: 13px; color: #666666;">
+                                Sources:
+                                {% for s_url in item.get("source_urls") %}
+                                <a href="{{ s_url }}" style="color: #0052cc; text-decoration: underline; margin-right: 8px;">{{ s_url | domain }}</a>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+
+                    {% else %}
+                    <!-- Attention Section (Flat fallback) -->
                     {% if payload.get("attention") %}
                     <div style="margin-bottom: 32px;">
                         <h2 style="font-size: 18px; font-weight: 700; color: #d93025; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #d93025; padding-bottom: 6px;">
@@ -120,7 +166,7 @@
                     </div>
                     {% endif %}
 
-                    <!-- Watch Section -->
+                    <!-- Watch Section (Flat fallback) -->
                     {% if payload.get("watch") %}
                     <div style="margin-bottom: 32px;">
                         <h2 style="font-size: 18px; font-weight: 700; color: #5f6368; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #dadce0; padding-bottom: 6px;">
@@ -142,6 +188,7 @@
                         </div>
                         {% endfor %}
                     </div>
+                    {% endif %}
                     {% endif %}
 
                     {% else %}

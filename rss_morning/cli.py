@@ -130,6 +130,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             concurrency=app_config.concurrency,
             llm_dry_run=args.llm_dry_run,
             llm_model=app_config.llm_model,
+            areas=app_config.areas,
         )
 
         config_dict = dataclasses.asdict(config)

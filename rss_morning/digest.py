@@ -4,89 +4,104 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from .models import AreaConfig
 from .openrouter import complete_structured
 
 logger = logging.getLogger(__name__)
 
-EDITION_SCHEMA: Dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "overview": {
-            "type": "string",
-            "description": "Concise executive overview of today's security landscape (1 paragraph).",
-        },
-        "attention": {
-            "type": "array",
-            "description": "Stories warranting proactive attention with grounded urgency rationale.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "Concise headline for the story",
+
+def build_edition_schema(
+    area_keys: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """Construct the strict JSON schema for editorial edition generation."""
+    primary_area_prop: Dict[str, Any] = {
+        "type": "string",
+        "description": "Primary security area chosen from the configured taxonomy",
+    }
+    if area_keys:
+        primary_area_prop["enum"] = list(area_keys)
+
+    return {
+        "type": "object",
+        "properties": {
+            "overview": {
+                "type": "string",
+                "description": "Concise executive overview of today's security landscape (1 paragraph).",
+            },
+            "attention": {
+                "type": "array",
+                "description": "Stories warranting proactive attention with grounded urgency rationale.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Concise headline for the story",
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "Factual grounded summary of the event, strictly preserving uncertainty.",
+                        },
+                        "source_urls": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Source URLs covering this event (collapsed if multiple)",
+                        },
+                        "primary_area": primary_area_prop,
+                        "urgency_rationale": {
+                            "type": "string",
+                            "description": "Why this warrants proactive attention, strictly grounded in the source text without assuming internal environment details.",
+                        },
                     },
-                    "summary": {
-                        "type": "string",
-                        "description": "Factual grounded summary of the event, strictly preserving uncertainty.",
-                    },
-                    "source_urls": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Source URLs covering this event (collapsed if multiple)",
-                    },
-                    "primary_area": {
-                        "type": "string",
-                        "description": "Primary security area",
-                    },
-                    "urgency_rationale": {
-                        "type": "string",
-                        "description": "Why this warrants proactive attention, strictly grounded in the source text without assuming internal environment details.",
-                    },
+                    "required": [
+                        "title",
+                        "summary",
+                        "source_urls",
+                        "primary_area",
+                        "urgency_rationale",
+                    ],
+                    "additionalProperties": False,
                 },
-                "required": [
-                    "title",
-                    "summary",
-                    "source_urls",
-                    "primary_area",
-                    "urgency_rationale",
-                ],
-                "additionalProperties": False,
+            },
+            "watch": {
+                "type": "array",
+                "description": "Lower-urgency or emerging items to monitor.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Concise headline for the story",
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "Factual 1-2 sentence summary of what occurred.",
+                        },
+                        "source_urls": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Source URLs covering this event",
+                        },
+                        "primary_area": primary_area_prop,
+                    },
+                    "required": [
+                        "title",
+                        "summary",
+                        "source_urls",
+                        "primary_area",
+                    ],
+                    "additionalProperties": False,
+                },
             },
         },
-        "watch": {
-            "type": "array",
-            "description": "Lower-urgency or emerging items to monitor.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "Concise headline for the story",
-                    },
-                    "summary": {
-                        "type": "string",
-                        "description": "Factual 1-2 sentence summary of what occurred.",
-                    },
-                    "source_urls": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Source URLs covering this event",
-                    },
-                    "primary_area": {
-                        "type": "string",
-                        "description": "Primary security area",
-                    },
-                },
-                "required": ["title", "summary", "source_urls", "primary_area"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    "required": ["overview", "attention", "watch"],
-    "additionalProperties": False,
-}
+        "required": ["overview", "attention", "watch"],
+        "additionalProperties": False,
+    }
+
+
+EDITION_SCHEMA: Dict[str, Any] = build_edition_schema()
 
 DEFAULT_EDITORIAL_PROMPT = """You are the edition editor for an executive cyber security morning briefing.
 Your goal is to synthesize incoming security articles into a concise, high-signal briefing.
@@ -129,6 +144,7 @@ def generate_digest(
     system_prompt: Optional[str] = None,
     dry_run: bool = False,
     model: Optional[str] = None,
+    areas: Optional[Mapping[str, AreaConfig]] = None,
 ) -> Dict[str, Any]:
     """Generate a single editorial digest edition using OpenRouter."""
     if not articles:
@@ -141,12 +157,20 @@ def generate_digest(
             "watch": [],
         }
 
+    area_keys = list(areas.keys()) if areas else None
+    schema = build_edition_schema(area_keys) if area_keys else EDITION_SCHEMA
+
     prompt = system_prompt or DEFAULT_EDITORIAL_PROMPT
+    if areas and not system_prompt:
+        areas_desc = "\n".join(f"   - {k}: {v.description}" for k, v in areas.items())
+        prompt += f"\n6. PRIMARY AREAS: Assign each item strictly to one of these configured areas:\n{areas_desc}\n"
+
     user_content = build_editorial_input(articles)
 
     if dry_run:
         logger.info(
-            "DRY RUN: Prepared editorial payload for %d articles", len(articles)
+            "DRY RUN: Prepared editorial payload for %d articles",
+            len(articles),
         )
         return {
             "overview": f"Dry run overview for {len(articles)} articles.",
@@ -160,7 +184,7 @@ def generate_digest(
             {"role": "system", "content": prompt},
             {"role": "user", "content": user_content},
         ],
-        json_schema=EDITION_SCHEMA,
+        json_schema=schema,
         schema_name="editorial_edition",
         model=model,
     )

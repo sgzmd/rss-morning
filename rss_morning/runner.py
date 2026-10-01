@@ -5,10 +5,10 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .articles import fetch_article_content, truncate_text
 from .classify import ClassificationDecision, classify_entry
@@ -16,7 +16,7 @@ from .config import parse_feeds_config
 from .digest import generate_digest
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
-from .models import FeedConfig, FeedEntry
+from .models import AreaConfig, FeedConfig, FeedEntry
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ class RunConfig:
     concurrency: int = 20
     llm_dry_run: bool = False
     llm_model: Optional[str] = None
+    areas: Dict[str, AreaConfig] = field(default_factory=dict)
 
 
 @dataclass
@@ -164,23 +165,27 @@ def _classify_entries(
             "category": entry.category,
             "link": entry.link,
         }
+        classify_kwargs = {"areas": config.areas} if config.areas else {}
         decision = classify_entry(
             metadata,
             model=config.classify_model,
             threshold=config.classify_threshold,
+            **classify_kwargs,
         )
         if decision.is_plausible:
             logger.info(
-                "Jev KEEP (prob=%.2f, area=%s): %s",
+                "Jev KEEP (prob=%.2f >= %.2f, area=%s): %s",
                 decision.relevance_probability,
+                decision.effective_threshold,
                 decision.primary_area,
                 entry.title,
             )
             candidates.append((entry, decision))
         else:
             logger.debug(
-                "Jev DROP (prob=%.2f, area=%s): %s",
+                "Jev DROP (prob=%.2f < %.2f, area=%s): %s",
                 decision.relevance_probability,
+                decision.effective_threshold,
                 decision.primary_area,
                 entry.title,
             )
@@ -277,22 +282,26 @@ def execute(config: RunConfig) -> RunResult:
     if not config.summary:
         output_text = json.dumps(articles, indent=2, ensure_ascii=False)
         if config.email_to:
+            email_kwargs = {"areas": config.areas} if config.areas else {}
             send_email_report(
                 payload=articles,
                 is_summary=False,
                 to_address=config.email_to,
                 from_address=config.email_from,
                 subject=config.email_subject or _build_default_email_subject(),
+                **email_kwargs,
             )
         return RunResult(
             output_text=output_text, email_payload=articles, is_summary=False
         )
 
+    digest_kwargs = {"areas": config.areas} if config.areas else {}
     edition_data = generate_digest(
         articles,
         system_prompt=config.system_prompt,
         dry_run=config.llm_dry_run,
         model=config.llm_model,
+        **digest_kwargs,
     )
     output_text = json.dumps(edition_data, indent=2, ensure_ascii=False)
 
@@ -301,12 +310,14 @@ def execute(config: RunConfig) -> RunResult:
         return RunResult(output_text=output_text, email_payload=None, is_summary=True)
 
     if config.email_to:
+        email_kwargs = {"areas": config.areas} if config.areas else {}
         send_email_report(
             payload=edition_data,
             is_summary=True,
             to_address=config.email_to,
             from_address=config.email_from,
             subject=config.email_subject or _build_default_email_subject(),
+            **email_kwargs,
         )
 
     return RunResult(

@@ -25,3 +25,13 @@ class FeedEntry:
     title: str
     published: datetime
     summary: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class AreaConfig:
+    """Configuration for a security focus area."""
+
+    key: str
+    label: str
+    description: str
+    threshold: float = 0.50
