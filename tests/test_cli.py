@@ -70,7 +70,6 @@ def test_main_loads_config_and_runs(monkeypatch):
     )
 
     monkeypatch.setattr(cli, "parse_app_config", lambda path: mock_app_config)
-    monkeypatch.setattr(cli, "parse_env_config", lambda path: {})
 
     captured = {}
 
@@ -80,7 +79,7 @@ def test_main_loads_config_and_runs(monkeypatch):
 
     monkeypatch.setattr(cli, "execute", fake_execute)
 
-    exit_code = cli.main(["--config", "configs/test.xml"])
+    exit_code = cli.main(["--config", "configs/test.toml"])
 
     assert exit_code == 0
     run_config = captured["config"]
@@ -106,7 +105,6 @@ def test_main_cli_overrides_logging(monkeypatch):
         logging=LoggingConfig(level="INFO", file="config.log"),
     )
     monkeypatch.setattr(cli, "parse_app_config", lambda path: mock_app_config)
-    monkeypatch.setattr(cli, "parse_env_config", lambda path: {})
     monkeypatch.setattr(
         cli,
         "execute",
@@ -125,7 +123,6 @@ def test_main_save_load_articles_args(monkeypatch):
     monkeypatch.setattr(cli, "configure_logging", lambda level, log_file=None: None)
     mock_app_config = AppConfig(feeds_file="feeds.xml", env_file=None)
     monkeypatch.setattr(cli, "parse_app_config", lambda path: mock_app_config)
-    monkeypatch.setattr(cli, "parse_env_config", lambda path: {})
 
     captured = {}
 
@@ -139,3 +136,22 @@ def test_main_save_load_articles_args(monkeypatch):
 
     assert captured["config"].save_articles_path == "save.json"
     assert captured["config"].load_articles_path == "load.json"
+
+
+def test_main_loads_env_file(monkeypatch):
+    monkeypatch.setattr(cli, "configure_logging", lambda level, log_file=None: None)
+    mock_app_config = AppConfig(feeds_file="feeds.xml", env_file="custom.env")
+    monkeypatch.setattr(cli, "parse_app_config", lambda path: mock_app_config)
+    env_calls = []
+    monkeypatch.setattr(cli, "load_dotenv", lambda path: env_calls.append(path))
+    monkeypatch.setattr(
+        cli,
+        "execute",
+        lambda config: SimpleNamespace(
+            output_text="{}", email_payload=None, is_summary=False
+        ),
+    )
+
+    exit_code = cli.main(["--config", "configs/test.toml"])
+    assert exit_code == 0
+    assert env_calls == ["custom.env"]

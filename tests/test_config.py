@@ -1,8 +1,13 @@
 import textwrap
-
 import pytest
 
-from rss_morning.config import parse_feeds_config
+from rss_morning.config import (
+    AppConfig,
+    load_dotenv,
+    parse_app_config,
+    parse_env_config,
+    parse_feeds_config,
+)
 from rss_morning.models import FeedConfig
 
 
@@ -51,84 +56,139 @@ def test_parse_feeds_config_missing_body_raises(tmp_path):
         parse_feeds_config(str(opml))
 
 
-def test_parse_app_config_prompt_loader(tmp_path):
-    from rss_morning.config import parse_app_config
+def test_load_dotenv(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        textwrap.dedent(
+            """
+            # Comments should be ignored
+            TYPESAFE_API_KEY=test_typesafe_key
+            OPENROUTER_API_KEY="test_openrouter_key"
+            EMPTY_VAR=
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
-    config_file = tmp_path / "config.xml"
-    prompt_file = tmp_path / "prompt.txt"
-    prompt_content = "Please summarize this."
-    prompt_file.write_text(prompt_content, encoding="utf-8")
+    loaded = load_dotenv(str(env_file))
+    assert loaded["TYPESAFE_API_KEY"] == "test_typesafe_key"
+    assert loaded["OPENROUTER_API_KEY"] == "test_openrouter_key"
+    assert parse_env_config(str(env_file)) == loaded
+
+
+def test_load_dotenv_missing_file_returns_empty():
+    assert load_dotenv("nonexistent.env") == {}
+
+
+def test_parse_app_config_toml(tmp_path):
+    config_file = tmp_path / "config.toml"
+    feeds_file = tmp_path / "feeds.xml"
+    feeds_file.touch()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("Custom prompt content", encoding="utf-8")
 
     config_file.write_text(
-        f"""
-        <config>
-            <feeds>feeds.xml</feeds>
-            <prompt file="{prompt_file.name}" />
-        </config>
-        """
-    )
+        textwrap.dedent(
+            f"""
+            feeds = "feeds.xml"
+            limit = 25
+            max_age_hours = 12.5
+            summary = true
+            concurrency = 5
+            max_article_length = 300
+            extractor = "trafilatura"
+            prompt_file = "{prompt_file.name}"
 
-    (tmp_path / "feeds.xml").write_text("<opml><body></body></opml>")
+            [classification]
+            enabled = true
+            model = "jev-latest"
+            threshold = 0.65
+
+            [email]
+            to = "test@example.com"
+            from = "mailer@example.com"
+            subject = "Custom Digest"
+
+            [logging]
+            level = "DEBUG"
+            file = "app.log"
+
+            [llm]
+            model = "openai/gpt-4o-mini"
+            """
+        ),
+        encoding="utf-8",
+    )
 
     config = parse_app_config(str(config_file))
-    assert config.prompt == prompt_content
+
+    assert isinstance(config, AppConfig)
+    assert config.feeds_file == str(feeds_file.resolve())
+    assert config.limit == 25
+    assert config.max_age_hours == 12.5
+    assert config.summary is True
+    assert config.concurrency == 5
+    assert config.max_article_length == 300
+    assert config.extractor == "trafilatura"
+    assert config.prompt == "Custom prompt content"
+    assert config.classification.enabled is True
+    assert config.classification.model == "jev-latest"
+    assert config.classification.threshold == 0.65
+    assert config.email.to_addr == "test@example.com"
+    assert config.email.from_addr == "mailer@example.com"
+    assert config.email.subject == "Custom Digest"
+    assert config.logging.level == "DEBUG"
+    assert config.logging.file == str((tmp_path / "app.log").resolve())
+    assert config.llm_model == "openai/gpt-4o-mini"
 
 
-def test_parse_app_config_prompt_loader_missing_file_raises(tmp_path):
-    from rss_morning.config import parse_app_config
+def test_parse_app_config_inline_prompt(tmp_path):
+    config_file = tmp_path / "config.toml"
+    (tmp_path / "feeds.xml").touch()
 
-    config_file = tmp_path / "config.xml"
     config_file.write_text(
-        """
-        <config>
-            <feeds>feeds.xml</feeds>
-            <prompt file="missing.txt" />
-        </config>
-        """
+        textwrap.dedent(
+            """
+            feeds = "feeds.xml"
+            prompt = "Direct inline prompt string"
+            """
+        ),
+        encoding="utf-8",
     )
-    (tmp_path / "feeds.xml").write_text("<opml><body></body></opml>")
+
+    config = parse_app_config(str(config_file))
+    assert config.prompt == "Direct inline prompt string"
+
+
+def test_parse_app_config_missing_feeds_raises(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("limit = 10", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Configuration missing required 'feeds'"):
+        parse_app_config(str(config_file))
+
+
+def test_parse_app_config_prompt_file_not_found_raises(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        textwrap.dedent(
+            """
+            feeds = "feeds.xml"
+            prompt_file = "missing_prompt.md"
+            """
+        ),
+        encoding="utf-8",
+    )
 
     with pytest.raises(ValueError, match="Prompt file not found"):
         parse_app_config(str(config_file))
 
 
-def test_parse_app_config_prompt_missing_file_attr_raises(tmp_path):
-    from rss_morning.config import parse_app_config
+def test_parse_app_config_invalid_toml_raises(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("feeds = [unclosed bracket", encoding="utf-8")
 
-    config_file = tmp_path / "config.xml"
-    config_file.write_text(
-        """
-        <config>
-            <feeds>feeds.xml</feeds>
-            <prompt>Some inline text</prompt>
-        </config>
-        """
-    )
-    (tmp_path / "feeds.xml").write_text("<opml><body></body></opml>")
-
-    with pytest.raises(ValueError, match="Prompt element must have a 'file' attribute"):
+    with pytest.raises(ValueError, match="Failed to parse TOML configuration"):
         parse_app_config(str(config_file))
-
-
-def test_parse_app_config_classification(tmp_path):
-    from rss_morning.config import parse_app_config
-
-    config_file = tmp_path / "config.xml"
-    config_file.write_text(
-        """
-        <config>
-            <feeds>feeds.xml</feeds>
-            <classification>
-                <enabled>true</enabled>
-                <model>jev-latest</model>
-                <threshold>0.65</threshold>
-            </classification>
-        </config>
-        """
-    )
-    (tmp_path / "feeds.xml").write_text("<opml><body></body></opml>")
-
-    config = parse_app_config(str(config_file))
-    assert config.classification.enabled is True
-    assert config.classification.model == "jev-latest"
-    assert config.classification.threshold == 0.65

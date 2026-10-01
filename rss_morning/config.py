@@ -1,8 +1,10 @@
-"""Configuration loading for RSS feeds."""
+"""Configuration loading for RSS feeds and application settings."""
 
 from __future__ import annotations
 
 import logging
+import os
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -36,7 +38,7 @@ class LoggingConfig:
 @dataclass
 class AppConfig:
     feeds_file: str
-    env_file: Optional[str]
+    env_file: Optional[str] = None
     limit: int = 10
     max_age_hours: Optional[float] = None
     summary: bool = False
@@ -45,13 +47,18 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     prompt: Optional[str] = None
     max_article_length: int = 100
-    extractor: str = "newspaper"
+    extractor: str = "trafilatura"
     concurrency: int = 10
     llm_model: Optional[str] = None
 
 
 def parse_feeds_config(path: str) -> List[FeedConfig]:
-    """Parse the OPML configuration file and return feed definitions."""
+    """Parse the OPML configuration file and return feed definitions.
+
+    OPML (Outline Processor Markup Language) is maintained as the feed configuration format
+    because it is the de facto universal standard for RSS feed subscriptions across feed readers
+    (Feedly, NetNewsWire, Inoreader, etc.), allowing direct export and import.
+    """
     logger.info("Loading feed configuration from %s", path)
     tree = ET.parse(path)
     root = tree.getroot()
@@ -99,114 +106,105 @@ def _resolve_path(base_path: Path, target_path: str) -> str:
     return str((base_path.parent / target).resolve())
 
 
-def parse_env_config(path: str) -> Dict[str, str]:
-    """Parse environment variables from XML."""
-    env_vars = {}
-    if not path:
-        return env_vars
+def load_dotenv(path: str | Path = ".env") -> Dict[str, str]:
+    """Parse key-value pairs from a .env file and set in os.environ if not present."""
+    env_path = Path(path)
+    if not env_path.is_file():
+        return {}
 
-    logger.info("Loading environment configuration from %s", path)
-    try:
-        tree = ET.parse(path)
-        root = tree.getroot()
-        for var in root.findall("variable"):
-            name = var.attrib.get("name")
-            value = var.text
-            if name and value:
-                env_vars[name] = value.strip()
-    except Exception as exc:
-        logger.warning("Failed to load environment config: %s", exc)
-        raise
+    loaded = {}
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            if key not in os.environ:
+                os.environ[key] = val
+            loaded[key] = val
+    return loaded
 
-    return env_vars
+
+# Backward compatibility alias
+parse_env_config = load_dotenv
 
 
 def parse_app_config(path: str) -> AppConfig:
-    """Parse the main application configuration XML."""
+    """Parse the main application configuration from a TOML file."""
     config_path = Path(path).resolve()
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
 
     logger.info("Loading application configuration from %s", config_path)
-    tree = ET.parse(config_path)
-    root = tree.getroot()
+    try:
+        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(
+            f"Failed to parse TOML configuration from {path}: {exc}"
+        ) from exc
 
-    # Feeds
-    feeds_node = root.find("feeds")
-    if feeds_node is None or not feeds_node.text:
-        raise ValueError("Config missing <feeds> path")
-    feeds_file = _resolve_path(config_path, feeds_node.text.strip())
+    feeds_raw = data.get("feeds") or data.get("feeds_file")
+    if not feeds_raw:
+        raise ValueError("Configuration missing required 'feeds' (path to OPML file)")
+    feeds_file = _resolve_path(config_path, str(feeds_raw).strip())
 
-    # Env
-    env_node = root.find("env")
+    env_file_raw = data.get("env_file") or data.get("env")
     env_file = (
-        _resolve_path(config_path, env_node.text.strip())
-        if env_node is not None and env_node.text
-        else None
+        _resolve_path(config_path, str(env_file_raw).strip()) if env_file_raw else None
     )
 
-    # Simple values
-    limit = int(root.findtext("limit", "10"))
-
-    max_age_node = root.find("max-age-hours")
-    max_age_hours = (
-        float(max_age_node.text)
-        if max_age_node is not None and max_age_node.text
-        else None
-    )
-
-    summary = root.findtext("summary", "false").lower() == "true"
-    max_len = int(root.findtext("max-article-length", "100"))
+    limit = int(data.get("limit", 10))
+    max_age_val = data.get("max_age_hours")
+    max_age_hours = float(max_age_val) if max_age_val is not None else None
+    summary = bool(data.get("summary", False))
+    max_article_length = int(data.get("max_article_length", 100))
+    extractor = str(data.get("extractor", "trafilatura"))
+    concurrency = int(data.get("concurrency", 10))
 
     # Classification (Jev)
-    class_node = root.find("classification")
-    if class_node is None:
-        class_node = root.find("pre-filter")
-    classification_config = ClassificationConfig()
-    if class_node is not None:
-        classification_config.enabled = (
-            class_node.findtext("enabled", "true").lower() == "true"
-        )
-        classification_config.model = class_node.findtext("model", "jev-latest")
-        th_val = class_node.findtext("threshold")
-        if th_val:
-            classification_config.threshold = float(th_val)
+    class_dict = data.get("classification") or {}
+    classification_config = ClassificationConfig(
+        enabled=bool(class_dict.get("enabled", True)),
+        model=str(class_dict.get("model", "jev-latest")),
+        threshold=float(class_dict.get("threshold", 0.50)),
+    )
 
     # Email
-    email_node = root.find("email")
-    email = EmailConfig()
-    if email_node is not None:
-        email.to_addr = email_node.findtext("to")
-        email.from_addr = email_node.findtext("from")
-        email.subject = email_node.findtext("subject")
+    email_dict = data.get("email") or {}
+    email = EmailConfig(
+        to_addr=email_dict.get("to"),
+        from_addr=email_dict.get("from"),
+        subject=email_dict.get("subject"),
+    )
 
     # Logging
-    log_node = root.find("logging")
-    logging_config = LoggingConfig()
-    if log_node is not None:
-        logging_config.level = log_node.findtext("level", "INFO")
-        log_file = log_node.findtext("file")
-        if log_file:
-            logging_config.file = _resolve_path(config_path, log_file)
+    log_dict = data.get("logging") or {}
+    log_file_raw = log_dict.get("file")
+    logging_config = LoggingConfig(
+        level=str(log_dict.get("level", "INFO")),
+        file=_resolve_path(config_path, str(log_file_raw)) if log_file_raw else None,
+    )
 
     # Prompt
-    prompt_node = root.find("prompt")
     prompt = None
-    if prompt_node is not None:
-        prompt_file = prompt_node.attrib.get("file")
-        if not prompt_file:
-            raise ValueError("Prompt element must have a 'file' attribute.")
+    prompt_file_raw = data.get("prompt_file")
+    if not prompt_file_raw and isinstance(data.get("prompt"), dict):
+        prompt_file_raw = data["prompt"].get("file")
 
-        full_prompt_path = _resolve_path(config_path, prompt_file)
-        try:
-            prompt = Path(full_prompt_path).read_text(encoding="utf-8").strip()
-        except FileNotFoundError:
+    if prompt_file_raw:
+        full_prompt_path = _resolve_path(config_path, str(prompt_file_raw))
+        prompt_path_obj = Path(full_prompt_path)
+        if not prompt_path_obj.exists():
             raise ValueError(f"Prompt file not found: {full_prompt_path}")
+        prompt = prompt_path_obj.read_text(encoding="utf-8").strip()
+    elif isinstance(data.get("prompt"), str):
+        prompt = data["prompt"].strip()
 
-    extractor = root.findtext("extractor", "newspaper")
-    concurrency = int(root.findtext("concurrency", "10"))
-    llm_node = root.find("llm")
-    llm_model = llm_node.findtext("model") if llm_node is not None else None
+    # LLM
+    llm_dict = data.get("llm") or {}
+    llm_model = llm_dict.get("model")
 
     return AppConfig(
         feeds_file=feeds_file,
@@ -218,7 +216,7 @@ def parse_app_config(path: str) -> AppConfig:
         email=email,
         logging=logging_config,
         prompt=prompt,
-        max_article_length=max_len,
+        max_article_length=max_article_length,
         extractor=extractor,
         concurrency=concurrency,
         llm_model=llm_model,
