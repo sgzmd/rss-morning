@@ -47,7 +47,6 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     prompt: Optional[str] = None
     max_article_length: int = 100
-    extractor: str = "trafilatura"
     concurrency: int = 10
     llm_model: Optional[str] = None
 
@@ -160,7 +159,6 @@ def parse_app_config(path: str) -> AppConfig:
     max_age_hours = float(max_age_val) if max_age_val is not None else None
     summary = bool(data.get("summary", False))
     max_article_length = int(data.get("max_article_length", 100))
-    extractor = str(data.get("extractor", "trafilatura"))
     concurrency = int(data.get("concurrency", 10))
 
     # Classification (Jev)
@@ -217,7 +215,6 @@ def parse_app_config(path: str) -> AppConfig:
         logging=logging_config,
         prompt=prompt,
         max_article_length=max_article_length,
-        extractor=extractor,
         concurrency=concurrency,
         llm_model=llm_model,
     )
