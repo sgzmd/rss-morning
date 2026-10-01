@@ -68,7 +68,11 @@ def generate_summary(
         )
 
     api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    logger.info("Using API key ending with: %s", api_key[:])
+    if api_key:
+        masked_key = f"...{api_key[-4:]}" if len(api_key) >= 4 else "****"
+        logger.info("Using API key ending with: %s", masked_key)
+    else:
+        logger.info("No Gemini API key found in environment.")
     client = genai.Client(api_key=api_key)
 
     model = "gemini-flash-latest"
