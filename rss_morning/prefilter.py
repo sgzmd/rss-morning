@@ -8,6 +8,7 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
+    Any,
     Iterable,
     List,
     Mapping,
@@ -19,9 +20,8 @@ from typing import (
 )
 
 import numpy as np
-from openai import OpenAI
 
-from .embeddings import EmbeddingBackend, FastEmbedBackend, OpenAIEmbeddingBackend
+from .embeddings import EmbeddingBackend, FastEmbedBackend
 from . import db
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,7 @@ class EmbeddingArticleFilter:
 
     def __init__(
         self,
-        client: Optional[OpenAI] = None,
+        client: Optional[Any] = None,
         *,
         backend: Optional[EmbeddingBackend] = None,
         query_embeddings_path: Optional[str] = None,
@@ -162,11 +162,8 @@ class EmbeddingArticleFilter:
                 batch_size=self._config.batch_size,
             )
         else:
-            resolved_client = client or OpenAI()
-            self._backend = OpenAIEmbeddingBackend(
-                client=resolved_client,
-                model=self._config.model,
-                batch_size=self._config.batch_size,
+            raise ValueError(
+                f"Unsupported embedding provider: {self._config.provider}. Only 'fastembed' is supported."
             )
 
         # Removed query_embeddings_path loading for now as logic changed significantly
@@ -514,7 +511,7 @@ def export_security_query_embeddings(
     output_path: str,
     *,
     config: Optional[_EmbeddingConfig] = None,
-    client: Optional[OpenAI] = None,
+    client: Optional[Any] = None,
     queries_file: Optional[str] = None,
     queries: Optional[Sequence[str]] = None,
 ) -> Path:

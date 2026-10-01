@@ -13,4 +13,4 @@ services:
     environment:
       RESEND_API_KEY: ""
       RESEND_FROM_EMAIL: "no-reply@example.com"
-      GOOGLE_API_KEY: ""
+      OPENROUTER_API_KEY: ""

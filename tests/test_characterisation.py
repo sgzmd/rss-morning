@@ -8,7 +8,6 @@ from unittest.mock import patch, MagicMock
 
 from rss_morning.models import FeedConfig, FeedEntry
 from rss_morning import emailing, renderers, runner
-from rss_morning.summaries import generate_summary
 
 
 def test_failed_rss_feed_does_not_kill_other_feeds():
@@ -131,23 +130,25 @@ def test_missing_resend_api_key_does_not_leak_or_send(caplog, monkeypatch):
 
 
 def test_summaries_never_logs_full_api_key(caplog, monkeypatch):
-    """Verify that generate_summary never logs the full API key."""
-    monkeypatch.setenv("GEMINI_API_KEY", "SECRET_KEY_123456789_TOP_SECRET")
-    fake_genai = MagicMock()
-    monkeypatch.setattr("rss_morning.summaries.genai", fake_genai)
-    monkeypatch.setattr("rss_morning.summaries.types", MagicMock())
+    """Verify that OpenRouter structured completions never log the full API key."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-SECRET_KEY_123456789_TOP_SECRET")
+    from rss_morning.openrouter import complete_structured
 
-    articles = [
-        {"title": "Test", "url": "https://ex.com", "text": "Content", "summary": "S"}
-    ]
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "choices": [{"message": {"content": '{"ok": true}'}}]
+    }
 
     with caplog.at_level(logging.DEBUG):
-        try:
-            generate_summary(articles, system_prompt="Test prompt", dry_run=True)
-        except Exception:
-            pass
+        with patch("requests.post", return_value=mock_resp):
+            complete_structured(
+                messages=[{"role": "user", "content": "hi"}],
+                json_schema={"type": "object"},
+                schema_name="test",
+            )
 
-    assert "SECRET_KEY_123456789_TOP_SECRET" not in caplog.text
+    assert "sk-or-v1-SECRET_KEY_123456789_TOP_SECRET" not in caplog.text
     assert "...CRET" in caplog.text or "****" in caplog.text
 
 

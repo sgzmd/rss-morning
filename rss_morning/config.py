@@ -62,6 +62,7 @@ class AppConfig:
     max_article_length: int = 100
     extractor: str = "newspaper"
     concurrency: int = 10
+    llm_model: Optional[str] = None
 
 
 def parse_feeds_config(path: str) -> List[FeedConfig]:
@@ -238,6 +239,8 @@ def parse_app_config(path: str) -> AppConfig:
 
     extractor = root.findtext("extractor", "newspaper")
     concurrency = int(root.findtext("concurrency", "10"))
+    llm_node = root.find("llm")
+    llm_model = llm_node.findtext("model") if llm_node is not None else None
 
     return AppConfig(
         feeds_file=feeds_file,
@@ -254,4 +257,5 @@ def parse_app_config(path: str) -> AppConfig:
         max_article_length=max_len,
         extractor=extractor,
         concurrency=concurrency,
+        llm_model=llm_model,
     )

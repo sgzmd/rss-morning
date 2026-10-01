@@ -145,6 +145,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             embedding_provider=app_config.embeddings.provider,
             embedding_model=app_config.embeddings.model,
             llm_dry_run=args.llm_dry_run,
+            llm_model=app_config.llm_model,
         )
 
         if args.send_email_from_json:

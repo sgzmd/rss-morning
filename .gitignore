@@ -13,6 +13,8 @@ query_embeddings.json
 queries.txt
 mylog.txtlogs/
 articles.json
+saved_baseline_articles.json
+repro_lock.py
 logs/
 mylog.txt
 

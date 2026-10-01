@@ -46,6 +46,7 @@ class RunConfig:
     embedding_provider: str = "fastembed"
     embedding_model: str = "intfloat/multilingual-e5-large"
     llm_dry_run: bool = False
+    llm_model: Optional[str] = None
 
 
 @dataclass
@@ -333,6 +334,7 @@ def execute(config: RunConfig) -> RunResult:
             config.system_prompt,
             return_dict=True,
             dry_run=config.llm_dry_run,
+            model=config.llm_model,
         )
         output_text = summary_output
 
