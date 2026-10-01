@@ -12,7 +12,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "google/gemini-2.0-flash-001"
+DEFAULT_MODEL = "google/gemini-3.8-flash"
 
 
 class OpenRouterError(RuntimeError):

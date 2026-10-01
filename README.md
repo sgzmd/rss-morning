@@ -115,7 +115,7 @@ level = "INFO"
 file = "logs/rss-morning.log"
 
 [llm]
-model = "anthropic/claude-3.5-haiku"
+model = "google/gemini-3.8-flash"
 ```
 
 ### Feeds (`feeds.xml`)

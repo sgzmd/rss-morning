@@ -139,3 +139,20 @@ def test_openrouter_no_secret_logging(caplog, monkeypatch):
 
     assert "sk-or-v1-my-very-secret-token" not in caplog.text
     assert "...oken" in caplog.text
+
+
+def test_openrouter_default_model(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "choices": [{"message": {"content": '{"ok": true}'}}]
+    }
+    with patch("requests.post", return_value=mock_resp) as mock_post:
+        complete_structured(
+            messages=[{"role": "user", "content": "hi"}],
+            json_schema={"type": "object"},
+            schema_name="test",
+        )
+        payload = mock_post.call_args[1]["json"]
+        assert payload["model"] == "google/gemini-3.8-flash"
