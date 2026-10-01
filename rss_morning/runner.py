@@ -195,7 +195,7 @@ def _extract_candidate_articles(
                             else None,
                         }
 
-            content = fetch_article_content(entry.link, extractor=config.extractor)
+            content = fetch_article_content(entry.link)
             payload = {
                 "url": entry.link,
                 "category": category,

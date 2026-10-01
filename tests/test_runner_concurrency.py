@@ -55,7 +55,6 @@ def test_execute_runs_in_parallel(monkeypatch):
         max_age_hours=None,
         summary=False,
         classify=False,
-        extractor="newspaper",
         concurrency=NUM_ITEMS,
     )
 
