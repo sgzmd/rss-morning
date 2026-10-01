@@ -1,26 +1,61 @@
 # RSS Morning
 
-Some of us just want to sip the first coffee of the day and know whether the world is on fire. Others (hi) are on call for the industry gossip mill and still want to keep the caffeine sacred. RSS Morning is the homebrew rig I built so I can stay in the loop without doomscrolling twenty browser tabs. It slurps the headlines from your carefully curated feeds, bins the junk with embeddings, writes summaries that sound like a thoughtful teammate, and — if you want — emails the whole thing to you before your coffee is cold.
+RSS Morning is a focused, deterministic morning briefing generator. It reads RSS/Atom feeds, filters for relevance using cheap metadata, extracts full article content only for plausible candidates, synthesises an editorial edition via a single OpenRouter LLM call, and renders a structured briefing for email delivery or stdout.
 
 <img src="static/screenshot.png" style="max-width: 500px"/>
 
-## What It Actually Does
+## Architecture
 
-- Pulls the latest items from an OPML feed list and runs them through Readability so you get clean article text.
-- Scores every article against your “what I care about” queries using OpenAI embeddings; trash gets tossed, gems survive.
-- Hands the survivors to Google Gemini for summaries in the “What? So What? Now What?” style when `--summary` is on.
-- Packages the result as JSON, console output, or a Resend email (HTML + plain text).
-- Ships with Docker bits, templates, and enough knobs that you can run it in the cloud, on a Raspberry Pi, or on the laptop that lives in your kitchen.
+```text
+RSS / Atom feeds (OPML)
+    │
+    ▼
+Normalise + exact URL deduplication
+    │
+    ▼
+Jev classification on cheap RSS metadata (TypeSafe System One)
+    │
+    ▼
+Fetch full text only for plausible articles (Trafilatura)
+    │
+    ▼
+Single OpenRouter LLM call acting as edition editor
+    │
+    ▼
+Deterministic digest schema (overview, attention, watch)
+    │
+    ▼
+Jinja HTML & plaintext rendering
+    │
+    ▼
+Email (Resend) or stdout
+```
 
-## Gear Checklist
+### Separation of Concerns
 
-- Google Gemini API key when you plan to summarise (which is kind the whole point)
-- OpenAI API key if you want the embedding pre-filter (or to export embeddings ahead of time) - and trust me, you really do want it, otherwise you'll be reading same news story 10 times.
-- Resend API key unless reading JSON from console is your thing
-- Python 3.10+ and the usual stuff
-- Docker and Docker Compose if you want to containerise (makes no difference if you are running locally, but kinda nicer if you want to ship stuff to your VPS and run on cron)
+- **Standard Python**: Exact deterministic operations (feed ingestion, URL deduplication, HTTP extraction, text truncation).
+- **Jev (TypeSafe System One)**: Bounded semantic classification on cheap metadata before full-text fetch (`relevance_probability`, `primary_area`).
+- **OpenRouter LLM**: Single edition editor call for story clustering, importance assessment, and prose synthesis.
+- **Jinja**: Presentation rendering without editorial logic.
 
-## First Brew (a.k.a. Quick Start)
+## Credentials
+
+The system requires at most three credentials configured in `.env` or process environment:
+
+```bash
+# TypeSafe System One (Jev classification)
+TYPESAFE_API_KEY=your_typesafe_key
+
+# OpenRouter (All generative LLM synthesis)
+OPENROUTER_API_KEY=your_openrouter_key
+
+# Resend (Optional: for sending email briefings)
+RESEND_API_KEY=your_resend_key
+```
+
+No direct vendor SDKs (Gemini, OpenAI, Anthropic) are used. All generative model access is routed exclusively through OpenRouter.
+
+## Quick Start
 
 1. **Install dependencies:**
    ```bash
@@ -28,126 +63,81 @@ Some of us just want to sip the first coffee of the day and know whether the wor
    source .venv/bin/activate
    pip install -r requirements.txt
    ```
-2. **Setup configuration:**
-   The app is now fully validatable via XML configs.
+
+2. **Configure:**
    ```bash
-   cp configs/config.xml.example configs/config.xml
-   cp configs/env.xml.example configs/env.xml
+   cp .env.example .env
+   cp configs/config.toml.example configs/config.toml
    cp feeds.example.xml feeds.xml
-   cp prompt-example.md prompt.md
-   cp queries.example.txt queries.txt
    ```
-3. **Customize:**
-   - Edit `configs/config.xml` to point to your `feeds.xml` and `env.xml`.
-   - Edit `configs/env.xml` with your API keys.
-   - Edit `feeds.xml` with your RSS sources.
-4. **Pre-brew embeddings (Optional):**
+   - Add your API keys to `.env`.
+   - Customise your feed subscriptions in `feeds.xml` (standard OPML format).
+   - Customise options in `configs/config.toml`.
+
+3. **Run:**
    ```bash
-   python -m rss_morning.prefilter_cli \
-      --output query_embeddings.json \
-      --queries-file queries.txt
-   ```
-   Then update `<embeddings-path>` in `configs/config.xml` to point to this JSON file.
-5. **Fire it up:**
-   ```bash
-   # Run with default config (configs/config.xml)
+   # Run with default configuration
    python main.py
 
-   # Or specify a different config
-   python main.py --config configs/my-config.xml
+   # Dry run LLM (formats prompt and schema without calling the API)
+   python main.py --llm-dry-run
+
+   # Debugging: save/load article snapshots to avoid re-fetching
+   python main.py --save-articles snapshot.json
+   python main.py --load-articles snapshot.json --llm-dry-run
    ```
 
-## Tune The Inputs
+## Configuration (`configs/config.toml`)
 
-### Configuration (`configs/config.xml`)
-This is the control center. Use it to set:
-- **Paths**: Locations of `feeds.xml`, `env.xml`, scripts, etc.
-- **Runtime options**: `limit`, `max-age-hours`, `concurrency`.
-- **Features**: Toggle `summary`, `pre-filter`, `database`.
-- **Email**: `to`, `from`, and `subject`.
+Configuration is managed via standard TOML:
 
-### Feeds (`feeds.xml`)
-Standard OPML format. The `feeds.example.xml` shows how to structure it.
+```toml
+feeds = "feeds.xml"
+limit = 10
+max_age_hours = 24.0
+summary = true
+concurrency = 10
+max_article_length = 250
+prompt_file = "prompt.md"
 
-### Prompt (`prompt.md`)
-Referenced in your `config.xml` (e.g., `<prompt file="../prompt.md" />`). This is the system prompt for Gemini.
+[classification]
+enabled = true
+model = "jev-latest"
+threshold = 0.50
 
-### Queries (`queries.txt`)
-Used by the pre-filter. A plain text file with one signal/topic per line.
+[email]
+to = "user@example.com"
+from = "mailer@example.com"
+subject = "Morning RSS Digest"
 
-## Secret Sauce (Environment Variables)
+[logging]
+level = "INFO"
+file = "logs/rss-morning.log"
 
-Secrets are loaded from the file specified in `configs/config.xml` (usually `configs/env.xml`), or from system environment variables.
-
-- `OPENROUTER_API_KEY`: For OpenRouter summaries.
-- `RESEND_API_KEY` & `RESEND_FROM_EMAIL`: For sending emails.
-
-## Drive It From The CLI
-
-Most settings live in `config.xml`, but the CLI offers useful overrides and utilities:
-
-```bash
-# Standard run
-python main.py --config configs/production.xml
-
-# Override logging
-python main.py --log-level DEBUG --log-file mylog.txt
-
-# Dry run LLM (logs request but doesn't call API)
-python main.py --llm-dry-run
-
-# Save/Load articles (great for debugging without spamming RSS feeds)
-python main.py --save-articles debug_articles.json
-python main.py --load-articles debug_articles.json
-
-# Send a test email from a generic JSON payload
-python main.py --send-email-from-json ./gemini-response.json
+[llm]
+model = "anthropic/claude-3.5-haiku"
 ```
 
-## Embeddings: The Pre-Filter Loop
+### Feeds (`feeds.xml`)
 
-1. **Configure queries** in `queries.txt`.
-2. **Generate embeddings** (one-time setup for speed, or let it run on-the-fly):
-   ```bash
-   python -m rss_morning.prefilter_cli --output query_embeddings.json --queries-file queries.txt
-   ```
-3. **Enable in config**:
-   In `config.xml`, set `<pre-filter><enabled>true</enabled>` and point `<embeddings-path>` to your JSON file.
-
-   If you skip the JSON path, the app will compute embeddings at runtime (slower startup).
-
-   You can also configure the clustering aggressiveness via `<cluster-threshold>`.
+Feeds are managed in standard OPML (Outline Processor Markup Language). OPML is used because it is the universal import/export format across feed readers (NetNewsWire, Feedly, Inoreader).
 
 ## Docker
 
-Build and run:
+Run via Docker Compose:
+
 ```bash
 docker compose up --build
 ```
-Map your `configs/` folder and `feeds.xml` into the container to persist settings.
-
-## Email Delivery
-
-Enable it in `configs/config.xml` by setting the `<email>` block.
-You can also verify your email rendering/delivery (without running the full fetch loop) using:
-```bash
-python verify_email.py
-```
 
 ## Testing
+
+Run unit tests hermetically without live network calls:
 
 ```bash
 pytest
 ```
 
-## Troubleshooting
-
-- **Check logs:** `logs/rss-morning.log` is your friend.
-- **Debug mode:** Run with `--llm-dry-run` to see what would be sent to Gemini.
-- **Email issues:** Use `verify_email.py` to isolate rendering vs. sending problems.
-
 ## License
 
-RSS Morning ships under the Apache License 2.0. See `LICENSE` for the full text.
-
-Happy briefing (and brewing)!
+RSS Morning is distributed under the Apache License 2.0. See `LICENSE` for details.
