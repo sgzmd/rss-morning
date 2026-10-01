@@ -133,3 +133,27 @@ def test_parse_app_config_prompt_missing_file_attr_raises(tmp_path):
 
     with pytest.raises(ValueError, match="Prompt element must have a 'file' attribute"):
         parse_app_config(str(config_file))
+
+
+def test_parse_app_config_classification(tmp_path):
+    from rss_morning.config import parse_app_config
+
+    config_file = tmp_path / "config.xml"
+    config_file.write_text(
+        """
+        <config>
+            <feeds>feeds.xml</feeds>
+            <classification>
+                <enabled>true</enabled>
+                <model>jev-latest</model>
+                <threshold>0.65</threshold>
+            </classification>
+        </config>
+        """
+    )
+    (tmp_path / "feeds.xml").write_text("<opml><body></body></opml>")
+
+    config = parse_app_config(str(config_file))
+    assert config.classification.enabled is True
+    assert config.classification.model == "jev-latest"
+    assert config.classification.threshold == 0.65

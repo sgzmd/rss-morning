@@ -14,17 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class PreFilterConfig:
-    enabled: bool = False
-    embeddings_path: Optional[str] = None
-    cluster_threshold: float = 0.8
-    queries_file: Optional[str] = None
-
-
-@dataclass
-class EmbeddingsConfig:
-    provider: str = "fastembed"
-    model: str = "intfloat/multilingual-e5-large"
+class ClassificationConfig:
+    enabled: bool = True
+    model: str = "jev-latest"
+    threshold: float = 0.50
 
 
 @dataclass
@@ -53,8 +46,7 @@ class AppConfig:
     limit: int = 10
     max_age_hours: Optional[float] = None
     summary: bool = False
-    pre_filter: PreFilterConfig = field(default_factory=PreFilterConfig)
-    embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
+    classification: ClassificationConfig = field(default_factory=ClassificationConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
@@ -173,31 +165,19 @@ def parse_app_config(path: str) -> AppConfig:
     summary = root.findtext("summary", "false").lower() == "true"
     max_len = int(root.findtext("max-article-length", "100"))
 
-    # Pre-filter
-    pf_node = root.find("pre-filter")
-    pre_filter = PreFilterConfig()
-    if pf_node is not None:
-        pre_filter.enabled = pf_node.findtext("enabled", "false").lower() == "true"
-        emb_path = pf_node.findtext("embeddings-path")
-        if emb_path:
-            pre_filter.embeddings_path = _resolve_path(config_path, emb_path)
-
-        queries_file = pf_node.findtext("queries-file")
-        if queries_file:
-            pre_filter.queries_file = _resolve_path(config_path, queries_file)
-
-        ct_node = pf_node.find("cluster-threshold")
-        if ct_node is not None and ct_node.text:
-            pre_filter.cluster_threshold = float(ct_node.text)
-
-    # Embeddings
-    emb_node = root.find("embeddings")
-    embeddings_config = EmbeddingsConfig()
-    if emb_node is not None:
-        embeddings_config.provider = emb_node.findtext("provider", "fastembed")
-        embeddings_config.model = emb_node.findtext(
-            "model", "intfloat/multilingual-e5-large"
+    # Classification (Jev)
+    class_node = root.find("classification")
+    if class_node is None:
+        class_node = root.find("pre-filter")
+    classification_config = ClassificationConfig()
+    if class_node is not None:
+        classification_config.enabled = (
+            class_node.findtext("enabled", "true").lower() == "true"
         )
+        classification_config.model = class_node.findtext("model", "jev-latest")
+        th_val = class_node.findtext("threshold")
+        if th_val:
+            classification_config.threshold = float(th_val)
 
     # Email
     email_node = root.find("email")
@@ -248,8 +228,7 @@ def parse_app_config(path: str) -> AppConfig:
         limit=limit,
         max_age_hours=max_age_hours,
         summary=summary,
-        pre_filter=pre_filter,
-        embeddings=embeddings_config,
+        classification=classification_config,
         email=email,
         logging=logging_config,
         database=db_config,

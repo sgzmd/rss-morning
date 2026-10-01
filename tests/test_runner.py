@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 import pytest
 
 from rss_morning.articles import ArticleContent
+from rss_morning.classify import ClassificationDecision
 from rss_morning.models import FeedConfig, FeedEntry
 from rss_morning.runner import RunConfig, execute
 import rss_morning.runner as runner
@@ -18,6 +19,20 @@ def _feed_entry(link: str) -> FeedEntry:
         title="Title",
         published=datetime(2024, 1, 1, tzinfo=timezone.utc),
         summary="Summary",
+    )
+
+
+@pytest.fixture(autouse=True)
+def mock_classify(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "classify_entry",
+        lambda entry_meta, **kwargs: ClassificationDecision(
+            relevance_probability=1.0,
+            primary_area="other",
+            area_confidence=1.0,
+            is_plausible=True,
+        ),
     )
 
 
@@ -155,7 +170,7 @@ def test_execute_uses_custom_email_subject(monkeypatch):
     assert captured["subject"] == "Custom Subject"
 
 
-def test_execute_pre_filter_applies_when_enabled(monkeypatch):
+def test_execute_classification_applies_when_enabled(monkeypatch):
     monkeypatch.setattr(
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
@@ -173,50 +188,27 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
     monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
-    capture = {}
+    classified = []
 
-    class FakeFilter:
-        class FakeConfig:
-            model = "test-model"
-            batch_size = 1
-            threshold = 0.5
+    def fake_classify(entry_meta, *, model, threshold):
+        classified.append((entry_meta, model, threshold))
+        return ClassificationDecision(
+            relevance_probability=0.85,
+            primary_area="vulnerability",
+            area_confidence=0.9,
+            is_plausible=True,
+        )
 
-            def __init__(
-                self,
-                model=None,
-                provider=None,
-                batch_size=None,
-                threshold=None,
-                max_article_length=None,
-            ):
-                self.model = model
-                self.provider = provider
-                self.batch_size = batch_size
-                self.threshold = threshold
-
-        CONFIG = FakeConfig()
-
-        def __init__(self, *args, **kwargs):
-            capture["instantiated"] = True
-            capture["query_path"] = kwargs.get("query_embeddings_path")
-
-        def filter(self, articles, *, cluster_threshold=None, rng=None):
-            capture["articles"] = list(articles)
-            capture["cluster_threshold"] = cluster_threshold
-            retained = [dict(articles[0])]
-            retained[0]["url"] = "https://filtered.example.com"
-            return retained
-
-    import rss_morning.prefilter as prefilter_module
-
-    monkeypatch.setattr(prefilter_module, "EmbeddingArticleFilter", FakeFilter)
+    monkeypatch.setattr(runner, "classify_entry", fake_classify)
 
     config = RunConfig(
         feeds_file="feeds.xml",
         limit=5,
         max_age_hours=None,
         summary=False,
-        pre_filter=True,
+        classify=True,
+        classify_model="jev-latest",
+        classify_threshold=0.50,
         email_to=None,
         email_from=None,
         email_subject=None,
@@ -225,15 +217,15 @@ def test_execute_pre_filter_applies_when_enabled(monkeypatch):
     result = execute(config)
     payload = json.loads(result.output_text)
 
-    assert capture["instantiated"] is True
-    assert capture["query_path"] is None
-    assert capture["articles"][0]["url"] == "https://example.com"
-    assert capture["cluster_threshold"] == config.cluster_threshold
+    assert len(classified) == 1
+    assert classified[0][0]["link"] == "https://example.com"
+    assert classified[0][1] == "jev-latest"
+    assert classified[0][2] == 0.50
     assert len(payload) == 1
-    assert payload[0]["url"] == "https://filtered.example.com"
+    assert payload[0]["url"] == "https://example.com"
 
 
-def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
+def test_execute_classification_skipped_when_disabled(monkeypatch):
     monkeypatch.setattr(
         runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
     )
@@ -251,20 +243,17 @@ def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
     monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: "trimmed")
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
 
-    class FailingFilter:
-        def __init__(self, *args, **kwargs):
-            raise AssertionError("pre-filter should not be instantiated")
+    def fail_classify(*args, **kwargs):
+        raise AssertionError("classify_entry should not be called when classify=False")
 
-    import rss_morning.prefilter as prefilter_module
-
-    monkeypatch.setattr(prefilter_module, "EmbeddingArticleFilter", FailingFilter)
+    monkeypatch.setattr(runner, "classify_entry", fail_classify)
 
     config = RunConfig(
         feeds_file="feeds.xml",
         limit=5,
         max_age_hours=None,
         summary=False,
-        pre_filter=False,
+        classify=False,
         email_to=None,
         email_from=None,
         email_subject=None,
@@ -273,6 +262,7 @@ def test_execute_pre_filter_skipped_when_disabled(monkeypatch):
     result = execute(config)
     payload = json.loads(result.output_text)
 
+    assert len(payload) == 1
     assert payload[0]["url"] == "https://example.com"
 
 
@@ -291,7 +281,7 @@ def test_execute_load_articles_short_circuits_fetch(monkeypatch, tmp_path):
         limit=5,
         max_age_hours=None,
         summary=False,
-        pre_filter=False,
+        classify=False,
         save_articles_path=None,
         load_articles_path=str(snapshot),
     )
@@ -327,7 +317,7 @@ def test_execute_save_articles_writes_file(monkeypatch, tmp_path):
         limit=5,
         max_age_hours=None,
         summary=False,
-        pre_filter=False,
+        classify=False,
         save_articles_path=str(save_path),
         load_articles_path=None,
     )
