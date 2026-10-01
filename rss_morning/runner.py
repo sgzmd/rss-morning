@@ -13,10 +13,10 @@ from typing import Any, List, Optional
 from .articles import fetch_article_content, truncate_text
 from .classify import ClassificationDecision, classify_entry
 from .config import parse_feeds_config
+from .digest import generate_digest
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
 from .models import FeedConfig, FeedEntry
-from .digest import generate_digest
 
 logger = logging.getLogger(__name__)
 
@@ -39,15 +39,9 @@ class RunConfig:
     load_articles_path: Optional[str] = None
     max_article_length: int = 100
     system_prompt: Optional[str] = None
-    extractor: str = "newspaper"
     concurrency: int = 20
     llm_dry_run: bool = False
     llm_model: Optional[str] = None
-    pre_filter: Optional[bool] = None
-
-    def __post_init__(self):
-        if self.pre_filter is not None:
-            self.classify = self.pre_filter
 
 
 @dataclass
@@ -154,6 +148,49 @@ def _collect_feed_entries(config: RunConfig) -> List[FeedEntry]:
     return unique_entries
 
 
+def _classify_entries(
+    entries: List[FeedEntry], config: RunConfig
+) -> List[tuple[FeedEntry, Optional[ClassificationDecision]]]:
+    """Filter feed entries using Jev System One metadata classification."""
+    if not config.classify:
+        return [(entry, None) for entry in entries]
+
+    logger.info("Classifying %d feed entries with Jev (System One)", len(entries))
+    candidates = []
+    for entry in entries:
+        metadata = {
+            "title": entry.title,
+            "summary": entry.summary,
+            "category": entry.category,
+            "link": entry.link,
+        }
+        decision = classify_entry(
+            metadata,
+            model=config.classify_model,
+            threshold=config.classify_threshold,
+        )
+        if decision.is_plausible:
+            logger.info(
+                "Jev KEEP (prob=%.2f, area=%s): %s",
+                decision.relevance_probability,
+                decision.primary_area,
+                entry.title,
+            )
+            candidates.append((entry, decision))
+        else:
+            logger.debug(
+                "Jev DROP (prob=%.2f, area=%s): %s",
+                decision.relevance_probability,
+                decision.primary_area,
+                entry.title,
+            )
+
+    logger.info(
+        "Jev classification retained %d of %d entries", len(candidates), len(entries)
+    )
+    return candidates
+
+
 def _extract_candidate_articles(
     candidates: List[tuple[FeedEntry, Optional[ClassificationDecision]]],
     config: RunConfig,
@@ -226,95 +263,52 @@ def _build_default_email_subject() -> str:
 
 
 def execute(config: RunConfig) -> RunResult:
-    """Run the pipeline: collect -> exact dedupe -> Jev classify -> extract -> summarise -> output."""
+    """Run the linear pipeline: collect -> dedupe -> Jev -> extract -> digest -> output."""
     if config.load_articles_path:
         articles = _load_articles_from_file(config.load_articles_path)
     else:
-        # Step 1: Collect and deduplicate feed entries (metadata only)
         entries = _collect_feed_entries(config)
-
-        # Step 2: Jev classify on cheap metadata
-        if config.classify:
-            logger.info(
-                "Classifying %d feed entries with Jev (System One)", len(entries)
-            )
-            candidates = []
-            for entry in entries:
-                metadata = {
-                    "title": entry.title,
-                    "summary": entry.summary,
-                    "category": entry.category,
-                    "link": entry.link,
-                }
-                decision = classify_entry(
-                    metadata,
-                    model=config.classify_model,
-                    threshold=config.classify_threshold,
-                )
-                if decision.is_plausible:
-                    logger.info(
-                        "Jev KEEP (prob=%.2f, area=%s): %s",
-                        decision.relevance_probability,
-                        decision.primary_area,
-                        entry.title,
-                    )
-                    candidates.append((entry, decision))
-                else:
-                    logger.debug(
-                        "Jev DROP (prob=%.2f, area=%s): %s",
-                        decision.relevance_probability,
-                        decision.primary_area,
-                        entry.title,
-                    )
-            logger.info(
-                "Jev classification retained %d of %d entries",
-                len(candidates),
-                len(entries),
-            )
-        else:
-            candidates = [(entry, None) for entry in entries]
-
-        # Step 3: Extract full article text ONLY for plausible candidates
+        candidates = _classify_entries(entries, config)
         articles = _extract_candidate_articles(candidates, config)
 
     if config.save_articles_path:
         _save_articles_to_file(config.save_articles_path, articles)
 
-    email_payload: Any = articles
-    is_summary_payload = False
-
-    if config.summary:
-        edition_data = generate_digest(
-            articles,
-            system_prompt=config.system_prompt,
-            dry_run=config.llm_dry_run,
-            model=config.llm_model,
-        )
-        output_text = json.dumps(edition_data, indent=2, ensure_ascii=False)
-
-        if config.llm_dry_run:
-            logger.info("LLM dry run completed. Exiting without sending email.")
-            return RunResult(
-                output_text=output_text, email_payload=None, is_summary=True
-            )
-
-        email_payload = edition_data
-        is_summary_payload = True
-    else:
+    if not config.summary:
         output_text = json.dumps(articles, indent=2, ensure_ascii=False)
+        if config.email_to:
+            send_email_report(
+                payload=articles,
+                is_summary=False,
+                to_address=config.email_to,
+                from_address=config.email_from,
+                subject=config.email_subject or _build_default_email_subject(),
+            )
+        return RunResult(
+            output_text=output_text, email_payload=articles, is_summary=False
+        )
+
+    edition_data = generate_digest(
+        articles,
+        system_prompt=config.system_prompt,
+        dry_run=config.llm_dry_run,
+        model=config.llm_model,
+    )
+    output_text = json.dumps(edition_data, indent=2, ensure_ascii=False)
+
+    if config.llm_dry_run:
+        logger.info("LLM dry run completed. Exiting without sending email.")
+        return RunResult(output_text=output_text, email_payload=None, is_summary=True)
 
     if config.email_to:
-        subject = config.email_subject or _build_default_email_subject()
         send_email_report(
-            payload=email_payload,
-            is_summary=is_summary_payload,
+            payload=edition_data,
+            is_summary=True,
             to_address=config.email_to,
             from_address=config.email_from,
-            subject=subject,
+            subject=config.email_subject or _build_default_email_subject(),
         )
 
     return RunResult(
-        output_text=output_text,
-        email_payload=email_payload,
-        is_summary=is_summary_payload,
+        output_text=output_text, email_payload=edition_data, is_summary=True
     )

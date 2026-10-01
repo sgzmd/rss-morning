@@ -98,7 +98,6 @@ def test_parse_app_config_toml(tmp_path):
             summary = true
             concurrency = 5
             max_article_length = 300
-            extractor = "trafilatura"
             prompt_file = "{prompt_file.name}"
 
             [classification]
@@ -131,7 +130,6 @@ def test_parse_app_config_toml(tmp_path):
     assert config.summary is True
     assert config.concurrency == 5
     assert config.max_article_length == 300
-    assert config.extractor == "trafilatura"
     assert config.prompt == "Custom prompt content"
     assert config.classification.enabled is True
     assert config.classification.model == "jev-latest"

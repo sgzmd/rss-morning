@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
+import pprint
 from pathlib import Path
 from typing import List, Optional
 
-import dataclasses
-import pprint
 from .config import load_dotenv, parse_app_config
 from .runner import RunConfig, execute
 
@@ -20,14 +20,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Fetch recent articles from configured RSS feeds."
     )
-    # New main config argument
     parser.add_argument(
         "--config",
         default="configs/config.toml",
         help="Path to the main configuration TOML file.",
     )
-
-    # Overrides for logging/debugging
     parser.add_argument(
         "--log-level",
         default=None,
@@ -38,8 +35,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional path to a log file. Overrides config.",
     )
-
-    # Runtime execution flags that might not be in config (debugging mostly)
     parser.add_argument(
         "--save-articles",
         metavar="PATH",
@@ -54,11 +49,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--llm-dry-run",
         action="store_true",
         help="Prepare and log the LLM request without sending it to the API.",
-    )
-    parser.add_argument(
-        "--send-email-from-json",
-        metavar="PATH",
-        help="Send an email using the JSON payload from PATH, bypassing other processing.",
     )
 
     return parser
@@ -137,27 +127,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             load_articles_path=args.load_articles,
             max_article_length=app_config.max_article_length,
             system_prompt=app_config.prompt,
-            extractor=app_config.extractor,
             concurrency=app_config.concurrency,
             llm_dry_run=args.llm_dry_run,
             llm_model=app_config.llm_model,
         )
-
-        if args.send_email_from_json:
-            import json
-            from . import emailing
-
-            with open(args.send_email_from_json, encoding="utf-8") as f:
-                payload = json.load(f)
-
-            emailing.send_email_report(
-                payload=payload,
-                is_summary=True,  # Assuming JSON dump is a summary payload
-                to_address=config.email_to,
-                from_address=config.email_from,
-                subject=config.email_subject,
-            )
-            return 0
 
         config_dict = dataclasses.asdict(config)
         if config_dict.get("system_prompt"):

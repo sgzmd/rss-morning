@@ -21,9 +21,6 @@ concurrency = 10
 # Maximum characters per article body
 max_article_length = 250
 
-# Article extractor: "trafilatura"
-extractor = "trafilatura"
-
 # Optional editorial prompt file or inline prompt
 prompt_file = "prompt.md"
 
