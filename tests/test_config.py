@@ -190,3 +190,48 @@ def test_parse_app_config_invalid_toml_raises(tmp_path):
 
     with pytest.raises(ValueError, match="Failed to parse TOML configuration"):
         parse_app_config(str(config_file))
+
+
+def test_parse_app_config_default_areas(tmp_path):
+    config_file = tmp_path / "config.toml"
+    (tmp_path / "feeds.xml").touch()
+    config_file.write_text('feeds = "feeds.xml"\n', encoding="utf-8")
+
+    config = parse_app_config(str(config_file))
+    assert len(config.areas) == 6
+    assert "mobile_security" in config.areas
+    assert config.areas["mobile_security"].threshold == 0.40
+    assert "other" in config.areas
+    assert config.areas["other"].threshold == 0.75
+
+
+def test_parse_app_config_custom_areas(tmp_path):
+    config_file = tmp_path / "config.toml"
+    (tmp_path / "feeds.xml").touch()
+    config_file.write_text(
+        textwrap.dedent(
+            """
+            feeds = "feeds.xml"
+
+            [areas.mobile_security]
+            label = "Custom Mobile"
+            threshold = 0.35
+            description = "Custom mobile description"
+
+            [areas.cloud_security]
+            label = "Cloud Security"
+            threshold = 0.60
+            description = "AWS, GCP, Azure security"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    config = parse_app_config(str(config_file))
+    assert "mobile_security" in config.areas
+    assert config.areas["mobile_security"].label == "Custom Mobile"
+    assert config.areas["mobile_security"].threshold == 0.35
+    assert config.areas["cloud_security"].threshold == 0.60
+    # "other" should be automatically retained as fallback
+    assert "other" in config.areas
+    assert config.areas["other"].threshold == 0.75

@@ -42,3 +42,35 @@ file = "logs/rss-morning.log"
 [llm]
 # OpenRouter generative model for the final edition editor call
 model = "google/gemini-3.8-flash"
+
+# Focus areas with semantic Jev criteria and individual thresholds
+[areas.mobile_security]
+label = "Mobile Security"
+threshold = 0.40
+description = "Mobile application security, Android and iOS vulnerabilities, mobile malware, device attestation, and client integrity."
+
+[areas.corporate_security]
+label = "Corporate Security"
+threshold = 0.45
+description = "Enterprise networking, VPN, SD-WAN, firewalls, identity providers, managed devices, browsers, and workplace IT infrastructure."
+
+[areas.account_takeover]
+label = "Account Takeover"
+threshold = 0.40
+description = "Account takeover, credential stuffing, session hijacking, password spraying, brute force, and customer identity compromise."
+
+[areas.end_user_security]
+label = "End-User Security (Passkeys & Modern Auth)"
+threshold = 0.40
+description = "Passkeys, FIDO2, WebAuthn, modern authentication methods, biometric login, MFA adoption, and end-user identity protection."
+
+[areas.ai_security]
+label = "AI Security"
+threshold = 0.50
+description = "AI model vulnerabilities, prompt injection, AI agent safety, and security implications of LLMs and generative AI."
+
+[areas.other]
+label = "Everything Else & Notable CVEs"
+threshold = 0.75
+description = "General security news, notable CVEs, software vulnerabilities, infrastructure, or material not fitting any specific focus area above."
+

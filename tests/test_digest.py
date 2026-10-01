@@ -198,3 +198,60 @@ def test_build_editorial_input_formats_articles():
     assert data[0]["url"] == "https://example.com/test"
     assert data[0]["primary_area"] == "ai_security"
     assert data[0]["content"] == "Extracted full text content"
+
+
+def test_build_edition_schema_dynamic_enum():
+    from rss_morning.digest import build_edition_schema
+
+    schema = build_edition_schema(["mobile_security", "ai_security"])
+    att_area = schema["properties"]["attention"]["items"]["properties"]["primary_area"]
+    watch_area = schema["properties"]["watch"]["items"]["properties"]["primary_area"]
+
+    assert att_area["enum"] == ["mobile_security", "ai_security"]
+    assert watch_area["enum"] == ["mobile_security", "ai_security"]
+
+
+def test_generate_digest_with_areas_updates_prompt_and_schema(
+    mock_complete_structured,
+):
+    from rss_morning.models import AreaConfig
+
+    areas = {
+        "mobile_security": AreaConfig(
+            key="mobile_security",
+            label="Mobile Security",
+            description="Mobile bugs",
+            threshold=0.40,
+        ),
+        "corporate_security": AreaConfig(
+            key="corporate_security",
+            label="Corporate Security",
+            description="Corporate IT",
+            threshold=0.45,
+        ),
+    }
+
+    mock_complete_structured.return_value = {
+        "overview": "Overview text",
+        "attention": [],
+        "watch": [],
+    }
+
+    articles = [{"url": "https://example.com/1", "title": "Art 1"}]
+    generate_digest(articles, areas=areas)
+
+    assert mock_complete_structured.call_count == 1
+    call_args = mock_complete_structured.call_args[1]
+
+    # Verify dynamic schema used
+    schema = call_args["json_schema"]
+    assert schema["properties"]["attention"]["items"]["properties"]["primary_area"][
+        "enum"
+    ] == ["mobile_security", "corporate_security"]
+
+    # Verify prompt contains configured areas
+    messages = call_args["messages"]
+    system_msg = messages[0]["content"]
+    assert "PRIMARY AREAS:" in system_msg
+    assert "mobile_security: Mobile bugs" in system_msg
+    assert "corporate_security: Corporate IT" in system_msg

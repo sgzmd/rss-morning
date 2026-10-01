@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import requests
 
+from .models import AreaConfig
+
 logger = logging.getLogger(__name__)
 
 TYPESAFE_API_URL = (
@@ -19,33 +21,31 @@ TYPESAFE_API_URL = (
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_RELEVANCE_THRESHOLD = 0.50
 
-# Centralised primary area taxonomy
 DEFAULT_AREAS: Dict[str, str] = {
-    "account_security": (
-        "Account takeover, authentication, credentials, passkeys, MFA, "
-        "session security, and customer identity"
-    ),
     "mobile_security": (
         "Mobile application security, Android and iOS vulnerabilities, "
         "mobile malware, device attestation, and client integrity"
     ),
-    "corporate_it": (
+    "corporate_security": (
         "Enterprise networking, VPN, SD-WAN, firewalls, identity providers, "
         "managed devices, browsers, and workplace IT infrastructure"
     ),
-    "fraud_abuse": (
-        "Financial fraud, botting, spam campaigns, credential stuffing, "
-        "payment abuse, and malicious automation"
+    "account_takeover": (
+        "Account takeover, credential stuffing, session hijacking, password spraying, "
+        "brute force, and customer identity compromise"
+    ),
+    "end_user_security": (
+        "Passkeys, FIDO2, WebAuthn, modern authentication methods, biometric login, "
+        "MFA adoption, and end-user identity protection"
     ),
     "ai_security": (
         "AI model vulnerabilities, prompt injection, AI agent safety, "
         "and security implications of LLMs and generative AI"
     ),
-    "privacy_regulation": (
-        "Data privacy, compliance regulations, breach reporting mandates, "
-        "legal enforcement, and privacy frameworks"
+    "other": (
+        "General security news, notable CVEs, software vulnerabilities, infrastructure, "
+        "or material not fitting any specific focus area above"
     ),
-    "other": ("Does not fit any security area above, or general non-security material"),
 }
 
 RELEVANCE_QUESTION: Dict[str, Any] = {
@@ -79,22 +79,32 @@ class ClassificationDecision:
     primary_area: str
     area_confidence: float
     is_plausible: bool
+    effective_threshold: float = DEFAULT_RELEVANCE_THRESHOLD
 
 
 def build_jev_questions(
-    areas: Optional[Mapping[str, str]] = None,
+    areas: Optional[Mapping[str, AreaConfig | str]] = None,
 ) -> Dict[str, Any]:
     """Construct centralized Jev question schema for relevance and primary area."""
-    configured_areas = dict(areas or DEFAULT_AREAS)
-    if "other" not in configured_areas:
-        configured_areas["other"] = "Does not fit any category above"
+    criteria: Dict[str, str] = {}
+    if areas:
+        for k, v in areas.items():
+            desc = v.description if hasattr(v, "description") else str(v)
+            criteria[k] = desc
+    else:
+        criteria = dict(DEFAULT_AREAS)
+
+    if "other" not in criteria:
+        criteria["other"] = (
+            "Does not fit any security area above, or general non-security material"
+        )
 
     return {
         "is_relevant": RELEVANCE_QUESTION,
         "primary_area": {
             "type": "choice",
             "instructions": "What primary security area does this article describe?",
-            "criteria": configured_areas,
+            "criteria": criteria,
         },
     }
 
@@ -105,7 +115,7 @@ def classify_entry(
     model: str = DEFAULT_MODEL,
     threshold: float = DEFAULT_RELEVANCE_THRESHOLD,
     api_key: Optional[str] = None,
-    areas: Optional[Mapping[str, str]] = None,
+    areas: Optional[Mapping[str, AreaConfig | str]] = None,
     timeout: float = 15.0,
 ) -> ClassificationDecision:
     """Submit cheap feed metadata to TypeSafe Jev for relevance and area judgement."""
@@ -113,7 +123,6 @@ def classify_entry(
     if not resolved_key:
         raise TypeSafeError("TYPESAFE_API_KEY environment variable is not set.")
 
-    # Prepare cheap metadata state (no full article body)
     state = {
         "title": entry_metadata.get("title", ""),
         "summary": entry_metadata.get("summary", ""),
@@ -182,13 +191,21 @@ def classify_entry(
             f"Failed to parse TypeSafe response payload: {exc}"
         ) from exc
 
-    is_plausible = relevance_prob >= threshold
+    # Determine effective threshold for this area
+    effective_threshold = float(threshold)
+    if areas and primary_area in areas:
+        area_item = areas[primary_area]
+        if hasattr(area_item, "threshold"):
+            effective_threshold = float(area_item.threshold)
+
+    is_plausible = relevance_prob >= effective_threshold
 
     return ClassificationDecision(
         relevance_probability=relevance_prob,
         primary_area=primary_area,
         area_confidence=confidence,
         is_plausible=is_plausible,
+        effective_threshold=effective_threshold,
     )
 
 
@@ -198,7 +215,7 @@ def classify_entries(
     model: str = DEFAULT_MODEL,
     threshold: float = DEFAULT_RELEVANCE_THRESHOLD,
     api_key: Optional[str] = None,
-    areas: Optional[Mapping[str, str]] = None,
+    areas: Optional[Mapping[str, AreaConfig | str]] = None,
     timeout: float = 15.0,
 ) -> List[tuple[Mapping[str, Any], ClassificationDecision]]:
     """Classify a sequence of feed entries, returning pairs of (entry, decision)."""

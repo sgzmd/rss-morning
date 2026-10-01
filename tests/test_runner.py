@@ -478,3 +478,88 @@ def test_execute_raises_when_no_entries(monkeypatch):
 
     with pytest.raises(RuntimeError):
         execute(config)
+
+
+def test_execute_forwards_areas_to_subsystems(monkeypatch):
+    from rss_morning.models import AreaConfig
+
+    areas = {
+        "mobile_security": AreaConfig(
+            key="mobile_security",
+            label="Mobile Security",
+            description="Mobile",
+            threshold=0.40,
+        )
+    }
+
+    monkeypatch.setattr(
+        runner, "parse_feeds_config", lambda path: [FeedConfig("Cat", "Feed", "url")]
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_feed_entries",
+        lambda feed: [_feed_entry("https://example.com/1")],
+    )
+    monkeypatch.setattr(
+        runner, "select_recent_entries", lambda entries, limit, cutoff: entries
+    )
+    monkeypatch.setattr(
+        runner,
+        "fetch_article_content",
+        lambda url, **kwargs: ArticleContent(text="body", image=None),
+    )
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: text)
+
+    classify_calls = []
+
+    def fake_classify(entry_meta, *, model, threshold, areas=None):
+        classify_calls.append({"entry": entry_meta, "areas": areas})
+        return ClassificationDecision(
+            relevance_probability=0.85,
+            primary_area="mobile_security",
+            area_confidence=0.9,
+            is_plausible=True,
+            effective_threshold=0.40,
+        )
+
+    monkeypatch.setattr(runner, "classify_entry", fake_classify)
+
+    digest_calls = []
+
+    def fake_generate(
+        articles, system_prompt=None, dry_run=False, model=None, areas=None
+    ):
+        digest_calls.append({"articles": articles, "areas": areas})
+        return {
+            "overview": "Overview",
+            "attention": [],
+            "watch": [],
+        }
+
+    monkeypatch.setattr(runner, "generate_digest", fake_generate)
+
+    email_calls = []
+    monkeypatch.setattr(
+        runner, "send_email_report", lambda **kwargs: email_calls.append(kwargs)
+    )
+
+    config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=5,
+        max_age_hours=None,
+        summary=True,
+        classify=True,
+        email_to="user@example.com",
+        areas=areas,
+    )
+
+    result = execute(config)
+    assert result.is_summary is True
+    assert len(classify_calls) == 1
+    assert classify_calls[0]["areas"] == areas
+
+    assert len(digest_calls) == 1
+    assert digest_calls[0]["areas"] == areas
+
+    assert len(email_calls) == 1
+    assert email_calls[0]["areas"] == areas
