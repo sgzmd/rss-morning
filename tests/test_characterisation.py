@@ -64,7 +64,7 @@ def test_article_extraction_failure_isolation():
         link="https://ex.com/pass", category="Sec", title="Pass", published=now
     )
 
-    def fake_fetch_article(url, extractor="newspaper"):
+    def fake_fetch_article(url, **kwargs):
         if "fail" in url:
             raise RuntimeError("Extraction crashed")
         return types.SimpleNamespace(text="Good content", image=None)
