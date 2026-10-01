@@ -79,8 +79,7 @@ Used by the pre-filter. A plain text file with one signal/topic per line.
 
 Secrets are loaded from the file specified in `configs/config.xml` (usually `configs/env.xml`), or from system environment variables.
 
-- `GOOGLE_API_KEY`: For Gemini summaries.
-- `OPENAI_API_KEY`: Optional. Required only if you use OpenAI for embeddings instead of the default `fastembed` local model.
+- `OPENROUTER_API_KEY`: For OpenRouter summaries.
 - `RESEND_API_KEY` & `RESEND_FROM_EMAIL`: For sending emails.
 
 ## Drive It From The CLI

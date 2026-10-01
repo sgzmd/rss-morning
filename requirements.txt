@@ -27,7 +27,6 @@ filelock==3.20.0
 flatbuffers==25.12.19
 fsspec==2025.12.0
 google-auth==2.45.0
-google-genai==1.56.0
 h11==0.16.0
 hf-xet==1.2.0
 htmldate==1.9.4
@@ -56,7 +55,6 @@ nltk==3.9.2
 nodeenv==1.9.1
 numpy==2.3.4
 onnxruntime==1.23.2
-openai==2.6.0
 packaging==25.0
 pandas==2.3.3
 pillow==11.3.0

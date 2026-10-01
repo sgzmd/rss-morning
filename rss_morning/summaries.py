@@ -1,22 +1,80 @@
-"""Integration with Gemini for article summaries."""
+"""Integration with OpenRouter for article summaries."""
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import Optional, Tuple
 
 from bs4 import BeautifulSoup
 
-try:
-    from google import genai
-    from google.genai import types
-except Exception:  # pragma: no cover - optional dependency
-    genai = None
-    types = None
+from .openrouter import complete_structured
 
 logger = logging.getLogger(__name__)
+
+SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "exec-summary": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Executive summary of the articles",
+        },
+        "summaries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL of the article being summarized",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Category of the article",
+                    },
+                    "summary": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "Generated title",
+                            },
+                            "rank-reasoning": {
+                                "type": "string",
+                                "description": "Why this article was ranked highly",
+                            },
+                            "what": {
+                                "type": "string",
+                                "description": "The What summary",
+                            },
+                            "so-what": {
+                                "type": "string",
+                                "description": "The So What? Summary",
+                            },
+                            "now-what": {
+                                "type": "string",
+                                "description": "The Now What? Section",
+                            },
+                        },
+                        "required": [
+                            "title",
+                            "rank-reasoning",
+                            "what",
+                            "so-what",
+                            "now-what",
+                        ],
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["url", "category", "summary"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["exec-summary", "summaries"],
+    "additionalProperties": False,
+}
 
 
 def sanitize_html(text: str) -> str:
@@ -27,7 +85,7 @@ def sanitize_html(text: str) -> str:
 
 
 def build_summary_input(articles: list[dict]) -> str:
-    """Prepare Gemini request payload from article data."""
+    """Prepare request payload from article data."""
     prepared = []
     for index, article in enumerate(articles, start=1):
         prepared.append(
@@ -51,8 +109,9 @@ def generate_summary(
     return_dict: bool = False,
     batch_size: int = 100,
     dry_run: bool = False,
+    model: Optional[str] = None,
 ) -> str | Tuple[str, Optional[dict]]:
-    """Generate summary JSON for a list of articles."""
+    """Generate summary JSON for a list of articles using OpenRouter."""
     if not articles:
         logger.info(
             "No articles available for summarisation; returning empty summary list."
@@ -61,21 +120,6 @@ def generate_summary(
         if return_dict:
             return json.dumps(empty, ensure_ascii=False), empty
         return json.dumps(empty, ensure_ascii=False)
-
-    if genai is None or types is None:
-        raise RuntimeError(
-            "google-genai package is required for --summary but is not installed."
-        )
-
-    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    if api_key:
-        masked_key = f"...{api_key[-4:]}" if len(api_key) >= 4 else "****"
-        logger.info("Using API key ending with: %s", masked_key)
-    else:
-        logger.info("No Gemini API key found in environment.")
-    client = genai.Client(api_key=api_key)
-
-    model = "gemini-flash-latest"
 
     combined_summaries = []
     exec_summaries = []
@@ -93,112 +137,24 @@ def generate_summary(
         try:
             summary_input = build_summary_input(batch)
 
-            # Construct input with system prompt and articles
-            input_text = f"{system_prompt}\n\n{summary_input}"
-            logger.debug("Gemini request payload: %s", input_text)
-
             if dry_run:
                 logger.info(
                     "DRY RUN: Prepared payload for batch %d: %s",
                     (i // batch_size) + 1,
-                    input_text,
+                    summary_input,
                 )
                 continue
 
-            contents = [
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(text=input_text),
-                    ],
-                ),
-            ]
-
-            generate_content_config = types.GenerateContentConfig(
-                # thinking_config=types.ThinkingConfig(
-                #     thinking_level="HIGH",
-                # ),
-                response_mime_type="application/json",
-                response_schema=types.Schema(
-                    type=types.Type.OBJECT,
-                    description="Top-level response structure expected from the LLM.",
-                    required=["summaries"],
-                    properties={
-                        "exec-summary": types.Schema(
-                            type=types.Type.ARRAY,
-                            items=types.Schema(
-                                type=types.Type.STRING,
-                                description="Executive summary of the articles",
-                            ),
-                        ),
-                        "summaries": types.Schema(
-                            type=types.Type.ARRAY,
-                            items=types.Schema(
-                                type=types.Type.OBJECT,
-                                required=["url", "category", "summary"],
-                                properties={
-                                    "url": types.Schema(
-                                        type=types.Type.STRING,
-                                        description="URL of the article being summarized",
-                                    ),
-                                    "category": types.Schema(
-                                        type=types.Type.STRING,
-                                        description="Category of the article",
-                                    ),
-                                    "summary": types.Schema(
-                                        type=types.Type.OBJECT,
-                                        description="Fields describing the summary content.",
-                                        required=[
-                                            "title",
-                                            "rank-reasoning",
-                                            "what",
-                                            "so-what",
-                                            "now-what",
-                                        ],
-                                        properties={
-                                            "title": types.Schema(
-                                                type=types.Type.STRING,
-                                                description="Generated title",
-                                            ),
-                                            "rank-reasoning": types.Schema(
-                                                type=types.Type.STRING,
-                                                description="Why this article was ranked highly",
-                                            ),
-                                            "what": types.Schema(
-                                                type=types.Type.STRING,
-                                                description="The What summary",
-                                            ),
-                                            "so-what": types.Schema(
-                                                type=types.Type.STRING,
-                                                description="The So What? Summary",
-                                            ),
-                                            "now-what": types.Schema(
-                                                type=types.Type.STRING,
-                                                description="The Now What? Section",
-                                            ),
-                                        },
-                                    ),
-                                },
-                            ),
-                        ),
-                    },
-                ),
+            parsed = complete_structured(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": summary_input},
+                ],
+                json_schema=SUMMARY_SCHEMA,
+                schema_name="rss_summaries",
+                model=model,
             )
 
-            response_text = ""
-            # Accumulate stream to return full JSON string
-            for chunk in client.models.generate_content_stream(
-                model=model,
-                contents=contents,
-                config=generate_content_config,
-            ):
-                if chunk.text:
-                    response_text += chunk.text
-
-            logger.debug("Gemini response text: %s", response_text)
-
-            # Parse JSON
-            parsed = json.loads(response_text)
             batch_summaries = parsed.get("summaries", [])
             exec_summary = parsed.get("exec-summary")
             if exec_summary:
@@ -211,10 +167,14 @@ def generate_summary(
             logger.error(
                 "Failed to generate summary for batch starting at index %d: %s", i, exc
             )
-            # We could optionally add the raw articles or empty placeholders here,
-            # but for now we skip the failed batch or maybe we should just log it
-            # effectively 'dropping' the summaries for this batch.
             continue
+
+    if dry_run:
+        logger.info("DRY RUN: skipping API call.")
+        mock_resp = {"dry_run": True}
+        if return_dict:
+            return json.dumps(mock_resp), mock_resp
+        return json.dumps(mock_resp)
 
     # Post-processing / Sanitization on the combined result
     for item in combined_summaries:
@@ -233,33 +193,8 @@ def generate_summary(
 
     rendered = json.dumps(final_obj, ensure_ascii=False, indent=2)
 
-    # Note: If *all* batches fail, this will return an empty list of summaries,
-    # distinct from the "fallback" approach which returned the original articles.
-    # If partial success, we return partial summaries.
-
-    # Check if we have NOTHING at all, maybe fallback if *everything* failed?
-    # But usually partial is better than raw articles mixed with summaries logic downstream.
-    # The original code's fallback was returning `articles` dumps.
-    # If combined_summaries is empty and we had articles, maybe we still fallback?
-    # Let's stick to returning what we got, or empty.
-    # Users will prefer empty summaries over a crash or raw article dumps breaking the UI expectation usually.
-
-    if dry_run:
-        logger.info("DRY RUN: skipping API call.")
-        mock_resp = {"dry_run": True}
-        if return_dict:
-            return json.dumps(mock_resp), mock_resp
-        return json.dumps(mock_resp)
-
     if not combined_summaries and articles:
         logger.warning("No summaries were generated from any batch.")
-        # If we really want the old fallback behavior on total failure:
-        # return json.dumps(articles, ensure_ascii=False, indent=2)
-        # But that changes the return structure (list vs {"summaries": [...]})
-        # The original code:
-        #   fallback = json.dumps(articles, ...
-        #   return fallback
-        # Let's keep it consistent: Return valid JSON structure even if empty.
 
     if return_dict:
         return rendered, final_obj
