@@ -16,7 +16,7 @@ from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
 from .models import FeedConfig, FeedEntry
-from .summaries import generate_summary
+from .digest import generate_digest
 from . import db
 
 logger = logging.getLogger(__name__)
@@ -180,6 +180,10 @@ def _extract_candidate_articles(
                         return {
                             "url": cached["url"],
                             "category": category,
+                            "primary_area": category,
+                            "relevance_probability": decision.relevance_probability
+                            if decision
+                            else None,
                             "title": cached["title"],
                             "summary": cached["summary"] or entry.summary or "",
                             "text": truncate_text(
@@ -195,6 +199,10 @@ def _extract_candidate_articles(
             payload = {
                 "url": entry.link,
                 "category": category,
+                "primary_area": category,
+                "relevance_probability": decision.relevance_probability
+                if decision
+                else None,
                 "title": entry.title,
                 "summary": entry.summary or "",
                 "published": entry.published.isoformat() if entry.published else None,
@@ -243,30 +251,6 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
     return _extract_candidate_articles(
         candidates, config, session_factory=session_factory
     )
-
-
-def _attach_summary_images(summary_payload: Any, source_articles: List[dict]) -> Any:
-    """Populate missing image fields in summary payload using original articles."""
-    if not isinstance(summary_payload, dict):
-        return summary_payload
-
-    summaries_list = summary_payload.get("summaries")
-    if not isinstance(summaries_list, list):
-        return summary_payload
-
-    url_to_image = {
-        article.get("url"): article.get("image")
-        for article in source_articles
-        if article.get("url") and article.get("image")
-    }
-
-    for item in summaries_list:
-        if isinstance(item, dict):
-            url = item.get("url")
-            if url and not item.get("image") and url in url_to_image:
-                item["image"] = url_to_image[url]
-
-    return summary_payload
 
 
 def _build_default_email_subject() -> str:
@@ -346,17 +330,13 @@ def execute(config: RunConfig) -> RunResult:
     is_summary_payload = False
 
     if config.summary:
-        if not config.system_prompt:
-            raise ValueError("Summary requested but no system_prompt configured.")
-
-        summary_output, summary_data = generate_summary(
+        edition_data = generate_digest(
             articles,
-            config.system_prompt,
-            return_dict=True,
+            system_prompt=config.system_prompt,
             dry_run=config.llm_dry_run,
             model=config.llm_model,
         )
-        output_text = summary_output
+        output_text = json.dumps(edition_data, indent=2, ensure_ascii=False)
 
         if config.llm_dry_run:
             logger.info("LLM dry run completed. Exiting without sending email.")
@@ -364,13 +344,8 @@ def execute(config: RunConfig) -> RunResult:
                 output_text=output_text, email_payload=None, is_summary=True
             )
 
-        if summary_data is not None:
-            summary_data = _attach_summary_images(summary_data, articles)
-            if isinstance(summary_data, dict) and "summaries" in summary_data:
-                summary_data["summaries"].sort(key=lambda x: x.get("category") or "")
-            output_text = json.dumps(summary_data, indent=2, ensure_ascii=False)
-            email_payload = summary_data
-            is_summary_payload = True
+        email_payload = edition_data
+        is_summary_payload = True
     else:
         output_text = json.dumps(articles, indent=2, ensure_ascii=False)
 

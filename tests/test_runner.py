@@ -84,21 +84,33 @@ def test_execute_summary_flow(monkeypatch):
     monkeypatch.setattr(
         runner, "select_recent_entries", lambda entries, limit, cutoff: entries
     )
-    article_image = "https://example.com/summary-image.jpg"
-
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url, **kwargs: ArticleContent(text=None, image=article_image),
+        lambda url, **kwargs: ArticleContent(
+            text="body", image="https://example.com/img.jpg"
+        ),
     )
     monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: text)
 
-    summary_payload = {"summaries": [{"url": "https://example.com"}]}
+    edition_payload = {
+        "overview": "Overview of today's events.",
+        "attention": [
+            {
+                "title": "Critical Bug",
+                "summary": "Actively exploited vulnerability.",
+                "source_urls": ["https://example.com"],
+                "primary_area": "corporate_it",
+                "urgency_rationale": "In-the-wild exploitation.",
+            }
+        ],
+        "watch": [],
+    }
 
-    def fake_generate(articles, system_prompt, return_dict, **kwargs):
-        return json.dumps(summary_payload), summary_payload
+    def fake_generate(articles, system_prompt=None, dry_run=False, model=None):
+        return edition_payload
 
-    monkeypatch.setattr(runner, "generate_summary", fake_generate)
+    monkeypatch.setattr(runner, "generate_digest", fake_generate)
     calls = []
     monkeypatch.setattr(
         runner, "send_email_report", lambda **kwargs: calls.append(kwargs)
@@ -123,12 +135,13 @@ def test_execute_summary_flow(monkeypatch):
     result = execute(config)
 
     rendered = json.loads(result.output_text)
-    assert rendered["summaries"]
-    assert rendered["summaries"][0]["image"] == article_image
+    assert rendered["overview"] == "Overview of today's events."
+    assert len(rendered["attention"]) == 1
+    assert rendered["attention"][0]["title"] == "Critical Bug"
     assert result.is_summary
     assert calls[0]["is_summary"] is True
     assert calls[0]["subject"] == "RSS Mailer update for 1999-12-31 at 23:59"
-    assert calls[0]["payload"]["summaries"][0]["image"] == article_image
+    assert calls[0]["payload"] == edition_payload
 
 
 def test_execute_uses_custom_email_subject(monkeypatch):

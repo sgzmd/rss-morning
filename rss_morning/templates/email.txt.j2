@@ -1,6 +1,36 @@
 {% if fallback %}
 {{ fallback }}
 {% elif is_summary %}
+{% if payload.get("overview") %}
+Overview:
+{{ payload.get("overview") }}
+
+----------------------------------------
+
+{% endif %}
+{% if payload.get("attention") %}
+ATTENTION:
+{% for item in payload.get("attention") -%}
+* {{ item.get("title") }} [{{ item.get("primary_area") }}]
+  {{ item.get("summary") }}
+  Why it matters: {{ item.get("urgency_rationale") }}
+  Sources: {{ item.get("source_urls") | join(", ") }}
+
+{% endfor -%}
+----------------------------------------
+
+{% endif %}
+{% if payload.get("watch") %}
+WATCH:
+{% for item in payload.get("watch") -%}
+* {{ item.get("title") }} [{{ item.get("primary_area") }}]
+  {{ item.get("summary") }}
+  Sources: {{ item.get("source_urls") | join(", ") }}
+
+{% endfor -%}
+----------------------------------------
+
+{% endif %}
 {% if payload.get("exec_summary") %}
 Executive Summary:
 {{ payload.get("exec_summary") }}
