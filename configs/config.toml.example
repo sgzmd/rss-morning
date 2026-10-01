@@ -1,0 +1,47 @@
+# RSS Morning Configuration
+
+# Path to the OPML feeds file (relative to this config or absolute)
+feeds = "feeds.xml"
+
+# Optional path to .env file for secrets (or use system environment variables)
+# env_file = ".env"
+
+# Maximum articles to process per feed
+limit = 10
+
+# Maximum age of articles in hours (optional)
+max_age_hours = 24.0
+
+# Generate AI summary digest
+summary = true
+
+# HTTP extraction concurrency
+concurrency = 10
+
+# Maximum characters per article body
+max_article_length = 250
+
+# Article extractor: "trafilatura"
+extractor = "trafilatura"
+
+# Optional editorial prompt file or inline prompt
+prompt_file = "prompt.md"
+
+[classification]
+# Jev (TypeSafe System One) metadata pre-filter
+enabled = true
+model = "jev-latest"
+threshold = 0.50
+
+[email]
+to = "user@example.com"
+from = "mailer@example.com"
+subject = "Morning RSS Digest"
+
+[logging]
+level = "INFO"
+file = "logs/rss-morning.log"
+
+[llm]
+# OpenRouter generative model for the final edition editor call
+model = "anthropic/claude-3.5-haiku"

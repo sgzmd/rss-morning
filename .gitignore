@@ -20,9 +20,11 @@ mylog.txt
 
 # Configs
 configs/*
-!configs/*.xml.example
+!configs/*.example
+!configs/*.toml.example
 *.db
 .*
+!.env.example
 *.opml 
 configs/queries.json
 gemini-response.json

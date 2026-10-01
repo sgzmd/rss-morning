@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from pathlib import Path
 from typing import List, Optional
 
 import dataclasses
 import pprint
-from .config import parse_app_config, parse_env_config
+from .config import load_dotenv, parse_app_config
 from .runner import RunConfig, execute
 
 logger = logging.getLogger(__name__)
@@ -24,8 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
     # New main config argument
     parser.add_argument(
         "--config",
-        default="configs/config.xml",
-        help="Path to the main configuration XML file.",
+        default="configs/config.toml",
+        help="Path to the main configuration TOML file.",
     )
 
     # Overrides for logging/debugging
@@ -111,10 +110,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         # Load main config
         app_config = parse_app_config(args.config)
 
-        # Load env config if present
+        # Load environment variables if an env file is configured or .env exists
         if app_config.env_file:
-            env_vars = parse_env_config(app_config.env_file)
-            os.environ.update(env_vars)
+            load_dotenv(app_config.env_file)
+        elif Path(".env").exists():
+            load_dotenv(".env")
 
         # Determine logging settings (CLI overrides Config)
         log_level = args.log_level or app_config.logging.level
