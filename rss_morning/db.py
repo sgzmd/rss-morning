@@ -55,7 +55,13 @@ def init_engine(connection_string: Optional[str]) -> Optional[Engine]:
     if not connection_string:
         return None
 
-    logger.info("Initializing database connection: %s", connection_string)
+    try:
+        from sqlalchemy.engine import make_url
+
+        safe_conn = make_url(connection_string).render_as_string(hide_password=True)
+    except Exception:
+        safe_conn = "***"
+    logger.info("Initializing database connection: %s", safe_conn)
     engine = create_engine(connection_string)
     Base.metadata.create_all(engine)
     return engine

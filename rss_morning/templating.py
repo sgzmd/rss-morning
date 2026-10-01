@@ -71,7 +71,7 @@ def get_environment() -> Environment:
         loader = FileSystemLoader(str(template_dir))
         _ENV = Environment(
             loader=loader,
-            autoescape=select_autoescape(["html", "xml"]),
+            autoescape=select_autoescape(["html", "xml", "html.j2"]),
             trim_blocks=True,
             lstrip_blocks=True,
         )
