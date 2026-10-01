@@ -17,7 +17,6 @@ from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
 from .models import FeedConfig, FeedEntry
 from .digest import generate_digest
-from . import db
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +41,6 @@ class RunConfig:
     system_prompt: Optional[str] = None
     extractor: str = "newspaper"
     concurrency: int = 20
-    database_enabled: bool = False
-    database_connection_string: Optional[str] = None
     llm_dry_run: bool = False
     llm_model: Optional[str] = None
     pre_filter: Optional[bool] = None
@@ -160,7 +157,6 @@ def _collect_feed_entries(config: RunConfig) -> List[FeedEntry]:
 def _extract_candidate_articles(
     candidates: List[tuple[FeedEntry, Optional[ClassificationDecision]]],
     config: RunConfig,
-    session_factory=None,
 ) -> List[dict]:
     """Extract article body text ONLY for selected candidates."""
     logger.info("Fetching article text for %d selected candidates", len(candidates))
@@ -172,29 +168,6 @@ def _extract_candidate_articles(
         entry, decision = candidate_pair
         category = decision.primary_area if decision else entry.category
         try:
-            if session_factory:
-                with session_factory() as session:
-                    cached = db.get_article(session, entry.link)
-                    if cached:
-                        logger.debug("Cache hit for %s", entry.link)
-                        return {
-                            "url": cached["url"],
-                            "category": category,
-                            "primary_area": category,
-                            "relevance_probability": decision.relevance_probability
-                            if decision
-                            else None,
-                            "title": cached["title"],
-                            "summary": cached["summary"] or entry.summary or "",
-                            "text": truncate_text(
-                                cached["text"], limit=config.max_article_length
-                            ),
-                            "image": cached["image"],
-                            "published": cached["published"].isoformat()
-                            if cached.get("published")
-                            else None,
-                        }
-
             content = fetch_article_content(entry.link)
             payload = {
                 "url": entry.link,
@@ -218,10 +191,6 @@ def _extract_candidate_articles(
             if content.image:
                 payload["image"] = content.image
 
-            if session_factory:
-                with session_factory() as session:
-                    db.upsert_article(session, payload)
-
             return payload
         except Exception:
             logger.exception("Failed to process article content for %s", entry.link)
@@ -244,13 +213,11 @@ def _extract_candidate_articles(
     return output
 
 
-def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
+def _collect_entries(config: RunConfig) -> List[dict]:
     """Compatibility wrapper: collect and extract without pre-filtering."""
     entries = _collect_feed_entries(config)
     candidates = [(entry, None) for entry in entries]
-    return _extract_candidate_articles(
-        candidates, config, session_factory=session_factory
-    )
+    return _extract_candidate_articles(candidates, config)
 
 
 def _build_default_email_subject() -> str:
@@ -260,17 +227,6 @@ def _build_default_email_subject() -> str:
 
 def execute(config: RunConfig) -> RunResult:
     """Run the pipeline: collect -> exact dedupe -> Jev classify -> extract -> summarise -> output."""
-    session_factory = None
-    if config.database_enabled:
-        if not config.database_connection_string:
-            logger.warning(
-                "Database enabled but no connection string provided. Caching disabled."
-            )
-        else:
-            engine = db.init_engine(config.database_connection_string)
-            if engine:
-                session_factory = db.get_session_factory(engine)
-
     if config.load_articles_path:
         articles = _load_articles_from_file(config.load_articles_path)
     else:
@@ -319,9 +275,7 @@ def execute(config: RunConfig) -> RunResult:
             candidates = [(entry, None) for entry in entries]
 
         # Step 3: Extract full article text ONLY for plausible candidates
-        articles = _extract_candidate_articles(
-            candidates, config, session_factory=session_factory
-        )
+        articles = _extract_candidate_articles(candidates, config)
 
     if config.save_articles_path:
         _save_articles_to_file(config.save_articles_path, articles)

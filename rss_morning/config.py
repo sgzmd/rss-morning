@@ -34,12 +34,6 @@ class LoggingConfig:
 
 
 @dataclass
-class DatabaseConfig:
-    enabled: bool = False
-    connection_string: Optional[str] = None
-
-
-@dataclass
 class AppConfig:
     feeds_file: str
     env_file: Optional[str]
@@ -49,7 +43,6 @@ class AppConfig:
     classification: ClassificationConfig = field(default_factory=ClassificationConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
-    database: DatabaseConfig = field(default_factory=DatabaseConfig)
     prompt: Optional[str] = None
     max_article_length: int = 100
     extractor: str = "newspaper"
@@ -196,13 +189,6 @@ def parse_app_config(path: str) -> AppConfig:
         if log_file:
             logging_config.file = _resolve_path(config_path, log_file)
 
-    # Database
-    db_node = root.find("database")
-    db_config = DatabaseConfig()
-    if db_node is not None:
-        db_config.enabled = db_node.findtext("enabled", "false").lower() == "true"
-        db_config.connection_string = db_node.findtext("connection-string")
-
     # Prompt
     prompt_node = root.find("prompt")
     prompt = None
@@ -231,7 +217,6 @@ def parse_app_config(path: str) -> AppConfig:
         classification=classification_config,
         email=email,
         logging=logging_config,
-        database=db_config,
         prompt=prompt,
         max_article_length=max_len,
         extractor=extractor,
