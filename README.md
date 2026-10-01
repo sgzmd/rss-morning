@@ -22,134 +22,118 @@ Some of us just want to sip the first coffee of the day and know whether the wor
 
 ## First Brew (a.k.a. Quick Start)
 
-1. Install dependencies:
+1. **Install dependencies:**
    ```bash
    python -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
    ```
-2. Copy the templates and give them a personal touch:
+2. **Setup configuration:**
+   The app is now fully validatable via XML configs.
    ```bash
+   cp configs/config.xml.example configs/config.xml
+   cp configs/env.xml.example configs/env.xml
    cp feeds.example.xml feeds.xml
    cp prompt-example.md prompt.md
-   cp docker-compose.example.override.yml docker-compose.override.yml
    cp queries.example.txt queries.txt
    ```
-3. Edit those copies so they describe your feeds, tone of voice, and runtime options.
-4. Export the secrets your run needs (see “Secret Sauce” below).
-5. (Optional but highly recommended) Pre-brew the query embeddings so future runs stay fast and you don’t re-pay for cosine math every time:
-    ```bash
-    OPENAI_API_KEY=... python -m rss_morning.prefilter_cli \
+3. **Customize:**
+   - Edit `configs/config.xml` to point to your `feeds.xml` and `env.xml`.
+   - Edit `configs/env.xml` with your API keys.
+   - Edit `feeds.xml` with your RSS sources.
+4. **Pre-brew embeddings (Optional):**
+   ```bash
+   python -m rss_morning.prefilter_cli \
       --output query_embeddings.json \
       --queries-file queries.txt
-    ```
-   Do it once and the CLI can reuse `query_embeddings.json` instead of embedding on each run.
-6. Fire it up:
-    ```bash
-    python main.py \
-      --feeds-file feeds.xml \
-      -n 10 \
-      --summary \
-      --pre-filter ./query_embeddings.json
-    ```
+   ```
+   Then update `<embeddings-path>` in `configs/config.xml` to point to this JSON file.
+5. **Fire it up:**
+   ```bash
+   # Run with default config (configs/config.xml)
+   python main.py
+
+   # Or specify a different config
+   python main.py --config configs/my-config.xml
+   ```
 
 ## Tune The Inputs
 
+### Configuration (`configs/config.xml`)
+This is the control center. Use it to set:
+- **Paths**: Locations of `feeds.xml`, `env.xml`, scripts, etc.
+- **Runtime options**: `limit`, `max-age-hours`, `concurrency`.
+- **Features**: Toggle `summary`, `pre-filter`, `database`.
+- **Email**: `to`, `from`, and `subject`.
+
 ### Feeds (`feeds.xml`)
-Drop your favourite RSS sources into an OPML file. The provided `feeds.example.xml` is just scaffolding (albeit usable) — swap the sample URLs for your real feeds. Categories are optional but help group the output.
+Standard OPML format. The `feeds.example.xml` shows how to structure it.
 
 ### Prompt (`prompt.md`)
-This is the Gemini system prompt for summaries. `prompt-example.md` spells out the contract and uses placeholders like `{{STAKEHOLDER_NAME}}`. Copy it, tweak the tone, and make sure it matches who is reading your briefing before you run with `--summary`.
+Referenced in your `config.xml` (e.g., `<prompt file="../prompt.md" />`). This is the system prompt for Gemini.
 
 ### Queries (`queries.txt`)
-These are the “what I care about” statements the embedding pre-filter uses. Start from `queries.example.txt`, keep the lines you like, add the topics you actually track, and leave comments with `#` as breadcrumbs. If `queries.txt` is missing, the app falls back to the example file—but supplying your own makes the cosine similarity actually meaningful.
+Used by the pre-filter. A plain text file with one signal/topic per line.
 
 ## Secret Sauce (Environment Variables)
 
-Set these in your shell, a `.env`, or via Compose:
+Secrets are loaded from the file specified in `configs/config.xml` (usually `configs/env.xml`), or from system environment variables.
 
-- `GOOGLE_API_KEY` – mandatory when summaries are involved.
-- `OPENAI_API_KEY` – needed for embedding the queries or exporting cached vectors.
-- `RESEND_API_KEY` – unlocks email delivery.
-- `RESEND_FROM_EMAIL` – default “from” address for mail (override with `--email-from` if needed).
-
-`docker-compose.example.override.yml` shows how to inject secrets and override the container command. Copy it to `docker-compose.override.yml`, fill in values such as `RESEND_API_KEY`, `GOOGLE_API_KEY`, `RESEND_FROM_EMAIL`, and your destinations, and you’re set for Compose-driven runs.
-
-Anything else—`--email-to`, `--email-subject`, `--max-age-hours`, etc.—can ride along as CLI flags or in your Compose override.
+- `GOOGLE_API_KEY`: For Gemini summaries.
+- `OPENAI_API_KEY`: Optional. Required only if you use OpenAI for embeddings instead of the default `fastembed` local model.
+- `RESEND_API_KEY` & `RESEND_FROM_EMAIL`: For sending emails.
 
 ## Drive It From The CLI
 
-Go direct:
-```bash
-python main.py \
-  --feeds-file feeds.xml \
-  --limit 20 \
-  --max-age-hours 12 \
-  --summary \
-  --email-to alerts@example.com
-```
+Most settings live in `config.xml`, but the CLI offers useful overrides and utilities:
 
-Highlights:
-- Skip `--summary` to get raw JSON for each article.
-- With `--summary`, Gemini uses your prompt, and the output is reused for email payloads.
-- Add `--pre-filter` to enable the embedding screen. Point it at a cache (e.g. `--pre-filter query_embeddings.json`) or leave it flag-only to embed queries on the fly.
-- `--save-articles path.json` stores the fetched articles before filters or summaries touch them.
-- `--load-articles path.json` replays a previous fetch so you can iterate offline or tweak prompts without hammering RSS.
-- Emailing requires `--email-to` plus a working Resend setup.
+```bash
+# Standard run
+python main.py --config configs/production.xml
+
+# Override logging
+python main.py --log-level DEBUG --log-file mylog.txt
+
+# Dry run LLM (logs request but doesn't call API)
+python main.py --llm-dry-run
+
+# Save/Load articles (great for debugging without spamming RSS feeds)
+python main.py --save-articles debug_articles.json
+python main.py --load-articles debug_articles.json
+
+# Send a test email from a generic JSON payload
+python main.py --send-email-from-json ./gemini-response.json
+```
 
 ## Embeddings: The Pre-Filter Loop
 
-This optional (with `--pre-filter`) stage keeps the noise down by comparing articles against your query list.
-
-1. **Curate queries**  
-   Copy `queries.example.txt` to `queries.txt` and rewrite the topics so they match what you care about. Blank lines and lines starting with `#` are ignored.
-2. **Pre-compute embeddings (optional, handy for Docker builds and cold starts)**  
+1. **Configure queries** in `queries.txt`.
+2. **Generate embeddings** (one-time setup for speed, or let it run on-the-fly):
    ```bash
-   OPENAI_API_KEY=... python -m rss_morning.prefilter_cli \
-     --output query_embeddings.json \
-     --queries-file queries.txt
+   python -m rss_morning.prefilter_cli --output query_embeddings.json --queries-file queries.txt
    ```
-   That produces `query_embeddings.json` with the queries, model metadata, and vectors.
-3. **Run with the pre-filter**  
-   ```bash
-   python main.py --feeds-file feeds.xml --pre-filter query_embeddings.json
-   ```
-   Omit the path (`--pre-filter` on its own) if you’d rather embed at runtime using `OPENAI_API_KEY`.
+3. **Enable in config**:
+   In `config.xml`, set `<pre-filter><enabled>true</enabled>` and point `<embeddings-path>` to your JSON file.
 
-`python -m rss_morning.prefilter_cli` accepts the same flags as the main CLI—tweak the model, batch size, or threshold with `--model`, `--batch-size`, `--threshold`, etc.
+   If you skip the JSON path, the app will compute embeddings at runtime (slower startup).
 
-### Clustering Duplicates
+   You can also configure the clustering aggressiveness via `<cluster-threshold>`.
 
-Once the pre-filter is live, the app also merges near-identical stories using cosine similarity. One “kernel” article survives, and the clones are listed under `other_urls`:
+## Docker
 
-```json
-{
-  "url": "https://example.com/kernel",
-  "other_urls": [
-    {"url": "https://example.com/duplicate", "distance": 0.0021}
-  ]
-}
-```
-
-Control how aggressive that merge is with `--cluster-threshold` (default `0.8` - works reasonably well for me). Raise it to keep more versions, lower it to collapse clusters harder. Renderers can choose whether to surface those `other_urls`.
-
-## Docker, Because Of Course
-
-Build and run in one shot:
+Build and run:
 ```bash
-docker compose up --build rss-morning
+docker compose up --build
 ```
-
-Compose automatically merges `docker-compose.override.yml`, so you can keep secrets out of Git or stash them in an ignored copy.
-
-Need a one-off run?
-```bash
-docker compose run --rm rss-morning -n 5 --feeds-file feeds.xml
-```
+Map your `configs/` folder and `feeds.xml` into the container to persist settings.
 
 ## Email Delivery
 
-Flip on email settings and the app renders both HTML and text bodies via `rss_morning.renderers`, then hands them to Resend. Make sure your sending address is verified with Resend so the first run doesn’t vanish into the void.
+Enable it in `configs/config.xml` by setting the `<email>` block.
+You can also verify your email rendering/delivery (without running the full fetch loop) using:
+```bash
+python verify_email.py
+```
 
 ## Testing
 
@@ -157,15 +141,11 @@ Flip on email settings and the app renders both HTML and text bodies via `rss_mo
 pytest
 ```
 
-The existing suite leans on parsing, rendering, and summarisation helpers. If you heavily customise prompts or feed handling, consider layering in your own integration checks.
-
 ## Troubleshooting
 
-- **Empty output:** Double-check `feeds.xml` for valid RSS URLs and make sure your network can reach them.
-- **Gemini complaints:** Inspect `GOOGLE_API_KEY` and rate limits. The CLI falls back to raw JSON when summarisation fails.
-- **Emails missing:** Confirm `resend` is installed, the API key is set, and `RESEND_FROM_EMAIL` (or `--email-from`) is a verified sender.
-
-Worst case scenario: set `--log-level DEBUG` and feed results to ChatGPT. It's probably DNS.
+- **Check logs:** `logs/rss-morning.log` is your friend.
+- **Debug mode:** Run with `--llm-dry-run` to see what would be sent to Gemini.
+- **Email issues:** Use `verify_email.py` to isolate rendering vs. sending problems.
 
 ## License
 
