@@ -6,8 +6,3 @@ services:
       context: .
     image: rss-morning:local
     restart: "no"
-    volumes:
-      - fastembed_cache:/app/data/fastembed_cache
-
-volumes:
-  fastembed_cache:

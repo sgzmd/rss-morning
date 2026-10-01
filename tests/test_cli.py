@@ -2,7 +2,12 @@ import logging
 from types import SimpleNamespace
 
 from rss_morning import cli
-from rss_morning.config import AppConfig, LoggingConfig, PreFilterConfig, EmailConfig
+from rss_morning.config import (
+    AppConfig,
+    ClassificationConfig,
+    EmailConfig,
+    LoggingConfig,
+)
 
 
 def test_configure_logging_defaults_to_console_only(monkeypatch, tmp_path):
@@ -55,7 +60,9 @@ def test_main_loads_config_and_runs(monkeypatch):
         limit=10,
         max_age_hours=24,
         summary=False,
-        pre_filter=PreFilterConfig(enabled=True, embeddings_path="emb.json"),
+        classification=ClassificationConfig(
+            enabled=True, model="jev-latest", threshold=0.50
+        ),
         email=EmailConfig(),
         logging=LoggingConfig(),
         max_article_length=1000,
@@ -78,8 +85,9 @@ def test_main_loads_config_and_runs(monkeypatch):
     assert exit_code == 0
     run_config = captured["config"]
     assert run_config.limit == 10
-    assert run_config.pre_filter is True
-    assert run_config.pre_filter_embeddings_path == "emb.json"
+    assert run_config.classify is True
+    assert run_config.classify_model == "jev-latest"
+    assert run_config.classify_threshold == 0.50
     assert run_config.system_prompt == "System Prompt"
 
 

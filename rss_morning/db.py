@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Optional
 
 from sqlalchemy import (
     Column,
     DateTime,
-    LargeBinary,
     String,
     Text,
     create_engine,
@@ -37,17 +36,6 @@ class ArticleModel(Base):
     summary = Column(Text, nullable=True)
     published = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-
-class EmbeddingModel(Base):
-    """Cached embeddings for articles."""
-
-    __tablename__ = "embeddings"
-
-    url = Column(String, primary_key=True)
-    backend_key = Column(String, primary_key=True)
-    vector = Column(LargeBinary, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 def init_engine(connection_string: Optional[str]) -> Optional[Engine]:
@@ -126,58 +114,6 @@ def upsert_article(session: Session, data: dict) -> None:
             updated_at=datetime.now(timezone.utc),
         )
         session.add(new_article)
-
-    try:
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-
-
-def get_embeddings(
-    session: Session, urls: List[str], backend_key: str
-) -> Dict[str, bytes]:
-    """Batch retrieve embeddings for a list of URLs and a specific backend."""
-    if not urls:
-        return {}
-
-    stmt = select(EmbeddingModel).where(
-        EmbeddingModel.url.in_(urls),
-        EmbeddingModel.backend_key == backend_key,
-    )
-    results = session.execute(stmt).scalars().all()
-    return {row.url: row.vector for row in results}
-
-
-def upsert_embeddings(
-    session: Session, data: Dict[str, bytes], backend_key: str
-) -> None:
-    """Batch insert embeddings."""
-    if not data:
-        return
-
-    # For upsert, we can just try to fetch existing ones to update or insert new ones.
-    # Since vectors are large blobs, we probably just want to overwrite if exists.
-    # Doing it one by one for now or check existence first.
-
-    urls = list(data.keys())
-    stmt = select(EmbeddingModel).where(
-        EmbeddingModel.url.in_(urls),
-        EmbeddingModel.backend_key == backend_key,
-    )
-    existing_objs = {obj.url: obj for obj in session.execute(stmt).scalars().all()}
-
-    for url, vector in data.items():
-        if url in existing_objs:
-            existing_objs[url].vector = vector
-            # existing_objs[url].created_at = datetime.now(timezone.utc) # Keep original creation time? Or update? Let's keep original.
-        else:
-            new_embedding = EmbeddingModel(
-                url=url,
-                backend_key=backend_key,
-                vector=vector,
-            )
-            session.add(new_embedding)
 
     try:
         session.commit()

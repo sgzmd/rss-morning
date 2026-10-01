@@ -7,16 +7,11 @@
     <summary>true</summary>
     <extractor>newspaper</extractor>
     <concurrency>10</concurrency>
-    <pre-filter>
+    <classification>
         <enabled>true</enabled>
-        <embeddings-path>../query_embeddings.json</embeddings-path>
-        <queries-file>../queries.txt</queries-file>
-        <cluster-threshold>0.8</cluster-threshold>
-    </pre-filter>
-    <embeddings>
-        <provider>fastembed</provider>
-        <model>intfloat/multilingual-e5-large</model>
-    </embeddings>
+        <model>jev-latest</model>
+        <threshold>0.50</threshold>
+    </classification>
     <email>
         <to>user@example.com</to>
         <from>mailer@example.com</from>

@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import concurrent.futures
 from typing import Any, List, Optional
 
 from .articles import fetch_article_content, truncate_text
+from .classify import ClassificationDecision, classify_entry
 from .config import parse_feeds_config
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
+from .models import FeedConfig, FeedEntry
 from .summaries import generate_summary
 from . import db
 
@@ -29,13 +30,12 @@ class RunConfig:
     limit: int
     max_age_hours: Optional[float]
     summary: bool
-    pre_filter: bool = False
-    pre_filter_embeddings_path: Optional[str] = None
-    pre_filter_queries_file: Optional[str] = None
+    classify: bool = True
+    classify_model: str = "jev-latest"
+    classify_threshold: float = 0.50
     email_to: Optional[str] = None
     email_from: Optional[str] = None
     email_subject: Optional[str] = None
-    cluster_threshold: float = 0.84
     save_articles_path: Optional[str] = None
     load_articles_path: Optional[str] = None
     max_article_length: int = 100
@@ -44,10 +44,13 @@ class RunConfig:
     concurrency: int = 20
     database_enabled: bool = False
     database_connection_string: Optional[str] = None
-    embedding_provider: str = "fastembed"
-    embedding_model: str = "intfloat/multilingual-e5-large"
     llm_dry_run: bool = False
     llm_model: Optional[str] = None
+    pre_filter: Optional[bool] = None
+
+    def __post_init__(self):
+        if self.pre_filter is not None:
+            self.classify = self.pre_filter
 
 
 @dataclass
@@ -93,7 +96,8 @@ def _save_articles_to_file(path: str, articles: List[dict]) -> None:
     logger.info("Saved %d articles to %s", len(serialisable), location)
 
 
-def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
+def _collect_feed_entries(config: RunConfig) -> List[FeedEntry]:
+    """Fetch all configured feeds and return sorted, deduplicated FeedEntries."""
     feeds = parse_feeds_config(config.feeds_file)
     if not feeds:
         raise RuntimeError("No feeds found in the configuration.")
@@ -108,7 +112,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
     selected_entries = []
     any_entries_fetched = False
 
-    def process_feed(feed):
+    def process_feed(feed: FeedConfig) -> List[FeedEntry]:
         try:
             entries = fetch_feed_entries(feed)
             if not entries:
@@ -149,11 +153,24 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
         unique_entries.append(entry)
         seen_links.add(entry.link)
 
-    logger.info("Fetching article text for %d selected entries", len(unique_entries))
+    logger.info("Collected %d unique entries from feeds", len(unique_entries))
+    return unique_entries
 
+
+def _extract_candidate_articles(
+    candidates: List[tuple[FeedEntry, Optional[ClassificationDecision]]],
+    config: RunConfig,
+    session_factory=None,
+) -> List[dict]:
+    """Extract article body text ONLY for selected candidates."""
+    logger.info("Fetching article text for %d selected candidates", len(candidates))
     output = []
 
-    def process_entry(entry):
+    def process_candidate(
+        candidate_pair: tuple[FeedEntry, Optional[ClassificationDecision]],
+    ) -> Optional[dict]:
+        entry, decision = candidate_pair
+        category = decision.primary_area if decision else entry.category
         try:
             if session_factory:
                 with session_factory() as session:
@@ -162,7 +179,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
                         logger.debug("Cache hit for %s", entry.link)
                         return {
                             "url": cached["url"],
-                            "category": entry.category,
+                            "category": category,
                             "title": cached["title"],
                             "summary": cached["summary"] or entry.summary or "",
                             "text": truncate_text(
@@ -177,7 +194,7 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
             content = fetch_article_content(entry.link, extractor=config.extractor)
             payload = {
                 "url": entry.link,
-                "category": entry.category,
+                "category": category,
                 "title": entry.title,
                 "summary": entry.summary or "",
                 "published": entry.published.isoformat() if entry.published else None,
@@ -205,20 +222,27 @@ def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=config.concurrency
     ) as executor:
-        future_to_entry = {
-            executor.submit(process_entry, entry): entry for entry in unique_entries
-        }
-        for future in concurrent.futures.as_completed(future_to_entry):
+        futures = [executor.submit(process_candidate, c) for c in candidates]
+        for future in concurrent.futures.as_completed(futures):
             res = future.result()
             if res:
                 output.append(res)
 
-    logger.info("Completed processing. Outputting %d articles as JSON.", len(output))
+    logger.info("Completed extraction of %d articles.", len(output))
     # Sort by published date descending (newest first)
     output.sort(key=lambda x: x.get("published") or "", reverse=True)
-    # Then sort by category ascending (stable sort preserves published order within category)
+    # Then sort by category ascending
     output.sort(key=lambda x: x.get("category") or "")
     return output
+
+
+def _collect_entries(config: RunConfig, session_factory=None) -> List[dict]:
+    """Compatibility wrapper: collect and extract without pre-filtering."""
+    entries = _collect_feed_entries(config)
+    candidates = [(entry, None) for entry in entries]
+    return _extract_candidate_articles(
+        candidates, config, session_factory=session_factory
+    )
 
 
 def _attach_summary_images(summary_payload: Any, source_articles: List[dict]) -> Any:
@@ -226,41 +250,32 @@ def _attach_summary_images(summary_payload: Any, source_articles: List[dict]) ->
     if not isinstance(summary_payload, dict):
         return summary_payload
 
-    summaries = summary_payload.get("summaries")
-    if not isinstance(summaries, list) or not summaries:
+    summaries_list = summary_payload.get("summaries")
+    if not isinstance(summaries_list, list):
         return summary_payload
 
-    images_by_url = {
+    url_to_image = {
         article.get("url"): article.get("image")
         for article in source_articles
         if article.get("url") and article.get("image")
     }
-    if not images_by_url:
-        return summary_payload
 
-    for item in summaries:
-        if not isinstance(item, dict):
-            continue
-        url = item.get("url")
-        if not url:
-            continue
-        current_image = item.get("image")
-        if current_image:
-            continue
-        replacement = images_by_url.get(url)
-        if replacement:
-            item["image"] = replacement
+    for item in summaries_list:
+        if isinstance(item, dict):
+            url = item.get("url")
+            if url and not item.get("image") and url in url_to_image:
+                item["image"] = url_to_image[url]
 
     return summary_payload
 
 
 def _build_default_email_subject() -> str:
-    timestamp = datetime.now(timezone.utc)
-    return "RSS Mailer update for " + timestamp.strftime("%Y-%m-%d at %H:%M")
+    today_str = datetime.now(timezone.utc).strftime("%d %B %Y")
+    return f"Morning RSS Digest - {today_str}"
 
 
 def execute(config: RunConfig) -> RunResult:
-    """Run the application logic and return the result payload."""
+    """Run the pipeline: collect -> exact dedupe -> Jev classify -> extract -> summarise -> output."""
     session_factory = None
     if config.database_enabled:
         if not config.database_connection_string:
@@ -275,78 +290,63 @@ def execute(config: RunConfig) -> RunResult:
     if config.load_articles_path:
         articles = _load_articles_from_file(config.load_articles_path)
     else:
-        articles = _collect_entries(config, session_factory=session_factory)
+        # Step 1: Collect and deduplicate feed entries (metadata only)
+        entries = _collect_feed_entries(config)
+
+        # Step 2: Jev classify on cheap metadata
+        if config.classify:
+            logger.info(
+                "Classifying %d feed entries with Jev (System One)", len(entries)
+            )
+            candidates = []
+            for entry in entries:
+                metadata = {
+                    "title": entry.title,
+                    "summary": entry.summary,
+                    "category": entry.category,
+                    "link": entry.link,
+                }
+                decision = classify_entry(
+                    metadata,
+                    model=config.classify_model,
+                    threshold=config.classify_threshold,
+                )
+                if decision.is_plausible:
+                    logger.info(
+                        "Jev KEEP (prob=%.2f, area=%s): %s",
+                        decision.relevance_probability,
+                        decision.primary_area,
+                        entry.title,
+                    )
+                    candidates.append((entry, decision))
+                else:
+                    logger.debug(
+                        "Jev DROP (prob=%.2f, area=%s): %s",
+                        decision.relevance_probability,
+                        decision.primary_area,
+                        entry.title,
+                    )
+            logger.info(
+                "Jev classification retained %d of %d entries",
+                len(candidates),
+                len(entries),
+            )
+        else:
+            candidates = [(entry, None) for entry in entries]
+
+        # Step 3: Extract full article text ONLY for plausible candidates
+        articles = _extract_candidate_articles(
+            candidates, config, session_factory=session_factory
+        )
 
     if config.save_articles_path:
         _save_articles_to_file(config.save_articles_path, articles)
-
-    # Temporary Phase 2 shadow mode evaluation (to be made authoritative in Phase 3)
-    if os.environ.get("JEV_SHADOW_MODE") == "1" and os.environ.get("TYPESAFE_API_KEY"):
-        try:
-            from .classify import classify_entries
-
-            logger.info(
-                "JEV SHADOW MODE: Running shadow classification on %d articles",
-                len(articles),
-            )
-            shadow_results = classify_entries(articles[:20])
-            plausible_count = sum(1 for _, dec in shadow_results if dec.is_plausible)
-            logger.info(
-                "JEV SHADOW MODE: %d of %d evaluated articles judged plausible",
-                plausible_count,
-                len(shadow_results),
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("JEV SHADOW MODE encountered error: %s", exc)
-
-    if config.pre_filter:
-        logger.info("Applying embedding pre-filter to %d articles", len(articles))
-
-        from .prefilter import EmbeddingArticleFilter
-
-        # Create a config object with the runtime settings.
-        emb_config_cls = type(EmbeddingArticleFilter.CONFIG)
-        emb_config = emb_config_cls(
-            model=config.embedding_model,
-            provider=config.embedding_provider,
-            batch_size=EmbeddingArticleFilter.CONFIG.batch_size,
-            threshold=EmbeddingArticleFilter.CONFIG.threshold,
-            max_article_length=config.max_article_length,
-        )
-
-        filter_layer = EmbeddingArticleFilter(
-            query_embeddings_path=config.pre_filter_embeddings_path,
-            queries_file=config.pre_filter_queries_file,
-            config=emb_config,
-            session_factory=session_factory,
-        )
-        filtered_articles = filter_layer.filter(
-            list(articles), cluster_threshold=config.cluster_threshold
-        )
-        if filtered_articles is None:
-            logger.warning(
-                "Embedding pre-filter returned no articles; keeping original set."
-            )
-        else:
-            logger.info(
-                "Embedding pre-filter retained %d of %d articles",
-                len(filtered_articles),
-                len(articles),
-            )
-            articles = filtered_articles
 
     email_payload: Any = articles
     is_summary_payload = False
 
     if config.summary:
         if not config.system_prompt:
-            logger.warning(
-                "Summary requested but no system prompt provided using default."
-            )
-            # We might want to fail here or provide a hardcoded default,
-            # but for now let's assume the caller ensures it or we might need a default string.
-            # Actually, `generate_summary` expects a string now.
-            # Let's fail if it's missing to be safe, or provide a minimal one.
             raise ValueError("Summary requested but no system_prompt configured.")
 
         summary_output, summary_data = generate_summary(
