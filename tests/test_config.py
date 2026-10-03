@@ -142,6 +142,27 @@ def test_parse_app_config_toml(tmp_path):
     assert config.llm_model == "openai/gpt-4o-mini"
 
 
+def test_parse_app_config_logging_file_none(tmp_path):
+    config_file = tmp_path / "config.toml"
+    (tmp_path / "feeds.xml").touch()
+
+    config_file.write_text(
+        textwrap.dedent(
+            """
+            feeds = "feeds.xml"
+            [logging]
+            level = "INFO"
+            file = "none"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    config = parse_app_config(str(config_file))
+    assert config.logging.level == "INFO"
+    assert config.logging.file is None
+
+
 def test_parse_app_config_inline_prompt(tmp_path):
     config_file = tmp_path / "config.toml"
     (tmp_path / "feeds.xml").touch()

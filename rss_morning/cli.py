@@ -73,7 +73,7 @@ def configure_logging(level_name: str, log_file: Optional[str] = None) -> None:
     stream_handler.setFormatter(formatter)
     root_logger.addHandler(stream_handler)
 
-    if log_file:
+    if log_file and str(log_file).strip().lower() not in ("none", "", "null"):
         log_path = Path(log_file)
         if log_path.parent and not log_path.parent.exists():
             log_path.parent.mkdir(parents=True, exist_ok=True)

@@ -30,6 +30,24 @@ def test_configure_logging_defaults_to_console_only(monkeypatch, tmp_path):
             logging.getLogger().addHandler(handler)
 
 
+def test_configure_logging_none_as_console_only(monkeypatch):
+    original_handlers = list(logging.getLogger().handlers)
+    for handler in logging.getLogger().handlers[:]:
+        logging.getLogger().removeHandler(handler)
+
+    try:
+        cli.configure_logging("INFO", "none")
+        handlers = logging.getLogger().handlers
+        assert any(isinstance(handler, logging.StreamHandler) for handler in handlers)
+        assert not any(isinstance(handler, logging.FileHandler) for handler in handlers)
+    finally:
+        for handler in logging.getLogger().handlers[:]:
+            logging.getLogger().removeHandler(handler)
+            handler.close()
+        for handler in original_handlers:
+            logging.getLogger().addHandler(handler)
+
+
 def test_configure_logging_with_log_file_creates_file_handler(monkeypatch, tmp_path):
     original_handlers = list(logging.getLogger().handlers)
     for handler in logging.getLogger().handlers[:]:

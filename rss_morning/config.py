@@ -256,6 +256,8 @@ def parse_app_config(path: str) -> AppConfig:
     # Logging
     log_dict = data.get("logging") or {}
     log_file_raw = log_dict.get("file")
+    if log_file_raw and str(log_file_raw).strip().lower() in ("none", "", "null"):
+        log_file_raw = None
     logging_config = LoggingConfig(
         level=str(log_dict.get("level", "INFO")),
         file=_resolve_path(config_path, str(log_file_raw)) if log_file_raw else None,
