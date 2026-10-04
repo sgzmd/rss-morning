@@ -1,5 +1,117 @@
 {% if fallback %}
 {{ fallback }}
+{% elif is_summary and pyramid and (pyramid.bottom_line or pyramid.topics or pyramid.deep_dives) %}
+================================================================================
+RSS INTELLIGENCE - THE SENTINEL DIGEST
+LEVEL 1: EXECUTIVE SUMMARY
+================================================================================
+
+{% if pyramid.bottom_line %}
+THE BOTTOM LINE:
+{{ pyramid.bottom_line }}
+
+{% endif %}
+{% if pyramid.key_points %}
+PRIORITY TAKEAWAYS:
+{% for pt in pyramid.key_points %}
+{{ loop.index }}. {{ pt.text }}{% if pt.story_ids %} [{{ pt.story_ids | join(", ") }}]{% endif %}
+{% endfor %}
+
+{% endif %}
+================================================================================
+LEVEL 2: KEY TOPICS & DEVELOPMENTS
+================================================================================
+
+{% for topic in pyramid.topics %}
+=== TOPIC: {{ topic.title | upper }} ===
+{{ topic.synthesis }}
+
+{% for story in topic.stories %}
+[{{ story.tier | upper }}{% if story.exploitation_status == 'confirmed_in_the_wild' %} | IN-THE-WILD EXPLOITED{% endif %}] {{ story.title }} ({{ story.id }})
+{{ story.summary }}
+{% if story.key_facts %}
+Key Facts:
+{% for f in story.key_facts %}
+  * {{ f }}
+{% endfor %}
+{% endif %}
+{% if story.why_it_matters %}
+Why it matters: {{ story.why_it_matters }}
+{% endif %}
+Sources: {{ story.source_urls | join(", ") }}
+
+{% endfor %}
+--------------------------------------------------------------------------------
+
+{% endfor %}
+{% if pyramid.leftover_sections %}
+=== ADDITIONAL NOTABLE STORIES BY AREA ===
+
+{% for sec in pyramid.leftover_sections %}
+-- {{ sec.label }} --
+{% for story in sec.stories %}
+* [{{ story.tier | upper }}] {{ story.title }}
+  {{ story.summary }}
+  Sources: {{ story.source_urls | join(", ") }}
+
+{% endfor %}
+{% endfor %}
+--------------------------------------------------------------------------------
+
+{% endif %}
+{% if pyramid.deep_dives %}
+================================================================================
+LEVEL 3: TECHNICAL DEEP DIVES
+================================================================================
+
+{% for dd in pyramid.deep_dives %}
+### DEEP DIVE: {{ dd.title }} ({{ dd.story_id }})
+
+WHAT HAPPENED:
+{{ dd.what_happened }}
+
+{% if dd.technical_details %}
+TECHNICAL DETAILS & ROOT CAUSE:
+{{ dd.technical_details }}
+
+{% endif %}
+{% if dd.affected %}
+AFFECTED SYSTEMS & SCOPE:
+{% for aff in dd.affected %}
+  * {{ aff }}
+{% endfor %}
+
+{% endif %}
+{% if dd.exploitation_and_evidence %}
+EXPLOITATION & EVIDENCE:
+{{ dd.exploitation_and_evidence }}
+
+{% endif %}
+{% if dd.timeline %}
+TIMELINE:
+{% for entry in dd.timeline %}
+  * {{ entry.date }}: {{ entry.event }}
+{% endfor %}
+
+{% endif %}
+{% if dd.mitigations_as_reported %}
+MITIGATIONS (AS REPORTED):
+{{ dd.mitigations_as_reported }}
+
+{% endif %}
+{% if dd.open_questions %}
+OPEN QUESTIONS & UNCERTAINTIES:
+{% for q in dd.open_questions %}
+  * {{ q }}
+{% endfor %}
+
+{% endif %}
+Sources: {{ dd.source_urls | join(", ") }}
+
+--------------------------------------------------------------------------------
+
+{% endfor %}
+{% endif %}
 {% elif is_summary %}
 {% if payload.get("overview") %}
 Overview:
@@ -50,10 +162,6 @@ WATCH:
   Sources: {{ item.get("source_urls") | join(", ") }}
 
 {% endfor -%}
-{% endif %}
-{% else %}
-{% if not payload.get("overview") %}
-No relevant articles identified.
 {% endif %}
 {% endif %}
 {% else %}

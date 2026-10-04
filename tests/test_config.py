@@ -219,9 +219,10 @@ def test_parse_app_config_default_areas(tmp_path):
     config_file.write_text('feeds = "feeds.xml"\n', encoding="utf-8")
 
     config = parse_app_config(str(config_file))
-    assert len(config.areas) == 6
+    assert len(config.areas) == 7
     assert "mobile_security" in config.areas
     assert config.areas["mobile_security"].threshold == 0.40
+    assert "security_ux" in config.areas
     assert "other" in config.areas
     assert config.areas["other"].threshold == 0.75
 
@@ -256,3 +257,38 @@ def test_parse_app_config_custom_areas(tmp_path):
     # "other" should be automatically retained as fallback
     assert "other" in config.areas
     assert config.areas["other"].threshold == 0.75
+
+
+def test_parse_app_config_digest_pyramid_settings(tmp_path):
+    config_file = tmp_path / "config.toml"
+    (tmp_path / "feeds.xml").touch()
+    config_file.write_text(
+        textwrap.dedent(
+            """
+            feeds = "feeds.xml"
+
+            [llm]
+            model = "google/gemini-3.8-flash"
+            reasoning_effort = "low"
+
+            [digest]
+            exec_summary_points = 4
+            max_topics = 5
+            deep_dives = 2
+            editor_article_chars = 2000
+            deep_dive_article_chars = 8000
+            deep_dive_model = "openai/gpt-5.6-luna"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    config = parse_app_config(str(config_file))
+    assert config.llm_model == "google/gemini-3.8-flash"
+    assert config.reasoning_effort == "low"
+    assert config.digest.exec_summary_points == 4
+    assert config.digest.max_topics == 5
+    assert config.digest.deep_dives == 2
+    assert config.digest.editor_article_chars == 2000
+    assert config.digest.deep_dive_article_chars == 8000
+    assert config.digest.deep_dive_model == "openai/gpt-5.6-luna"

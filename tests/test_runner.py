@@ -107,7 +107,9 @@ def test_execute_summary_flow(monkeypatch):
         "watch": [],
     }
 
-    def fake_generate(articles, system_prompt=None, dry_run=False, model=None):
+    def fake_generate(
+        articles, system_prompt=None, dry_run=False, model=None, **kwargs
+    ):
         return edition_payload
 
     monkeypatch.setattr(runner, "generate_digest", fake_generate)
@@ -527,7 +529,7 @@ def test_execute_forwards_areas_to_subsystems(monkeypatch):
     digest_calls = []
 
     def fake_generate(
-        articles, system_prompt=None, dry_run=False, model=None, areas=None
+        articles, system_prompt=None, dry_run=False, model=None, areas=None, **kwargs
     ):
         digest_calls.append({"articles": articles, "areas": areas})
         return {

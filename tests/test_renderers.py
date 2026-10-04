@@ -69,6 +69,80 @@ def test_build_email_text_for_edition_payload():
     assert "Emerging Phishing Trend [fraud_abuse]" in text
 
 
+def test_build_email_html_and_text_pyramid_structure():
+    payload = {
+        "executive_summary": {
+            "bottom_line": "Perimeter devices under coordinated exploitation.",
+            "key_points": [
+                {
+                    "text": "Fortinet zero-day added to CISA KEV.",
+                    "story_ids": ["s1"],
+                }
+            ],
+        },
+        "topics": [
+            {
+                "id": "t1",
+                "title": "Perimeter Compromise Surge",
+                "synthesis": "Threat actors are weaponizing edge devices.",
+                "story_ids": ["s1"],
+            }
+        ],
+        "stories": [
+            {
+                "id": "s1",
+                "title": "Fortinet FortiMail Zero-Day",
+                "primary_area": "corporate_security",
+                "tier": "critical",
+                "exploitation_status": "confirmed_in_the_wild",
+                "summary": "Path traversal flaw exploited unauthenticated.",
+                "key_facts": ["CVE-2026-104286", "CVSS 9.8"],
+                "why_it_matters": "Confirmed active exploitation on edge mail.",
+                "article_ids": ["art-1"],
+                "source_urls": ["https://theregister.com/fortinet"],
+            }
+        ],
+        "deep_dives": [
+            {
+                "story_id": "s1",
+                "title": "Fortinet FortiMail Zero-Day",
+                "primary_area": "corporate_security",
+                "what_happened": "Unauthenticated attackers write arbitrary files.",
+                "technical_details": "Null byte injection in mail path parser.",
+                "affected": ["FortiMail 7.0 - 7.4"],
+                "exploitation_and_evidence": "Actively exploited in the wild.",
+                "timeline": [{"date": "Oct 2, 2026", "event": "Added to KEV"}],
+                "mitigations_as_reported": "Upgrade to patch release immediately.",
+                "open_questions": ["Attribution is unconfirmed."],
+                "source_urls": ["https://theregister.com/fortinet"],
+            }
+        ],
+    }
+
+    html = renderers.build_email_html(payload, is_summary=True)
+    assert "Level 1 &bull; Executive Summary" in html
+    assert "Perimeter devices under coordinated exploitation." in html
+    assert "Priority Takeaways" in html
+    assert "Fortinet zero-day added to CISA KEV." in html
+    assert "Level 2 &bull; Key Topics &amp; Developments" in html
+    assert "Perimeter Compromise Surge" in html
+    assert "Fortinet FortiMail Zero-Day" in html
+    assert "CVE-2026-104286" in html
+    assert "In-The-Wild Exploited" in html
+    assert "Level 3 &bull; Technical Deep Dives" in html
+    assert "Null byte injection in mail path parser." in html
+    assert "Oct 2, 2026" in html
+
+    text = renderers.build_email_text(payload, is_summary=True)
+    assert "LEVEL 1: EXECUTIVE SUMMARY" in text
+    assert "THE BOTTOM LINE:" in text
+    assert "LEVEL 2: KEY TOPICS & DEVELOPMENTS" in text
+    assert "=== TOPIC: PERIMETER COMPROMISE SURGE ===" in text
+    assert "[CRITICAL | IN-THE-WILD EXPLOITED]" in text
+    assert "LEVEL 3: TECHNICAL DEEP DIVES" in text
+    assert "### DEEP DIVE: Fortinet FortiMail Zero-Day" in text
+
+
 def test_build_email_html_for_raw_articles():
     payload = [
         {

@@ -130,6 +130,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             concurrency=app_config.concurrency,
             llm_dry_run=args.llm_dry_run,
             llm_model=app_config.llm_model,
+            reasoning_effort=app_config.reasoning_effort,
+            digest_config=app_config.digest,
             areas=app_config.areas,
         )
 

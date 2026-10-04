@@ -42,6 +42,18 @@ file = "logs/rss-morning.log"
 [llm]
 # OpenRouter generative model for the final edition editor call
 model = "google/gemini-3.8-flash"
+# Reasoning effort for models that support it (e.g. Gemini Flash, Sonnet)
+reasoning_effort = "low"
+
+[digest]
+# Pyramid structure configuration
+exec_summary_points = 5
+max_topics = 6
+deep_dives = 3
+editor_article_chars = 1500
+deep_dive_article_chars = 10000
+# Optional dedicated model for Stage 2 technical deep dives (defaults to llm.model)
+# deep_dive_model = "google/gemini-3.8-flash"
 
 # Focus areas with semantic Jev criteria and individual thresholds
 [areas.mobile_security]

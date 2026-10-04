@@ -18,7 +18,8 @@
             min-width: 100%;
             -webkit-text-size-adjust: 100%;
             -ms-text-size-adjust: 100%;
-            color: #333333;
+            color: #202124;
+            background-color: #f8f9fa;
         }
 
         table {
@@ -28,14 +29,12 @@
 
         a {
             text-decoration: none;
-            color: #0052cc;
+            color: #1a73e8;
         }
 
         @media only screen and (max-width: 600px) {
             .content-wrapper {
-                padding-left: 0 !important;
-                padding-right: 0 !important;
-                width: 100% !important;
+                padding: 16px 12px !important;
             }
 
             .header-flex {
@@ -43,99 +42,375 @@
                 align-items: flex-start !important;
                 gap: 4px !important;
             }
-
-            .header-flex>div {
-                text-align: left !important;
-                width: 100% !important;
-            }
         }
     </style>
 </head>
 
-<body style="font-family: 'Inter', sans-serif; margin: 0; padding: 0;" class="body">
+<body style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f8f9fa;">
 
-    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8f9fa;">
         <tr>
-            <td align="left" style="padding: 0;">
+            <td align="center" style="padding: 24px 12px;">
 
-                <div class="content-wrapper" style="max-width: 600px; margin: 0 auto; width: 100%; text-align: left;">
+                <div class="content-wrapper" style="max-width: 680px; margin: 0 auto; width: 100%; background-color: #ffffff; padding: 32px 30px; box-sizing: border-box; text-align: left; border: 1px solid #e0e0e0; border-radius: 8px;">
 
                     <!-- Header -->
-                    <div style="padding-bottom: 24px; border-bottom: 1px solid #eeeeee; margin-bottom: 24px;">
-                        <div class="header-flex"
-                            style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
-                            <div>
-                                <h1
-                                    style="font-size: 24px; font-weight: 700; letter-spacing: -0.025em; color: #000000; margin: 0;">
-                                    RSS Intelligence</h1>
-                                <p
-                                    style="font-size: 12px; font-weight: 600; color: #666666; margin: 4px 0 0 0; letter-spacing: 0.05em; text-transform: uppercase;">
-                                    The Sentinel Digest</p>
-                            </div>
-                            <div style="text-align: right;">
-                                <p style="font-size: 14px; color: #666666; margin: 0;">{{ date }}</p>
-                            </div>
-                        </div>
+                    <div style="padding-bottom: 20px; border-bottom: 2px solid #202124; margin-bottom: 28px;">
+                        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                            <tr>
+                                <td align="left" style="vertical-align: bottom;">
+                                    <h1 style="font-size: 24px; font-weight: 700; letter-spacing: -0.025em; color: #202124; margin: 0; line-height: 1.2;">
+                                        RSS Intelligence
+                                    </h1>
+                                    <p style="font-size: 11px; font-weight: 700; color: #5f6368; margin: 4px 0 0 0; letter-spacing: 0.08em; text-transform: uppercase;">
+                                        The Sentinel Digest &bull; Executive Morning Briefing
+                                    </p>
+                                </td>
+                                <td align="right" style="vertical-align: bottom;">
+                                    <p style="font-size: 13px; font-weight: 600; color: #5f6368; margin: 0;">{{ date }}</p>
+                                </td>
+                            </tr>
+                        </table>
                     </div>
 
                     {% if fallback %}
-                    <pre
-                        style="background-color: #f5f5f5; padding: 16px; border-radius: 4px; overflow-x: auto; font-size: 13px; font-family: monospace; color: #333333;">{{ fallback }}</pre>
-                    {% elif is_summary %}
+                    <pre style="background-color: #f5f5f5; padding: 16px; border-radius: 4px; overflow-x: auto; font-size: 13px; font-family: monospace; color: #333333;">{{ fallback }}</pre>
 
-                    <!-- Overview -->
-                    {% if payload.get("overview") %}
-                    <div style="margin-bottom: 32px; background-color: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #0052cc;">
-                        <h3
-                            style="font-size: 14px; font-weight: 700; color: #000000; text-transform: uppercase; margin: 0 0 8px 0; letter-spacing: 0.05em;">
-                            Today's Overview</h3>
-                        <p style="font-size: 16px; line-height: 1.6; color: #333333; margin: 0;">
-                            {{ payload.get("overview") | nl2br }}
+                    {% elif is_summary and pyramid and (pyramid.bottom_line or pyramid.topics or pyramid.deep_dives or pyramid.story_map) %}
+                    <!-- ============================================================ -->
+                    <!-- LEVEL 1: EXECUTIVE SUMMARY                                   -->
+                    <!-- ============================================================ -->
+                    <div style="margin-bottom: 36px; background-color: #f8fafd; border: 1px solid #d2e3fc; border-left: 5px solid #1a73e8; padding: 22px 24px; border-radius: 6px; text-align: left;">
+                        <div style="margin-bottom: 10px; text-align: left;">
+                            <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: #1a73e8; text-transform: uppercase;">
+                                Level 1 &bull; Executive Summary
+                            </span>
+                        </div>
+                        {% if pyramid.bottom_line %}
+                        <p style="font-size: 16px; font-weight: 600; line-height: 1.55; color: #202124; margin: 0 0 16px 0; text-align: left;">
+                            {{ pyramid.bottom_line }}
                         </p>
+                        {% endif %}
+
+                        {% if pyramid.key_points %}
+                        <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid #d2e3fc; text-align: left;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #5f6368; margin: 0 0 10px 0; text-align: left;">
+                                Priority Takeaways
+                            </div>
+                            <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="text-align: left;">
+                                {% for pt in pyramid.key_points %}
+                                <tr>
+                                    <td style="width: 22px; vertical-align: top; font-size: 14px; font-weight: 700; color: #1a73e8; padding-bottom: 10px; line-height: 1.55; text-align: left;">
+                                        {{ loop.index }}.
+                                    </td>
+                                    <td style="vertical-align: top; font-size: 14px; line-height: 1.55; color: #3c4043; padding-bottom: 10px; text-align: left;">
+                                        {{ pt.text }}
+                                        {% if pt.story_ids %}
+                                        <span style="font-size: 11px; color: #5f6368; white-space: nowrap;">
+                                            [{% for sid in pt.story_ids %}<a href="#story-{{ sid }}" style="color: #1a73e8; text-decoration: underline;">{{ sid }}</a>{% if not loop.last %}, {% endif %}{% endfor %}]
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- ============================================================ -->
+                    <!-- LEVEL 2: VALUABLE TOPICS & STORY CARDS                       -->
+                    <!-- ============================================================ -->
+                    <div style="margin-bottom: 36px; text-align: left;">
+                        <div style="margin-bottom: 20px; border-bottom: 2px solid #202124; padding-bottom: 8px; text-align: left;">
+                            <h2 style="font-size: 17px; font-weight: 700; color: #202124; text-transform: uppercase; margin: 0; letter-spacing: 0.04em; text-align: left;">
+                                Level 2 &bull; Key Topics &amp; Developments
+                            </h2>
+                        </div>
+
+                        {% for topic in pyramid.topics %}
+                        <div style="margin-bottom: 32px; background-color: #ffffff; border: 1px solid #e8eaed; border-radius: 6px; padding: 20px 22px; text-align: left;">
+                            <h3 style="font-size: 16px; font-weight: 700; color: #1a73e8; margin: 0 0 10px 0; letter-spacing: -0.01em; text-align: left;">
+                                {{ topic.title }}
+                            </h3>
+                            {% if topic.synthesis %}
+                            <div style="margin: 0 0 18px 0; background-color: #f8f9fa; padding: 12px 14px; border-radius: 4px; border-left: 3px solid #1a73e8; text-align: left;">
+                                <p style="font-size: 14px; line-height: 1.55; color: #3c4043; margin: 0; text-align: left;">
+                                    {{ topic.synthesis }}
+                                </p>
+                            </div>
+                            {% endif %}
+
+                            {% for story in topic.stories %}
+                            {% set card_tier = story.tier or "notable" %}
+                            {% if card_tier == "critical" %}
+                                {% set border_color = "#d93025" %}
+                                {% set bg_color = "#fffbfa" %}
+                                {% set tier_badge_bg = "#fce8e6" %}
+                                {% set tier_badge_color = "#b00020" %}
+                            {% elif card_tier == "important" %}
+                                {% set border_color = "#f9ab00" %}
+                                {% set bg_color = "#fffdfa" %}
+                                {% set tier_badge_bg = "#fef7e0" %}
+                                {% set tier_badge_color = "#b06000" %}
+                            {% else %}
+                                {% set border_color = "#dadce0" %}
+                                {% set bg_color = "#fafafa" %}
+                                {% set tier_badge_bg = "#f1f3f4" %}
+                                {% set tier_badge_color = "#5f6368" %}
+                            {% endif %}
+
+                            <div id="story-{{ story.id }}" style="margin-bottom: 18px; padding: 16px 18px; background-color: {{ bg_color }}; border: 1px solid #dadce0; border-left: 4px solid {{ border_color }}; border-radius: 6px; text-align: left;">
+                                <!-- Badges -->
+                                <div style="margin-bottom: 8px; text-align: left; line-height: 1.4;">
+                                    <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: {{ tier_badge_bg }}; color: {{ tier_badge_color }};">
+                                        {{ story.tier | upper }}
+                                    </span>
+                                    {% if story.exploitation_status == "confirmed_in_the_wild" %}
+                                    <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: #d93025; color: #ffffff;">
+                                        In-The-Wild Exploited
+                                    </span>
+                                    {% elif story.exploitation_status == "public_poc" %}
+                                    <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: #fef7e0; color: #b06000; border: 1px solid #f9ab00;">
+                                        Public PoC
+                                    </span>
+                                    {% endif %}
+                                    <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: #e8f0fe; color: #1a73e8;">
+                                        {{ story.primary_area | replace("_", " ") }}
+                                    </span>
+                                </div>
+
+                                <h4 style="font-size: 15px; font-weight: 700; margin: 6px 0 8px 0; color: #202124; line-height: 1.35; text-align: left;">
+                                    {{ story.title }}
+                                </h4>
+
+                                <p style="font-size: 14px; line-height: 1.55; color: #3c4043; margin: 0 0 10px 0; text-align: left;">
+                                    {{ story.summary }}
+                                </p>
+
+                                {% if story.key_facts %}
+                                <div style="margin: 10px 0 12px 0; background-color: #f8f9fa; padding: 10px 14px; border-radius: 4px; text-align: left; border: 1px solid #eeeeee;">
+                                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #5f6368; margin-bottom: 6px; letter-spacing: 0.05em; text-align: left;">
+                                        Key Facts
+                                    </div>
+                                    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="text-align: left;">
+                                        {% for fact in story.key_facts %}
+                                        <tr>
+                                            <td style="width: 14px; vertical-align: top; font-size: 14px; color: #1a73e8; font-weight: bold; line-height: 1.45; text-align: left; padding-bottom: 3px;">&bull;</td>
+                                            <td style="vertical-align: top; font-size: 13px; line-height: 1.45; color: #3c4043; text-align: left; padding-bottom: 3px;">{{ fact }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </table>
+                                </div>
+                                {% endif %}
+
+                                {% if story.why_it_matters %}
+                                <p style="font-size: 13px; line-height: 1.5; color: #5f6368; margin: 0 0 10px 0; text-align: left;">
+                                    <strong style="color: #202124;">Why it matters:</strong> {{ story.why_it_matters }}
+                                </p>
+                                {% endif %}
+
+                                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #f1f3f4;">
+                                    <tr>
+                                        <td align="left" style="font-size: 12px; color: #5f6368; vertical-align: middle;">
+                                            {% if story.source_urls %}
+                                            Sources:
+                                            {% for s_url in story.source_urls %}
+                                            <a href="{{ s_url }}" style="color: #1a73e8; text-decoration: underline; margin-right: 6px;">{{ s_url | domain }}</a>
+                                            {% endfor %}
+                                            {% endif %}
+                                        </td>
+                                        {% if story.id in payload.get("deep_dive_story_ids", []) %}
+                                        <td align="right" style="font-size: 12px; vertical-align: middle; white-space: nowrap;">
+                                            <a href="#deepdive-{{ story.id }}" style="color: #0b57d0; font-weight: 600; text-decoration: none;">Technical Deep Dive &darr;</a>
+                                        </td>
+                                        {% endif %}
+                                    </tr>
+                                </table>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+
+                        {% if pyramid.leftover_sections %}
+                        <!-- Standalone Stories by Area -->
+                        <div style="margin-top: 30px; text-align: left;">
+                            <div style="border-bottom: 1px solid #dadce0; padding-bottom: 6px; margin: 0 0 16px 0; text-align: left;">
+                                <h3 style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: #5f6368; margin: 0; letter-spacing: 0.05em; text-align: left;">
+                                    Additional Notable Stories By Area
+                                </h3>
+                            </div>
+                            {% for sec in pyramid.leftover_sections %}
+                            <div style="margin-bottom: 22px; text-align: left;">
+                                <h4 style="font-size: 13px; font-weight: 700; color: #1a73e8; text-transform: uppercase; margin: 0 0 10px 0; letter-spacing: 0.04em; text-align: left;">
+                                    {{ sec.label }}
+                                </h4>
+                                {% for story in sec.stories %}
+                                {% set card_tier = story.tier or "notable" %}
+                                <div id="story-{{ story.id }}" style="margin-bottom: 12px; padding: 12px 14px; background-color: #fafafa; border: 1px solid #dadce0; border-left: 3px solid #dadce0; border-radius: 4px; text-align: left;">
+                                    <div style="margin-bottom: 4px; text-align: left;">
+                                        <span style="display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background-color: #f1f3f4; color: #5f6368;">
+                                            {{ story.tier | upper }}
+                                        </span>
+                                    </div>
+                                    <h5 style="font-size: 14px; font-weight: 600; margin: 4px 0 6px 0; color: #202124; text-align: left;">
+                                        {{ story.title }}
+                                    </h5>
+                                    <p style="font-size: 13px; line-height: 1.5; color: #3c4043; margin: 0 0 6px 0; text-align: left;">
+                                        {{ story.summary }}
+                                    </p>
+                                    {% if story.source_urls %}
+                                    <div style="font-size: 12px; color: #5f6368; text-align: left;">
+                                        Sources:
+                                        {% for s_url in story.source_urls %}
+                                        <a href="{{ s_url }}" style="color: #1a73e8; text-decoration: underline; margin-right: 6px;">{{ s_url | domain }}</a>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- ============================================================ -->
+                    <!-- LEVEL 3: DEEP DIVES                                          -->
+                    <!-- ============================================================ -->
+                    {% if pyramid.deep_dives %}
+                    <div style="margin-bottom: 36px; text-align: left;">
+                        <div style="margin-bottom: 20px; border-bottom: 2px solid #0b57d0; padding-bottom: 8px; text-align: left;">
+                            <h2 style="font-size: 17px; font-weight: 700; color: #0b57d0; text-transform: uppercase; margin: 0; letter-spacing: 0.04em; text-align: left;">
+                                Level 3 &bull; Technical Deep Dives
+                            </h2>
+                        </div>
+
+                        {% for dd in pyramid.deep_dives %}
+                        <div id="deepdive-{{ dd.story_id }}" style="margin-bottom: 28px; padding: 22px 24px; background-color: #fdfefe; border: 1px solid #c2e7ff; border-left: 4px solid #0b57d0; border-radius: 6px; text-align: left;">
+                            <div style="margin-bottom: 8px; text-align: left;">
+                                <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: #fce8e6; color: #b00020;">
+                                    Deep Dive
+                                </span>
+                                {% if dd.primary_area %}
+                                <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; background-color: #e8f0fe; color: #1a73e8;">
+                                    {{ dd.primary_area | replace("_", " ") }}
+                                </span>
+                                {% endif %}
+                            </div>
+
+                            <h3 style="font-size: 17px; font-weight: 700; color: #202124; margin: 6px 0 14px 0; line-height: 1.35; text-align: left;">
+                                {{ dd.title }}
+                            </h3>
+
+                            <!-- What Happened -->
+                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">What Happened</div>
+                            <p style="font-size: 14px; line-height: 1.6; color: #3c4043; margin: 0 0 12px 0; text-align: left;">
+                                {{ dd.what_happened }}
+                            </p>
+
+                            <!-- Technical Details -->
+                            {% if dd.technical_details %}
+                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Technical Details &amp; Root Cause</div>
+                            <p style="font-size: 14px; line-height: 1.6; color: #3c4043; margin: 0 0 12px 0; text-align: left;">
+                                {{ dd.technical_details }}
+                            </p>
+                            {% endif %}
+
+                            <!-- Affected Systems -->
+                            {% if dd.affected %}
+                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Affected Systems &amp; Scope</div>
+                            <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 0 0 12px 0; text-align: left;">
+                                {% for aff in dd.affected %}
+                                <tr>
+                                    <td style="width: 14px; vertical-align: top; font-size: 14px; color: #0b57d0; font-weight: bold; line-height: 1.5; text-align: left; padding-bottom: 2px;">&bull;</td>
+                                    <td style="vertical-align: top; font-size: 13px; line-height: 1.5; color: #3c4043; text-align: left; padding-bottom: 2px;">{{ aff }}</td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                            {% endif %}
+
+                            <!-- Exploitation & Evidence -->
+                            {% if dd.exploitation_and_evidence %}
+                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Exploitation Status &amp; Evidence</div>
+                            <p style="font-size: 14px; line-height: 1.6; color: #3c4043; margin: 0 0 12px 0; text-align: left;">
+                                {{ dd.exploitation_and_evidence }}
+                            </p>
+                            {% endif %}
+
+                            <!-- Timeline -->
+                            {% if dd.timeline %}
+                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Timeline</div>
+                            <table style="width: 100%; font-size: 13px; margin: 0 0 12px 0; border-collapse: collapse; text-align: left;">
+                                {% for entry in dd.timeline %}
+                                <tr style="border-bottom: 1px solid #edf2f7;">
+                                    <td style="padding: 5px 12px 5px 0; font-weight: 600; color: #5f6368; width: 140px; vertical-align: top; text-align: left;">{{ entry.date }}</td>
+                                    <td style="padding: 5px 0; color: #3c4043; vertical-align: top; text-align: left;">{{ entry.event }}</td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                            {% endif %}
+
+                            <!-- Mitigations as Reported -->
+                            {% if dd.mitigations_as_reported %}
+                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Mitigations &amp; Vendor Guidance (As Reported)</div>
+                            <p style="font-size: 14px; line-height: 1.6; color: #3c4043; margin: 0 0 12px 0; text-align: left;">
+                                {{ dd.mitigations_as_reported }}
+                            </p>
+                            {% endif %}
+
+                            <!-- Open Questions -->
+                            {% if dd.open_questions %}
+                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Open Questions &amp; Uncertainty</div>
+                            <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 0 0 12px 0; text-align: left;">
+                                {% for q in dd.open_questions %}
+                                <tr>
+                                    <td style="width: 14px; vertical-align: top; font-size: 14px; color: #5f6368; font-weight: bold; line-height: 1.5; text-align: left; padding-bottom: 2px;">&bull;</td>
+                                    <td style="vertical-align: top; font-size: 13px; line-height: 1.5; color: #5f6368; font-style: italic; text-align: left; padding-bottom: 2px;">{{ q }}</td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                            {% endif %}
+
+                            {% if dd.source_urls %}
+                            <div style="font-size: 12px; color: #5f6368; margin-top: 12px; padding-top: 8px; border-top: 1px solid #e8eaed; text-align: left;">
+                                Primary Sources:
+                                {% for s_url in dd.source_urls %}
+                                <a href="{{ s_url }}" style="color: #1a73e8; text-decoration: underline; margin-right: 6px;">{{ s_url | domain }}</a>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {% elif is_summary %}
+                    <!-- Legacy Fallback for older flat payloads -->
+                    {% if payload.get("overview") %}
+                    <div style="margin-bottom: 32px; background-color: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #0052cc; text-align: left;">
+                        <h3 style="font-size: 14px; font-weight: 700; color: #000000; text-transform: uppercase; margin: 0 0 8px 0; letter-spacing: 0.05em;">Today's Overview</h3>
+                        <p style="font-size: 16px; line-height: 1.6; color: #333333; margin: 0; text-align: left;">{{ payload.get("overview") | nl2br }}</p>
                     </div>
                     {% endif %}
 
                     {% if sections %}
-                    <!-- Grouped by Area -->
                     {% for section in sections %}
-                    <div style="margin-bottom: 36px;">
-                        <h2 style="font-size: 17px; font-weight: 700; color: #1a73e8; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #1a73e8; padding-bottom: 6px; letter-spacing: 0.03em;">
-                            {{ section.label }}
-                        </h2>
+                    <div style="margin-bottom: 36px; text-align: left;">
+                        <h2 style="font-size: 17px; font-weight: 700; color: #1a73e8; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #1a73e8; padding-bottom: 6px; text-align: left;">{{ section.label }}</h2>
                         {% for item in section["items"] %}
-                        {% if item.is_attention %}
-                        <div style="margin-bottom: 20px; padding: 16px; background-color: #fff8f7; border: 1px solid #fce8e6; border-left: 4px solid #d93025; border-radius: 6px;">
-                            <div style="margin-bottom: 4px;">
+                        <div style="margin-bottom: 18px; padding: 14px 16px; border-left: 4px solid #d93025; background-color: #fff8f7; text-align: left;">
+                            {% if item.is_attention %}
+                            <div style="margin-bottom: 4px; text-align: left;">
                                 <span style="font-size: 11px; font-weight: 700; color: #d93025; background-color: #fce8e6; padding: 2px 6px; border-radius: 3px; text-transform: uppercase;">Requires Attention</span>
                             </div>
-                            <h3 style="font-size: 17px; font-weight: 700; margin: 6px 0 8px 0; color: #111111;">{{ item.get("title") }}</h3>
-                            <p style="font-size: 15px; line-height: 1.5; color: #333333; margin: 0 0 10px 0;">{{ item.get("summary") | nl2br }}</p>
+                            {% endif %}
+                            <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 6px 0; text-align: left;">{{ item.get("title") }}</h3>
+                            <p style="font-size: 14px; line-height: 1.5; color: #333333; margin: 0 0 8px 0; text-align: left;">{{ item.get("summary") | nl2br }}</p>
                             {% if item.get("urgency_rationale") %}
-                            <p style="font-size: 14px; line-height: 1.5; color: #555555; margin: 0 0 10px 0;"><strong>Why it matters:</strong> {{ item.get("urgency_rationale") }}</p>
-                            {% endif %}
-                            {% if item.get("source_urls") %}
-                            <div style="font-size: 13px; color: #666666;">
-                                Sources:
-                                {% for s_url in item.get("source_urls") %}
-                                <a href="{{ s_url }}" style="color: #0052cc; text-decoration: underline; margin-right: 8px;">{{ s_url | domain }}</a>
-                                {% endfor %}
-                            </div>
+                            <p style="font-size: 13px; line-height: 1.5; color: #555555; margin: 0 0 8px 0; text-align: left;"><strong>Why it matters:</strong> {{ item.get("urgency_rationale") }}</p>
                             {% endif %}
                         </div>
-                        {% else %}
-                        <div style="margin-bottom: 18px; padding: 12px 16px; border-left: 3px solid #dadce0; background-color: #fafafa;">
-                            <h4 style="font-size: 15px; font-weight: 600; margin: 0 0 6px 0; color: #222222;">{{ item.get("title") }}</h4>
-                            <p style="font-size: 14px; line-height: 1.5; color: #444444; margin: 0 0 8px 0;">{{ item.get("summary") | nl2br }}</p>
-                            {% if item.get("source_urls") %}
-                            <div style="font-size: 13px; color: #666666;">
-                                Sources:
-                                {% for s_url in item.get("source_urls") %}
-                                <a href="{{ s_url }}" style="color: #0052cc; text-decoration: underline; margin-right: 8px;">{{ s_url | domain }}</a>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
-                        </div>
-                        {% endif %}
                         {% endfor %}
                     </div>
                     {% endfor %}
@@ -143,18 +418,20 @@
                     {% else %}
                     <!-- Attention Section (Flat fallback) -->
                     {% if payload.get("attention") %}
-                    <div style="margin-bottom: 32px;">
-                        <h2 style="font-size: 18px; font-weight: 700; color: #d93025; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #d93025; padding-bottom: 6px;">
+                    <div style="margin-bottom: 32px; text-align: left;">
+                        <h2 style="font-size: 18px; font-weight: 700; color: #d93025; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #d93025; padding-bottom: 6px; text-align: left;">
                             Requires Attention
                         </h2>
                         {% for item in payload.get("attention") %}
-                        <div style="margin-bottom: 24px; padding: 16px; background-color: #fff8f7; border: 1px solid #fce8e6; border-radius: 6px;">
+                        <div style="margin-bottom: 24px; padding: 16px; background-color: #fff8f7; border: 1px solid #fce8e6; border-radius: 6px; text-align: left;">
                             <span style="font-size: 11px; font-weight: 700; color: #d93025; text-transform: uppercase;">{{ item.get("primary_area") }}</span>
-                            <h3 style="font-size: 18px; font-weight: 700; margin: 6px 0 8px 0; color: #111111;">{{ item.get("title") }}</h3>
-                            <p style="font-size: 15px; line-height: 1.5; color: #333333; margin: 0 0 10px 0;">{{ item.get("summary") | nl2br }}</p>
-                            <p style="font-size: 14px; line-height: 1.5; color: #555555; margin: 0 0 10px 0;"><strong>Why it matters:</strong> {{ item.get("urgency_rationale") }}</p>
+                            <h3 style="font-size: 18px; font-weight: 700; margin: 6px 0 8px 0; color: #111111; text-align: left;">{{ item.get("title") }}</h3>
+                            <p style="font-size: 15px; line-height: 1.5; color: #333333; margin: 0 0 10px 0; text-align: left;">{{ item.get("summary") | nl2br }}</p>
+                            {% if item.get("urgency_rationale") %}
+                            <p style="font-size: 14px; line-height: 1.5; color: #555555; margin: 0 0 10px 0; text-align: left;"><strong>Why it matters:</strong> {{ item.get("urgency_rationale") }}</p>
+                            {% endif %}
                             {% if item.get("source_urls") %}
-                            <div style="font-size: 13px; color: #666666;">
+                            <div style="font-size: 13px; color: #666666; text-align: left;">
                                 Sources:
                                 {% for s_url in item.get("source_urls") %}
                                 <a href="{{ s_url }}" style="color: #0052cc; text-decoration: underline; margin-right: 8px;">{{ s_url | domain }}</a>
@@ -168,17 +445,17 @@
 
                     <!-- Watch Section (Flat fallback) -->
                     {% if payload.get("watch") %}
-                    <div style="margin-bottom: 32px;">
-                        <h2 style="font-size: 18px; font-weight: 700; color: #5f6368; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #dadce0; padding-bottom: 6px;">
+                    <div style="margin-bottom: 32px; text-align: left;">
+                        <h2 style="font-size: 18px; font-weight: 700; color: #5f6368; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #dadce0; padding-bottom: 6px; text-align: left;">
                             Watchlist & Emerging Items
                         </h2>
                         {% for item in payload.get("watch") %}
-                        <div style="margin-bottom: 20px; padding: 12px 16px; border-left: 3px solid #dadce0; background-color: #fafafa;">
+                        <div style="margin-bottom: 20px; padding: 12px 16px; border-left: 3px solid #dadce0; background-color: #fafafa; text-align: left;">
                             <span style="font-size: 11px; font-weight: 700; color: #5f6368; text-transform: uppercase;">{{ item.get("primary_area") }}</span>
-                            <h4 style="font-size: 16px; font-weight: 600; margin: 4px 0 6px 0; color: #222222;">{{ item.get("title") }}</h4>
-                            <p style="font-size: 14px; line-height: 1.5; color: #444444; margin: 0 0 8px 0;">{{ item.get("summary") | nl2br }}</p>
+                            <h4 style="font-size: 16px; font-weight: 600; margin: 4px 0 6px 0; color: #222222; text-align: left;">{{ item.get("title") }}</h4>
+                            <p style="font-size: 14px; line-height: 1.5; color: #444444; margin: 0 0 8px 0; text-align: left;">{{ item.get("summary") | nl2br }}</p>
                             {% if item.get("source_urls") %}
-                            <div style="font-size: 13px; color: #666666;">
+                            <div style="font-size: 13px; color: #666666; text-align: left;">
                                 Sources:
                                 {% for s_url in item.get("source_urls") %}
                                 <a href="{{ s_url }}" style="color: #0052cc; text-decoration: underline; margin-right: 8px;">{{ s_url | domain }}</a>
@@ -197,32 +474,21 @@
                     {% for item in articles %}
                     {% set image = item.get("image") %}
                     {% set url = item.get("url") %}
-
-                    <div style="margin-bottom: 40px;">
-                        <h2 style="font-size: 18px; font-weight: 700; color: #000000; line-height: 1.3; margin: 0 0 10px 0;">
-                            {% if url %}
-                            <a href="{{ url }}" style="color: #000000; text-decoration: none;">{{ item.get("title") or url }}</a>
-                            {% else %}
-                            {{ item.get("title") or url }}
-                            {% endif %}
+                    <div style="margin-bottom: 40px; text-align: left;">
+                        <h2 style="font-size: 18px; font-weight: 700; color: #000000; line-height: 1.3; margin: 0 0 10px 0; text-align: left;">
+                            {% if url %}<a href="{{ url }}" style="color: #000000; text-decoration: none;">{{ item.get("title") or url }}</a>{% else %}{{ item.get("title") or url }}{% endif %}
                         </h2>
-
                         {% if image %}
                         <div style="margin-bottom: 12px;">
-                            <img src="{{ image }}" alt="Article Image"
-                                style="width: 100%; max-width: 100%; height: auto; border-radius: 4px; display: block;" />
+                            <img src="{{ image }}" alt="Article Image" style="width: 100%; max-width: 100%; height: auto; border-radius: 4px; display: block;" />
                         </div>
                         {% endif %}
-
-                        <div style="font-size: 15px; line-height: 1.6; margin-bottom: 12px; color: #444444;">
+                        <div style="font-size: 15px; line-height: 1.6; margin-bottom: 12px; color: #444444; text-align: left;">
                             {{ (item.get("summary") or item.get("text")) | nl2br }}
                         </div>
-
                         {% if url %}
-                        <div>
-                            <a href="{{ url }}" style="font-size: 13px; font-weight: 600; color: #0052cc; text-decoration: none;">
-                                Read more on {{ url | domain }} &#8594;
-                            </a>
+                        <div style="text-align: left;">
+                            <a href="{{ url }}" style="font-size: 13px; font-weight: 600; color: #0052cc; text-decoration: none;">Read more on {{ url | domain }} &#8594;</a>
                         </div>
                         {% endif %}
                     </div>
@@ -230,8 +496,7 @@
                     {% endif %}
 
                     <!-- Footer -->
-                    <div
-                        style="border-top: 1px solid #eeeeee; padding-top: 24px; text-align: center; margin-top: 40px;">
+                    <div style="border-top: 1px solid #eeeeee; padding-top: 24px; text-align: center; margin-top: 40px;">
                         <p style="font-size: 12px; color: #888888; margin: 0 0 8px 0;">Daily RSS Digest | Internal Use Only</p>
                         <p style="font-size: 12px; color: #aaaaaa; margin: 0;">&copy; 2026 Roman Kirillov</p>
                     </div>
