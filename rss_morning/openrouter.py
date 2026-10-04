@@ -26,6 +26,7 @@ def complete_structured(
     model: Optional[str] = None,
     api_key: Optional[str] = None,
     timeout: float = 60.0,
+    reasoning: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Call OpenRouter Chat Completions with strict structured JSON schema output."""
     resolved_key = api_key or os.environ.get("OPENROUTER_API_KEY")
@@ -41,7 +42,7 @@ def complete_structured(
         "X-Title": "RSS Morning",
     }
 
-    payload = {
+    payload: Dict[str, Any] = {
         "model": resolved_model,
         "messages": messages,
         "response_format": {
@@ -56,6 +57,8 @@ def complete_structured(
             "require_parameters": True,
         },
     }
+    if reasoning:
+        payload["reasoning"] = reasoning
 
     masked_key = f"...{resolved_key[-4:]}" if len(resolved_key) >= 4 else "****"
     logger.debug("Calling OpenRouter model=%s with key=%s", resolved_model, masked_key)

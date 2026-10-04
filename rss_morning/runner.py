@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from .articles import fetch_article_content, truncate_text
 from .classify import ClassificationDecision, classify_entry
-from .config import parse_feeds_config
+from .config import DigestConfig, parse_feeds_config
 from .digest import generate_digest
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
@@ -37,11 +37,13 @@ class RunConfig:
     email_subject: Optional[str] = None
     save_articles_path: Optional[str] = None
     load_articles_path: Optional[str] = None
-    max_article_length: int = 100
+    max_article_length: int = 1500
     system_prompt: Optional[str] = None
     concurrency: int = 20
     llm_dry_run: bool = False
     llm_model: Optional[str] = None
+    reasoning_effort: Optional[str] = "low"
+    digest_config: Optional[DigestConfig] = None
     areas: Dict[str, AreaConfig] = field(default_factory=dict)
 
 
@@ -203,6 +205,11 @@ def _extract_candidate_articles(
     """Extract article body text ONLY for selected candidates."""
     logger.info("Fetching article text for %d selected candidates", len(candidates))
     output = []
+    extract_limit = (
+        config.digest_config.deep_dive_article_chars
+        if config.digest_config
+        else config.max_article_length
+    )
 
     def process_candidate(
         candidate_pair: tuple[FeedEntry, Optional[ClassificationDecision]],
@@ -223,9 +230,7 @@ def _extract_candidate_articles(
                 "published": entry.published.isoformat() if entry.published else None,
             }
             if content.text:
-                payload["text"] = truncate_text(
-                    content.text, limit=config.max_article_length
-                )
+                payload["text"] = truncate_text(content.text, limit=extract_limit)
             else:
                 logger.info(
                     "Article text unavailable; including metadata only: %s", entry.link
@@ -295,7 +300,14 @@ def execute(config: RunConfig) -> RunResult:
             output_text=output_text, email_payload=articles, is_summary=False
         )
 
-    digest_kwargs = {"areas": config.areas} if config.areas else {}
+    digest_kwargs: Dict[str, Any] = {}
+    if config.areas:
+        digest_kwargs["areas"] = config.areas
+    if config.digest_config:
+        digest_kwargs["digest_config"] = config.digest_config
+    if config.reasoning_effort:
+        digest_kwargs["reasoning_effort"] = config.reasoning_effort
+
     edition_data = generate_digest(
         articles,
         system_prompt=config.system_prompt,

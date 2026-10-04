@@ -24,12 +24,22 @@ DEFAULT_AREAS: Dict[str, AreaConfig] = {
         ),
         threshold=0.40,
     ),
+    "security_ux": AreaConfig(
+        key="security_ux",
+        label="Security UX & Modern Auth",
+        description=(
+            "How user experience influences security, how users interact with security systems, "
+            "passkeys, FIDO2, WebAuthn, modern authentication methods, biometric login, "
+            "MFA friction and adoption, and end-user identity protection."
+        ),
+        threshold=0.40,
+    ),
     "corporate_security": AreaConfig(
         key="corporate_security",
-        label="Corporate Security",
+        label="Corporate Security & Internal Threat",
         description=(
             "Enterprise networking, VPN, SD-WAN, firewalls, identity providers, "
-            "managed devices, browsers, and workplace IT infrastructure."
+            "managed devices, browsers, workplace IT infrastructure, and insider threats."
         ),
         threshold=0.45,
     ),
@@ -93,6 +103,18 @@ class LoggingConfig:
 
 
 @dataclass
+class DigestConfig:
+    """Settings controlling the pyramid editorial digest."""
+
+    exec_summary_points: int = 5
+    max_topics: int = 6
+    deep_dives: int = 3
+    editor_article_chars: int = 1500
+    deep_dive_article_chars: int = 10000
+    deep_dive_model: Optional[str] = None
+
+
+@dataclass
 class AppConfig:
     feeds_file: str
     env_file: Optional[str] = None
@@ -102,10 +124,12 @@ class AppConfig:
     classification: ClassificationConfig = field(default_factory=ClassificationConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    digest: DigestConfig = field(default_factory=DigestConfig)
     prompt: Optional[str] = None
     max_article_length: int = 100
     concurrency: int = 10
     llm_model: Optional[str] = None
+    reasoning_effort: Optional[str] = "low"
     areas: Dict[str, AreaConfig] = field(default_factory=lambda: dict(DEFAULT_AREAS))
 
 
@@ -216,7 +240,6 @@ def parse_app_config(path: str) -> AppConfig:
     max_age_val = data.get("max_age_hours")
     max_age_hours = float(max_age_val) if max_age_val is not None else None
     summary = bool(data.get("summary", False))
-    max_article_length = int(data.get("max_article_length", 100))
     concurrency = int(data.get("concurrency", 10))
 
     # Classification (Jev)
@@ -281,6 +304,30 @@ def parse_app_config(path: str) -> AppConfig:
     # LLM
     llm_dict = data.get("llm") or {}
     llm_model = llm_dict.get("model")
+    reasoning_effort = llm_dict.get("reasoning_effort", "low")
+    if reasoning_effort and str(reasoning_effort).strip().lower() in (
+        "none",
+        "false",
+        "off",
+        "null",
+    ):
+        reasoning_effort = None
+
+    # Digest (Pyramid settings)
+    digest_dict = data.get("digest") or {}
+    # Legacy fallback: max_article_length in root can act as editor_article_chars
+    editor_chars = int(
+        digest_dict.get("editor_article_chars", data.get("max_article_length", 1500))
+    )
+    digest_config = DigestConfig(
+        exec_summary_points=int(digest_dict.get("exec_summary_points", 5)),
+        max_topics=int(digest_dict.get("max_topics", 6)),
+        deep_dives=int(digest_dict.get("deep_dives", 3)),
+        editor_article_chars=editor_chars,
+        deep_dive_article_chars=int(digest_dict.get("deep_dive_article_chars", 10000)),
+        deep_dive_model=digest_dict.get("deep_dive_model")
+        or llm_dict.get("deep_dive_model"),
+    )
 
     return AppConfig(
         feeds_file=feeds_file,
@@ -291,9 +338,11 @@ def parse_app_config(path: str) -> AppConfig:
         classification=classification_config,
         email=email,
         logging=logging_config,
+        digest=digest_config,
         prompt=prompt,
-        max_article_length=max_article_length,
+        max_article_length=editor_chars,
         concurrency=concurrency,
         llm_model=llm_model,
+        reasoning_effort=reasoning_effort,
         areas=areas,
     )
