@@ -272,3 +272,67 @@ def test_build_email_html_and_text_with_configured_areas():
     assert "=== MOBILE SECURITY ===" in text
     assert "[ATTENTION] Severe iOS Spyware" in text
     assert "Why it matters: Actively used in attacks" in text
+
+
+def test_build_email_html_responsive_mobile_optimizations():
+    payload = {
+        "executive_summary": {
+            "bottom_line": "Major zero-day exploitation across perimeter devices.",
+            "key_points": [
+                {
+                    "text": "Citrix NetScaler exploited in the wild.",
+                    "story_ids": ["s1"],
+                }
+            ],
+        },
+        "topics": [
+            {
+                "id": "t1",
+                "title": "Perimeter Compromise",
+                "synthesis": "Edge devices under active attack.",
+                "story_ids": ["s1"],
+            }
+        ],
+        "stories": [
+            {
+                "id": "s1",
+                "title": "Citrix Zero-Day",
+                "primary_area": "corporate_security",
+                "tier": "critical",
+                "exploitation_status": "confirmed_in_the_wild",
+                "summary": "Unauthenticated buffer overflow in VPN gateway.",
+                "key_facts": ["CVE-2026-107406", "CVSS 9.5"],
+                "why_it_matters": "Active exploitation observed.",
+                "source_urls": ["https://example.com/citrix"],
+            }
+        ],
+    }
+
+    html = renderers.build_email_html(payload, is_summary=True)
+
+    # 1. Meta tags for Apple Mail and dark mode support
+    assert 'name="x-apple-disable-message-reformatting"' in html
+    assert 'name="color-scheme" content="light dark"' in html
+
+    # 2. Outer table responsive class
+    assert 'class="outer-cell"' in html
+
+    # 3. Level 1 executive summary responsive class
+    assert 'class="exec-summary"' in html
+
+    # 4. Level 2 topic unboxing (open section without nested border/padding)
+    assert 'class="topic-section"' in html
+    assert "padding: 20px 22px" not in html
+    assert "border: 1px solid #e8eaed; border-radius: 6px;" not in html
+
+    # 5. Story card and Key Facts responsive classes
+    assert 'class="story-card"' in html
+    assert 'class="key-facts-box"' in html
+
+    # 6. CSS media queries for mobile viewports (<= 600px)
+    assert "@media only screen and (max-width: 600px)" in html
+    assert ".outer-cell" in html
+    assert ".content-wrapper" in html
+    assert ".story-card" in html
+    assert ".key-facts-box" in html
+    assert ".topic-section" in html
