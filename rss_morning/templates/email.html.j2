@@ -76,7 +76,7 @@
                     {% if fallback %}
                     <pre style="background-color: #f5f5f5; padding: 16px; border-radius: 4px; overflow-x: auto; font-size: 13px; font-family: monospace; color: #333333;">{{ fallback }}</pre>
 
-                    {% elif is_summary and pyramid and (pyramid.bottom_line or pyramid.topics or pyramid.deep_dives or pyramid.story_map) %}
+                    {% elif is_summary and pyramid and (pyramid.bottom_line or pyramid.topics or pyramid.story_map) %}
                     <!-- ============================================================ -->
                     <!-- LEVEL 1: EXECUTIVE SUMMARY                                   -->
                     <!-- ============================================================ -->
@@ -220,11 +220,7 @@
                                             {% endfor %}
                                             {% endif %}
                                         </td>
-                                        {% if story.id in payload.get("deep_dive_story_ids", []) %}
-                                        <td align="right" style="font-size: 12px; vertical-align: middle; white-space: nowrap;">
-                                            <a href="#deepdive-{{ story.id }}" style="color: #0b57d0; font-weight: 600; text-decoration: none;">Technical Deep Dive &darr;</a>
-                                        </td>
-                                        {% endif %}
+
                                     </tr>
                                 </table>
                             </div>
@@ -275,115 +271,6 @@
                         {% endif %}
                     </div>
 
-                    <!-- ============================================================ -->
-                    <!-- LEVEL 3: DEEP DIVES                                          -->
-                    <!-- ============================================================ -->
-                    {% if pyramid.deep_dives %}
-                    <div style="margin-bottom: 36px; text-align: left;">
-                        <div style="margin-bottom: 20px; border-bottom: 2px solid #0b57d0; padding-bottom: 8px; text-align: left;">
-                            <h2 style="font-size: 17px; font-weight: 700; color: #0b57d0; text-transform: uppercase; margin: 0; letter-spacing: 0.04em; text-align: left;">
-                                Level 3 &bull; Technical Deep Dives
-                            </h2>
-                        </div>
-
-                        {% for dd in pyramid.deep_dives %}
-                        <div id="deepdive-{{ dd.story_id }}" style="margin-bottom: 28px; padding: 22px 24px; background-color: #fdfefe; border: 1px solid #c2e7ff; border-left: 4px solid #0b57d0; border-radius: 6px; text-align: left;">
-                            <div style="margin-bottom: 8px; text-align: left;">
-                                <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: #fce8e6; color: #b00020;">
-                                    Deep Dive
-                                </span>
-                                {% if dd.primary_area %}
-                                <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; background-color: #e8f0fe; color: #1a73e8;">
-                                    {{ dd.primary_area | replace("_", " ") }}
-                                </span>
-                                {% endif %}
-                            </div>
-
-                            <h3 style="font-size: 17px; font-weight: 700; color: #202124; margin: 6px 0 14px 0; line-height: 1.35; text-align: left;">
-                                {{ dd.title }}
-                            </h3>
-
-                            <!-- What Happened -->
-                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">What Happened</div>
-                            <p style="font-size: 14px; line-height: 1.6; color: #3c4043; margin: 0 0 12px 0; text-align: left;">
-                                {{ dd.what_happened }}
-                            </p>
-
-                            <!-- Technical Details -->
-                            {% if dd.technical_details %}
-                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Technical Details &amp; Root Cause</div>
-                            <p style="font-size: 14px; line-height: 1.6; color: #3c4043; margin: 0 0 12px 0; text-align: left;">
-                                {{ dd.technical_details }}
-                            </p>
-                            {% endif %}
-
-                            <!-- Affected Systems -->
-                            {% if dd.affected %}
-                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Affected Systems &amp; Scope</div>
-                            <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 0 0 12px 0; text-align: left;">
-                                {% for aff in dd.affected %}
-                                <tr>
-                                    <td style="width: 14px; vertical-align: top; font-size: 14px; color: #0b57d0; font-weight: bold; line-height: 1.5; text-align: left; padding-bottom: 2px;">&bull;</td>
-                                    <td style="vertical-align: top; font-size: 13px; line-height: 1.5; color: #3c4043; text-align: left; padding-bottom: 2px;">{{ aff }}</td>
-                                </tr>
-                                {% endfor %}
-                            </table>
-                            {% endif %}
-
-                            <!-- Exploitation & Evidence -->
-                            {% if dd.exploitation_and_evidence %}
-                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Exploitation Status &amp; Evidence</div>
-                            <p style="font-size: 14px; line-height: 1.6; color: #3c4043; margin: 0 0 12px 0; text-align: left;">
-                                {{ dd.exploitation_and_evidence }}
-                            </p>
-                            {% endif %}
-
-                            <!-- Timeline -->
-                            {% if dd.timeline %}
-                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Timeline</div>
-                            <table style="width: 100%; font-size: 13px; margin: 0 0 12px 0; border-collapse: collapse; text-align: left;">
-                                {% for entry in dd.timeline %}
-                                <tr style="border-bottom: 1px solid #edf2f7;">
-                                    <td style="padding: 5px 12px 5px 0; font-weight: 600; color: #5f6368; width: 140px; vertical-align: top; text-align: left;">{{ entry.date }}</td>
-                                    <td style="padding: 5px 0; color: #3c4043; vertical-align: top; text-align: left;">{{ entry.event }}</td>
-                                </tr>
-                                {% endfor %}
-                            </table>
-                            {% endif %}
-
-                            <!-- Mitigations as Reported -->
-                            {% if dd.mitigations_as_reported %}
-                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Mitigations &amp; Vendor Guidance (As Reported)</div>
-                            <p style="font-size: 14px; line-height: 1.6; color: #3c4043; margin: 0 0 12px 0; text-align: left;">
-                                {{ dd.mitigations_as_reported }}
-                            </p>
-                            {% endif %}
-
-                            <!-- Open Questions -->
-                            {% if dd.open_questions %}
-                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0b57d0; margin: 14px 0 6px 0; text-align: left;">Open Questions &amp; Uncertainty</div>
-                            <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 0 0 12px 0; text-align: left;">
-                                {% for q in dd.open_questions %}
-                                <tr>
-                                    <td style="width: 14px; vertical-align: top; font-size: 14px; color: #5f6368; font-weight: bold; line-height: 1.5; text-align: left; padding-bottom: 2px;">&bull;</td>
-                                    <td style="vertical-align: top; font-size: 13px; line-height: 1.5; color: #5f6368; font-style: italic; text-align: left; padding-bottom: 2px;">{{ q }}</td>
-                                </tr>
-                                {% endfor %}
-                            </table>
-                            {% endif %}
-
-                            {% if dd.source_urls %}
-                            <div style="font-size: 12px; color: #5f6368; margin-top: 12px; padding-top: 8px; border-top: 1px solid #e8eaed; text-align: left;">
-                                Primary Sources:
-                                {% for s_url in dd.source_urls %}
-                                <a href="{{ s_url }}" style="color: #1a73e8; text-decoration: underline; margin-right: 6px;">{{ s_url | domain }}</a>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
 
                     {% elif is_summary %}
                     <!-- Legacy Fallback for older flat payloads -->

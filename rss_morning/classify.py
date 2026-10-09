@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import requests
 
+from .config import DEFAULT_AREAS as CONFIG_DEFAULT_AREAS
 from .models import AreaConfig
 
 logger = logging.getLogger(__name__)
@@ -22,36 +23,13 @@ DEFAULT_MODEL = "jev-latest"
 DEFAULT_RELEVANCE_THRESHOLD = 0.50
 
 DEFAULT_AREAS: Dict[str, str] = {
-    "mobile_security": (
-        "Mobile application security, Android and iOS vulnerabilities, "
-        "mobile malware, device attestation, and client integrity"
-    ),
-    "corporate_security": (
-        "Enterprise networking, VPN, SD-WAN, firewalls, identity providers, "
-        "managed devices, browsers, and workplace IT infrastructure"
-    ),
-    "account_takeover": (
-        "Account takeover, credential stuffing, session hijacking, password spraying, "
-        "brute force, and customer identity compromise"
-    ),
-    "end_user_security": (
-        "Passkeys, FIDO2, WebAuthn, modern authentication methods, biometric login, "
-        "MFA adoption, and end-user identity protection"
-    ),
-    "ai_security": (
-        "AI model vulnerabilities, prompt injection, AI agent safety, "
-        "and security implications of LLMs and generative AI"
-    ),
-    "other": (
-        "General security news, notable CVEs, software vulnerabilities, infrastructure, "
-        "or material not fitting any specific focus area above"
-    ),
+    k: v.description for k, v in CONFIG_DEFAULT_AREAS.items()
 }
 
 RELEVANCE_QUESTION: Dict[str, Any] = {
     "type": "noul",
     "instructions": (
-        "Is this article plausibly relevant enough to a security briefing "
+        "Is this article plausibly relevant enough to the briefing "
         "that we should spend the effort to read the full article?"
     ),
     "criteria": {
@@ -84,6 +62,8 @@ class ClassificationDecision:
 
 def build_jev_questions(
     areas: Optional[Mapping[str, AreaConfig | str]] = None,
+    relevance_instructions: Optional[str] = None,
+    relevance_criteria: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Any]:
     """Construct centralized Jev question schema for relevance and primary area."""
     criteria: Dict[str, str] = {}
@@ -96,14 +76,25 @@ def build_jev_questions(
 
     if "other" not in criteria:
         criteria["other"] = (
-            "Does not fit any security area above, or general non-security material"
+            "Does not fit any configured area above, or general non-matching material"
         )
 
+    rel_instructions = relevance_instructions or RELEVANCE_QUESTION["instructions"]
+    rel_criteria = (
+        dict(relevance_criteria)
+        if relevance_criteria
+        else dict(RELEVANCE_QUESTION["criteria"])
+    )
+
     return {
-        "is_relevant": RELEVANCE_QUESTION,
+        "is_relevant": {
+            "type": "noul",
+            "instructions": rel_instructions,
+            "criteria": rel_criteria,
+        },
         "primary_area": {
             "type": "choice",
-            "instructions": "What primary security area does this article describe?",
+            "instructions": "What primary area does this article describe?",
             "criteria": criteria,
         },
     }
@@ -116,6 +107,8 @@ def classify_entry(
     threshold: float = DEFAULT_RELEVANCE_THRESHOLD,
     api_key: Optional[str] = None,
     areas: Optional[Mapping[str, AreaConfig | str]] = None,
+    relevance_instructions: Optional[str] = None,
+    relevance_criteria: Optional[Mapping[str, str]] = None,
     timeout: float = 15.0,
 ) -> ClassificationDecision:
     """Submit cheap feed metadata to TypeSafe Jev for relevance and area judgement."""
@@ -131,7 +124,11 @@ def classify_entry(
         "url": entry_metadata.get("link") or entry_metadata.get("url", ""),
     }
 
-    questions = build_jev_questions(areas=areas)
+    questions = build_jev_questions(
+        areas=areas,
+        relevance_instructions=relevance_instructions,
+        relevance_criteria=relevance_criteria,
+    )
 
     headers = {
         "Authorization": f"Bearer {resolved_key}",
@@ -216,6 +213,8 @@ def classify_entries(
     threshold: float = DEFAULT_RELEVANCE_THRESHOLD,
     api_key: Optional[str] = None,
     areas: Optional[Mapping[str, AreaConfig | str]] = None,
+    relevance_instructions: Optional[str] = None,
+    relevance_criteria: Optional[Mapping[str, str]] = None,
     timeout: float = 15.0,
 ) -> List[tuple[Mapping[str, Any], ClassificationDecision]]:
     """Classify a sequence of feed entries, returning pairs of (entry, decision)."""
@@ -227,6 +226,8 @@ def classify_entries(
             threshold=threshold,
             api_key=api_key,
             areas=areas,
+            relevance_instructions=relevance_instructions,
+            relevance_criteria=relevance_criteria,
             timeout=timeout,
         )
         results.append((entry, decision))

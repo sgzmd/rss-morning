@@ -22,7 +22,6 @@ def prepare_pyramid_view_model(
         payload.get("stories")
         or payload.get("topics")
         or payload.get("executive_summary")
-        or payload.get("deep_dives")
     ):
         return {}
 
@@ -92,16 +91,13 @@ def prepare_pyramid_view_model(
                 {"key": key, "label": key.replace("_", " ").title(), "stories": items}
             )
 
-    # Resolve deep dives
-    deep_dives = list(payload.get("deep_dives") or [])
-
     return {
         "bottom_line": bottom_line,
         "key_points": exec_points,
         "topics": resolved_topics,
         "leftover_stories": leftover_stories,
         "leftover_sections": leftover_sections,
-        "deep_dives": deep_dives,
+        "deep_dives": [],
         "story_map": story_map,
     }
 

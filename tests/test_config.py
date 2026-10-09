@@ -274,10 +274,7 @@ def test_parse_app_config_digest_pyramid_settings(tmp_path):
             [digest]
             exec_summary_points = 4
             max_topics = 5
-            deep_dives = 2
             editor_article_chars = 2000
-            deep_dive_article_chars = 8000
-            deep_dive_model = "openai/gpt-5.6-luna"
             """
         ),
         encoding="utf-8",
@@ -288,7 +285,52 @@ def test_parse_app_config_digest_pyramid_settings(tmp_path):
     assert config.reasoning_effort == "low"
     assert config.digest.exec_summary_points == 4
     assert config.digest.max_topics == 5
-    assert config.digest.deep_dives == 2
     assert config.digest.editor_article_chars == 2000
-    assert config.digest.deep_dive_article_chars == 8000
-    assert config.digest.deep_dive_model == "openai/gpt-5.6-luna"
+
+
+def test_parse_app_config_technologies_and_relevance(tmp_path):
+    config_file = tmp_path / "config.toml"
+    (tmp_path / "feeds.xml").touch()
+    config_file.write_text(
+        textwrap.dedent(
+            """
+            feeds = "feeds.xml"
+
+            [classification.relevance]
+            instructions = "Is this relevant to mobile and auth?"
+            criteria_true = "Mentions Android, iOS, or Passkeys"
+            criteria_false = "Marketing fluff"
+
+            [technologies]
+            description = "Consumer platform"
+            stack = ["Android", "iOS", "Passkeys"]
+
+            [areas.mobile_security]
+            label = "Mobile Security"
+            priority = "high"
+            threshold = 0.35
+            description = "Mobile issues"
+            technologies = ["Android Keystore", "Secure Enclave"]
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    config = parse_app_config(str(config_file))
+    assert (
+        config.classification.relevance_instructions
+        == "Is this relevant to mobile and auth?"
+    )
+    assert (
+        config.classification.relevance_criteria_true
+        == "Mentions Android, iOS, or Passkeys"
+    )
+    assert config.classification.relevance_criteria_false == "Marketing fluff"
+    assert config.technologies is not None
+    assert config.technologies.description == "Consumer platform"
+    assert config.technologies.technologies == ("Android", "iOS", "Passkeys")
+    assert config.areas["mobile_security"].priority == "high"
+    assert config.areas["mobile_security"].technologies == (
+        "Android Keystore",
+        "Secure Enclave",
+    )

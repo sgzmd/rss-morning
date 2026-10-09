@@ -1,6 +1,6 @@
 {% if fallback %}
 {{ fallback }}
-{% elif is_summary and pyramid and (pyramid.bottom_line or pyramid.topics or pyramid.deep_dives) %}
+{% elif is_summary and pyramid and (pyramid.bottom_line or pyramid.topics or pyramid.story_map) %}
 ================================================================================
 RSS INTELLIGENCE - THE SENTINEL DIGEST
 LEVEL 1: EXECUTIVE SUMMARY
@@ -59,59 +59,7 @@ Sources: {{ story.source_urls | join(", ") }}
 --------------------------------------------------------------------------------
 
 {% endif %}
-{% if pyramid.deep_dives %}
-================================================================================
-LEVEL 3: TECHNICAL DEEP DIVES
-================================================================================
 
-{% for dd in pyramid.deep_dives %}
-### DEEP DIVE: {{ dd.title }} ({{ dd.story_id }})
-
-WHAT HAPPENED:
-{{ dd.what_happened }}
-
-{% if dd.technical_details %}
-TECHNICAL DETAILS & ROOT CAUSE:
-{{ dd.technical_details }}
-
-{% endif %}
-{% if dd.affected %}
-AFFECTED SYSTEMS & SCOPE:
-{% for aff in dd.affected %}
-  * {{ aff }}
-{% endfor %}
-
-{% endif %}
-{% if dd.exploitation_and_evidence %}
-EXPLOITATION & EVIDENCE:
-{{ dd.exploitation_and_evidence }}
-
-{% endif %}
-{% if dd.timeline %}
-TIMELINE:
-{% for entry in dd.timeline %}
-  * {{ entry.date }}: {{ entry.event }}
-{% endfor %}
-
-{% endif %}
-{% if dd.mitigations_as_reported %}
-MITIGATIONS (AS REPORTED):
-{{ dd.mitigations_as_reported }}
-
-{% endif %}
-{% if dd.open_questions %}
-OPEN QUESTIONS & UNCERTAINTIES:
-{% for q in dd.open_questions %}
-  * {{ q }}
-{% endfor %}
-
-{% endif %}
-Sources: {{ dd.source_urls | join(", ") }}
-
---------------------------------------------------------------------------------
-
-{% endfor %}
-{% endif %}
 {% elif is_summary %}
 {% if payload.get("overview") %}
 Overview:

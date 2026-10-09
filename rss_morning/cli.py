@@ -120,6 +120,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             classify=app_config.classification.enabled,
             classify_model=app_config.classification.model,
             classify_threshold=app_config.classification.threshold,
+            relevance_instructions=app_config.classification.relevance_instructions,
+            relevance_criteria_true=app_config.classification.relevance_criteria_true,
+            relevance_criteria_false=app_config.classification.relevance_criteria_false,
             email_to=app_config.email.to_addr,
             email_from=app_config.email.from_addr,
             email_subject=app_config.email.subject,
@@ -133,6 +136,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             reasoning_effort=app_config.reasoning_effort,
             digest_config=app_config.digest,
             areas=app_config.areas,
+            technologies=app_config.technologies,
         )
 
         config_dict = dataclasses.asdict(config)

@@ -102,21 +102,6 @@ def test_build_email_html_and_text_pyramid_structure():
                 "source_urls": ["https://theregister.com/fortinet"],
             }
         ],
-        "deep_dives": [
-            {
-                "story_id": "s1",
-                "title": "Fortinet FortiMail Zero-Day",
-                "primary_area": "corporate_security",
-                "what_happened": "Unauthenticated attackers write arbitrary files.",
-                "technical_details": "Null byte injection in mail path parser.",
-                "affected": ["FortiMail 7.0 - 7.4"],
-                "exploitation_and_evidence": "Actively exploited in the wild.",
-                "timeline": [{"date": "Oct 2, 2026", "event": "Added to KEV"}],
-                "mitigations_as_reported": "Upgrade to patch release immediately.",
-                "open_questions": ["Attribution is unconfirmed."],
-                "source_urls": ["https://theregister.com/fortinet"],
-            }
-        ],
     }
 
     html = renderers.build_email_html(payload, is_summary=True)
@@ -129,9 +114,7 @@ def test_build_email_html_and_text_pyramid_structure():
     assert "Fortinet FortiMail Zero-Day" in html
     assert "CVE-2026-104286" in html
     assert "In-The-Wild Exploited" in html
-    assert "Level 3 &bull; Technical Deep Dives" in html
-    assert "Null byte injection in mail path parser." in html
-    assert "Oct 2, 2026" in html
+    assert "Technical Deep Dives" not in html
 
     text = renderers.build_email_text(payload, is_summary=True)
     assert "LEVEL 1: EXECUTIVE SUMMARY" in text
@@ -139,8 +122,7 @@ def test_build_email_html_and_text_pyramid_structure():
     assert "LEVEL 2: KEY TOPICS & DEVELOPMENTS" in text
     assert "=== TOPIC: PERIMETER COMPROMISE SURGE ===" in text
     assert "[CRITICAL | IN-THE-WILD EXPLOITED]" in text
-    assert "LEVEL 3: TECHNICAL DEEP DIVES" in text
-    assert "### DEEP DIVE: Fortinet FortiMail Zero-Day" in text
+    assert "TECHNICAL DEEP DIVES" not in text
 
 
 def test_build_email_html_for_raw_articles():

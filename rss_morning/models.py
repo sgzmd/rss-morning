@@ -29,9 +29,19 @@ class FeedEntry:
 
 @dataclass(frozen=True)
 class AreaConfig:
-    """Configuration for a security focus area."""
+    """Configuration for a topic focus area."""
 
     key: str
     label: str
     description: str
     threshold: float = 0.50
+    technologies: tuple[str, ...] = ()
+    priority: str = "normal"
+
+
+@dataclass(frozen=True)
+class TechnologyFootprint:
+    """Carveout of specific technologies in use and prioritized."""
+
+    description: str = ""
+    technologies: tuple[str, ...] = ()

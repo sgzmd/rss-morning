@@ -9,13 +9,12 @@ Structure of an edition:
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import logging
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from .config import DigestConfig
-from .models import AreaConfig
+from .models import AreaConfig, TechnologyFootprint
 from .openrouter import complete_structured
 
 logger = logging.getLogger(__name__)
@@ -27,10 +26,10 @@ logger = logging.getLogger(__name__)
 
 
 def build_editor_schema(area_keys: Optional[Sequence[str]] = None) -> Dict[str, Any]:
-    """Schema for Stage 1: Story clustering, topic synthesis, and executive summary."""
+    """Schema for Story clustering, topic synthesis, and executive summary."""
     primary_area_prop: Dict[str, Any] = {
         "type": "string",
-        "description": "Primary security area chosen from the configured taxonomy",
+        "description": "Primary focus area chosen from the configured taxonomy",
     }
     if area_keys:
         primary_area_prop["enum"] = list(area_keys)
@@ -40,7 +39,7 @@ def build_editor_schema(area_keys: Optional[Sequence[str]] = None) -> Dict[str, 
         "properties": {
             "stories": {
                 "type": "array",
-                "description": "All deduplicated and clustered security stories selected for today's briefing.",
+                "description": "All deduplicated and clustered stories selected for today's briefing.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -70,7 +69,7 @@ def build_editor_schema(area_keys: Optional[Sequence[str]] = None) -> Dict[str, 
                         },
                         "summary": {
                             "type": "string",
-                            "description": "3-5 sentence substantive summary of the event, actor, mechanism, and impact.",
+                            "description": "3-5 sentence sharp, engaging summary in the Risky Business style: direct, active voice, zero corporate filler. Detail the actor, exploit mechanism, root cause, and practical blast radius.",
                         },
                         "key_facts": {
                             "type": "array",
@@ -79,7 +78,7 @@ def build_editor_schema(area_keys: Optional[Sequence[str]] = None) -> Dict[str, 
                         },
                         "why_it_matters": {
                             "type": "string",
-                            "description": "Grounded urgency rationale explaining why a security leader must care, without assuming internal environment details.",
+                            "description": "Sharp, realistic takeaway on real-world fallout and practitioner impact, cutting through vendor hype, without assuming internal environment details.",
                         },
                         "article_ids": {
                             "type": "array",
@@ -103,7 +102,7 @@ def build_editor_schema(area_keys: Optional[Sequence[str]] = None) -> Dict[str, 
             },
             "topics": {
                 "type": "array",
-                "description": "Cohesive overarching themes of the day grouping related stories (e.g. 'Perimeter Infrastructure Under Active Attack').",
+                "description": "Cohesive overarching themes grouping related stories (e.g. 'Perimeter Infrastructure Under Active Attack').",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -117,7 +116,7 @@ def build_editor_schema(area_keys: Optional[Sequence[str]] = None) -> Dict[str, 
                         },
                         "synthesis": {
                             "type": "string",
-                            "description": "1 substantive paragraph synthesizing the cross-cutting pattern, threat dynamics, or industry significance.",
+                            "description": "1 sharp, engaging paragraph synthesizing the cross-cutting pattern, threat dynamics, or systemic failure without corporate jargon.",
                         },
                         "story_ids": {
                             "type": "array",
@@ -129,22 +128,17 @@ def build_editor_schema(area_keys: Optional[Sequence[str]] = None) -> Dict[str, 
                     "additionalProperties": False,
                 },
             },
-            "deep_dive_story_ids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Ordered IDs of the top 2-5 highest-impact stories that warrant a technical deep dive.",
-            },
             "executive_summary": {
                 "type": "object",
                 "description": "Executive summary written with full view of all clustered stories and topics.",
                 "properties": {
                     "bottom_line": {
                         "type": "string",
-                        "description": "Single powerful takeaway sentence capturing the dominant theme of today's landscape.",
+                        "description": "Single punchy, memorable takeaway sentence capturing the unvarnished reality of today's landscape in the Risky Business style.",
                     },
                     "key_points": {
                         "type": "array",
-                        "description": "3-5 key priority points for executives.",
+                        "description": "3-5 key priority points for practitioners and leaders.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -170,73 +164,10 @@ def build_editor_schema(area_keys: Optional[Sequence[str]] = None) -> Dict[str, 
         "required": [
             "stories",
             "topics",
-            "deep_dive_story_ids",
             "executive_summary",
         ],
         "additionalProperties": False,
     }
-
-
-DEEP_DIVE_SCHEMA: Dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "what_happened": {
-            "type": "string",
-            "description": "Detailed explanation of the incident, campaign, or disclosure.",
-        },
-        "technical_details": {
-            "type": "string",
-            "description": "Root cause, exploit mechanics, protocols, C2 behavior, or architecture weaknesses explicitly cited in the text.",
-        },
-        "affected": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Specific products, platforms, versions, models, or organizations confirmed affected.",
-        },
-        "exploitation_and_evidence": {
-            "type": "string",
-            "description": "Grounded exploitation status: active in-the-wild exploitation, proof-of-concept, telemetry evidence, CISA KEV listing, or unconfirmed.",
-        },
-        "timeline": {
-            "type": "array",
-            "description": "Chronological milestones explicitly mentioned in the sources.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "date": {
-                        "type": "string",
-                        "description": "Date, timestamp, or approximate timing (e.g. 'October 2, 2026').",
-                    },
-                    "event": {
-                        "type": "string",
-                        "description": "Description of the milestone.",
-                    },
-                },
-                "required": ["date", "event"],
-                "additionalProperties": False,
-            },
-        },
-        "mitigations_as_reported": {
-            "type": "string",
-            "description": "Official vendor patches, workarounds, IOCs, or advisory recommendations reported in the sources.",
-        },
-        "open_questions": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Known uncertainties, unconfirmed threat actor attribution, missing patches, or ongoing investigations.",
-        },
-    },
-    "required": [
-        "what_happened",
-        "technical_details",
-        "affected",
-        "exploitation_and_evidence",
-        "timeline",
-        "mitigations_as_reported",
-        "open_questions",
-    ],
-    "additionalProperties": False,
-}
 
 
 # Backward compatibility alias
@@ -248,8 +179,15 @@ EDITION_SCHEMA: Dict[str, Any] = build_editor_schema()
 # Editorial Policy Prompts
 # ---------------------------------------------------------------------------
 
-DEFAULT_EDITORIAL_POLICY = """You are the edition editor for an executive cyber security morning briefing.
-Your goal is to synthesize incoming security articles into a high-signal, deeply factual intelligence briefing.
+DEFAULT_EDITORIAL_POLICY = """You are the edition editor for a high-signal security intelligence morning briefing.
+Your goal is to synthesize incoming articles into a sharp, deeply factual, practitioner-oriented briefing.
+
+Voice & Tone Mandate ("Risky Business" Podcast Style):
+- CHANNEL RISKY BUSINESS: Write in the sharp, technical, and engaging voice of the Risky Business podcast. Be authoritative, direct, and conversational—never dry, bureaucratic, or academic.
+- ZERO CORPORATE FLUFF: Ban boilerplate clichés like "in today's evolving threat landscape", "serves as a stark reminder", "organizations are urged to patch", or "cyber hygiene is paramount".
+- SKEPTICAL OF VENDOR SPIN: Strip away PR euphemisms and marketing hype. If a vendor calls an unauthenticated remote code execution bug an "inadvertent exposure" or buries an actively exploited zero-day in routine release notes, call it what it actually is. Focus on the actual exploit mechanics, root cause, architectural failure, and real-world blast radius.
+- PUNCHY & ENGAGING: Use active voice and crisp phrasing. Explain technical nuances clearly without dumbing them down. A touch of wry realism regarding threat actor blunders or vendor missteps is encouraged, but stay 100% grounded in factual reality.
+- PRACTITIONER-FIRST: Focus on what engineers and security leaders actually care about: Is this being actively abused in the wild, is there a working PoC, or is it just academic research?
 
 Non-Negotiable Editorial Rules:
 1. STRICT GROUNDING: Only assert facts, metrics, CVEs, CVSS scores, threat actor names, and impacts explicitly documented in the provided source texts. Do not extrapolate, speculate, or invent details.
@@ -267,29 +205,15 @@ DEFAULT_EDITORIAL_PROMPT = DEFAULT_EDITORIAL_POLICY  # Backward compatibility al
 
 STRUCTURE_INSTRUCTIONS = """
 Structural Instructions (Pyramid Principle):
-1. STORIES: First, cluster the incoming articles into deduplicated stories. For each story, provide a 3-5 sentence substantive summary, 2-4 key fact bullets (CVEs, CVSS, software versions, actor names), and a grounded 'why it matters'. Reference the source article IDs in `article_ids`.
-2. TOPICS: Next, identify 2 to 6 cross-cutting thematic topics that group related stories (e.g. 'Edge Perimeter Appliances Under Fire', 'Agentic AI Exploitation and Policy'). For each topic, write a solid synthesis paragraph and reference member story IDs.
-3. DEEP DIVES: Select up to {max_deep_dives} stories for deep technical analysis and list their story IDs in `deep_dive_story_ids`.
-   CRITICAL PRIORITY RULE FOR DEEP DIVES:
-   You must select deep dives ONLY from these areas of direct interest, prioritizing strictly in this order:
-     Priority 1: Mobile Security (`mobile_security`)
-     Priority 2: Security UX & Modern Auth (`security_ux` or `end_user_security` - user experience, passkeys, WebAuthn, authentication friction)
-     Priority 3: Corporate Security & Internal Threat (`corporate_security` - enterprise network, VPN, edge gateways, insider threat)
-     Priority 4: Account Takeover (`account_takeover` - credential stuffing, session hijacking, identity compromise)
-   Do NOT select deep dives from any other areas unless zero stories exist in the four priority areas above.
-4. EXECUTIVE SUMMARY: Finally, synthesize the entire edition into:
-   - `bottom_line`: Exactly 1 powerful sentence capturing the overarching reality of today's threat landscape.
+1. STORIES: First, cluster the incoming articles into deduplicated stories. For each story, provide:
+   - `summary`: 3-5 sentence substantive, engaging summary in the Risky Business style (direct, active voice, exploit mechanics, attacker, and operational impact).
+   - `key_facts`: 2-4 key fact bullets (CVEs, CVSS, software versions, actor names).
+   - `why_it_matters`: Grounded, sharp assessment of why defenders must care, without assuming internal environment details.
+   - Reference the source article IDs in `article_ids`.
+2. TOPICS: Next, identify 2 to 6 cross-cutting thematic topics grouping related stories (e.g. 'Edge Perimeter Appliances Under Fire', 'Passkey Ecosystem Friction and Attacks'). For each topic, write a sharp 1-paragraph synthesis exposing the systemic pattern, threat dynamics, or attacker economics, and reference member story IDs.
+3. EXECUTIVE SUMMARY: Finally, synthesize the entire edition into:
+   - `bottom_line`: Exactly 1 punchy, memorable sentence capturing the overarching reality of today's landscape.
    - `key_points`: 3 to {max_exec_points} prioritized bullet points (1-2 sentences each), linking to their relevant `story_ids`.
-"""
-
-DEEP_DIVE_PROMPT = """You are a senior cyber security technical analyst performing a deep dive on a critical security development.
-Analyze the provided source texts for this story and produce an exhaustive, highly technical report strictly following the JSON schema.
-
-Non-Negotiable Rules:
-1. STRICT GROUNDING: Use only facts, technical mechanisms, CVEs, version numbers, and actor names explicitly cited in the source texts. Never extrapolate.
-2. BAN INTERNAL-ENVIRONMENT CLAIMS: Do not claim or imply the reader's organization uses the affected product.
-3. PRESERVE UNCERTAINTY: State clearly what is known vs. unknown (e.g. unconfirmed attribution, missing patch timeline, whether PoC exists).
-4. TECHNICAL DEPTH: Provide detailed root cause, exploit mechanism, C2 behavior, and protocols whenever present in the sources.
 """
 
 
@@ -414,81 +338,11 @@ def resolve_edition_ids(
         "key_points": key_points,
     }
 
-    # Resolve deep dive picks
-    raw_dd_ids = editor_data.get("deep_dive_story_ids") or []
-    valid_dd_ids = [
-        str(sid).strip() for sid in raw_dd_ids if str(sid).strip() in stories_by_id
-    ]
-
     return {
         "stories": resolved_stories,
         "topics": resolved_topics,
-        "deep_dive_story_ids": valid_dd_ids,
         "executive_summary": resolved_exec,
     }
-
-
-def generate_single_deep_dive(
-    story: Dict[str, Any],
-    article_lookup: Dict[str, dict],
-    model: Optional[str] = None,
-    timeout: float = 120.0,
-    reasoning_effort: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    """Synthesize a single deep dive from the full text of its source articles."""
-    story_id = story.get("id", "unknown")
-    art_ids = story.get("article_ids") or []
-    source_articles = [article_lookup[aid] for aid in art_ids if aid in article_lookup]
-
-    if not source_articles:
-        logger.warning("No source articles found for deep dive on story %s", story_id)
-        return None
-
-    user_payload = {
-        "story_title": story.get("title"),
-        "story_summary": story.get("summary"),
-        "primary_area": story.get("primary_area"),
-        "key_facts": story.get("key_facts"),
-        "articles": [
-            {
-                "id": a.get("id"),
-                "title": a.get("title"),
-                "url": a.get("url"),
-                "summary": a.get("summary"),
-                "content": a.get("text") or a.get("summary") or "",
-            }
-            for a in source_articles
-        ],
-    }
-
-    messages = [
-        {"role": "system", "content": DEEP_DIVE_PROMPT},
-        {
-            "role": "user",
-            "content": json.dumps(user_payload, ensure_ascii=False, indent=2),
-        },
-    ]
-
-    reasoning_payload = {"effort": reasoning_effort} if reasoning_effort else None
-    try:
-        response = dict(
-            complete_structured(
-                messages=messages,
-                json_schema=DEEP_DIVE_SCHEMA,
-                schema_name="story_deep_dive",
-                model=model,
-                timeout=timeout,
-                reasoning=reasoning_payload,
-            )
-        )
-        response["story_id"] = story_id
-        response["title"] = story.get("title")
-        response["primary_area"] = story.get("primary_area")
-        response["source_urls"] = story.get("source_urls") or []
-        return response
-    except Exception:
-        logger.exception("Failed to generate deep dive for story %s", story_id)
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -504,13 +358,9 @@ def generate_digest(
     areas: Optional[Mapping[str, AreaConfig]] = None,
     digest_config: Optional[DigestConfig] = None,
     reasoning_effort: Optional[str] = "low",
+    technologies: Optional[TechnologyFootprint] = None,
 ) -> Dict[str, Any]:
-    """Generate a pyramid editorial digest edition using OpenRouter.
-
-    Two-stage architecture:
-      Stage 1: Edition editor call (clustering, topics, exec summary, deep dive picks)
-      Stage 2: Parallel deep-dive calls for the top selected stories.
-    """
+    """Generate an editorial digest edition using OpenRouter."""
     cfg = digest_config or DigestConfig()
 
     if not articles:
@@ -524,7 +374,6 @@ def generate_digest(
             },
             "topics": [],
             "stories": [],
-            "deep_dives": [],
             # Backward-compat aliases
             "overview": "No articles retrieved for this edition.",
             "attention": [],
@@ -544,21 +393,49 @@ def generate_digest(
     area_keys = list(areas.keys()) if areas else None
     editor_schema = build_editor_schema(area_keys)
 
-    # Compose the Stage 1 system prompt:
-    # 1. Editorial policy (user custom or default)
-    # 2. Structural instructions (always included)
-    # 3. Focus area definitions (always included if configured)
+    # Compose the system prompt:
+    # 1. Editorial policy (user custom or default Risky Business style)
+    # 2. Structural instructions
+    # 3. Focus area definitions and prioritized technologies
     policy_prompt = (system_prompt or DEFAULT_EDITORIAL_POLICY).strip()
     structural_prompt = STRUCTURE_INSTRUCTIONS.format(
-        max_deep_dives=cfg.deep_dives,
         max_exec_points=cfg.exec_summary_points,
     ).strip()
 
     prompt_parts = [policy_prompt, structural_prompt]
     if areas:
-        areas_desc = "\n".join(f"   - {k}: {v.description}" for k, v in areas.items())
+        lines = []
+        for k, v in areas.items():
+            desc_parts = [f"   - {k} ({v.label}): {v.description}"]
+            if getattr(v, "priority", None) == "high":
+                desc_parts.append("     *PRIORITY FOCUS*: High priority topic.")
+            if getattr(v, "technologies", None):
+                tech_str = ", ".join(v.technologies)
+                desc_parts.append(f"     *Target Technologies*: {tech_str}")
+            lines.append("\n".join(desc_parts))
+        areas_desc = "\n".join(lines)
         prompt_parts.append(
-            f"PRIMARY AREAS: Assign each story's primary_area strictly to one of these configured areas:\n{areas_desc}"
+            f"CONFIGURED FOCUS AREAS & TARGET TECHNOLOGIES:\nAssign each story's primary_area strictly to one of these configured areas:\n{areas_desc}"
+        )
+
+    # Technology footprint / priority carveout
+    if technologies:
+        tech_lines = []
+        if technologies.description:
+            tech_lines.append(technologies.description)
+        if technologies.technologies:
+            tech_lines.append(
+                "Prioritized Technologies:\n"
+                + "\n".join(f"- {t}" for t in technologies.technologies)
+            )
+        tech_summary = "\n".join(tech_lines)
+        prompt_parts.append(
+            f"TECHNOLOGY FOOTPRINT & EDITORIAL PRIORITY DIRECTIVE:\n"
+            f"{tech_summary}\n\n"
+            f"PRIORITY RULE: Stories that directly affect our specific technologies—in particular:\n"
+            f"  1. Mobile Security (Android and iOS platforms, mobile app security, client integrity, sandboxing)\n"
+            f"  2. Consumer Authentication & Passkeys (Passkeys, FIDO2, WebAuthn, consumer biometric login, credential theft defenses)\n"
+            f"MUST be given higher editorial priority. Elevate their tier ('critical' or 'important') and feature them prominently."
         )
 
     full_editor_prompt = "\n\n".join(prompt_parts)
@@ -578,7 +455,7 @@ def generate_digest(
             "primary_area": area_keys[0] if area_keys else "other",
             "tier": "important",
             "exploitation_status": "not_reported",
-            "summary": "Dry run summary of incoming security articles.",
+            "summary": "Dry run summary of incoming articles in Risky Business style.",
             "key_facts": ["Dry run execution"],
             "why_it_matters": "Demonstrates digest structure.",
             "article_ids": ["art-1"],
@@ -603,8 +480,6 @@ def generate_digest(
                 }
             ],
             "stories": [sample_story],
-            "deep_dives": [],
-            "deep_dive_story_ids": [],
             # Backward-compat aliases
             "overview": f"Dry run overview for {len(prepared_articles)} articles.",
             "attention": [sample_story],
@@ -612,7 +487,7 @@ def generate_digest(
         }
 
     logger.info(
-        "Calling Stage 1 OpenRouter editor for %d articles",
+        "Calling OpenRouter editor for %d articles",
         len(prepared_articles),
     )
     reasoning_payload = {"effort": reasoning_effort} if reasoning_effort else None
@@ -630,97 +505,6 @@ def generate_digest(
     )
 
     resolved = resolve_edition_ids(stage1_response, prepared_articles)
-    stories_by_id = {s["id"]: s for s in resolved["stories"]}
-
-    # Stage 2: Deep dives in parallel.
-    # Select only stories in direct areas of interest in strict priority order:
-    # 1. mobile_security
-    # 2. security_ux / end_user_security (Security UX & Modern Auth)
-    # 3. corporate_security (Corporate Security & Internal Threat)
-    # 4. account_takeover
-    priority_order = [
-        "mobile_security",
-        "security_ux",
-        "end_user_security",
-        "corporate_security",
-        "account_takeover",
-    ]
-    tier_rank = {"critical": 0, "important": 1, "notable": 2}
-
-    def story_priority_key(story: dict) -> tuple:
-        area = story.get("primary_area") or ""
-        try:
-            area_idx = priority_order.index(area)
-        except ValueError:
-            area_idx = 99
-        tier_idx = tier_rank.get(story.get("tier"), 1)
-        return (area_idx, tier_idx)
-
-    # First, collect candidate stories nominated by editor that match priority areas
-    nominated_sids = resolved["deep_dive_story_ids"]
-    nominated_stories = [
-        stories_by_id[sid] for sid in nominated_sids if sid in stories_by_id
-    ]
-
-    # Filter to only priority areas
-    priority_candidates = [
-        s for s in nominated_stories if s.get("primary_area") in priority_order
-    ]
-
-    # If the editor didn't nominate enough priority stories, supplement from all stories
-    if len(priority_candidates) < cfg.deep_dives:
-        nominated_set = {s["id"] for s in priority_candidates}
-        remaining_priority = [
-            s
-            for s in resolved["stories"]
-            if s.get("primary_area") in priority_order and s["id"] not in nominated_set
-        ]
-        remaining_priority.sort(key=story_priority_key)
-        priority_candidates.extend(remaining_priority)
-
-    # Sort candidates strictly by priority area order, then tier
-    priority_candidates.sort(key=story_priority_key)
-
-    # Final deep dive story IDs to process
-    deep_dive_sids = [s["id"] for s in priority_candidates[: cfg.deep_dives]]
-    resolved["deep_dive_story_ids"] = deep_dive_sids
-    deep_dives: List[Dict[str, Any]] = []
-
-    if deep_dive_sids:
-        dd_model = cfg.deep_dive_model or model
-        logger.info(
-            "Calling Stage 2 deep dives for %d stories using model=%s",
-            len(deep_dive_sids),
-            dd_model,
-        )
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=len(deep_dive_sids)
-        ) as executor:
-            future_to_sid = {
-                executor.submit(
-                    generate_single_deep_dive,
-                    stories_by_id[sid],
-                    article_lookup,
-                    model=dd_model,
-                    reasoning_effort=reasoning_effort,
-                ): sid
-                for sid in deep_dive_sids
-                if sid in stories_by_id
-            }
-            for future in concurrent.futures.as_completed(future_to_sid):
-                sid = future_to_sid[future]
-                try:
-                    dd = future.result()
-                    if dd:
-                        deep_dives.append(dd)
-                except Exception:
-                    logger.exception(
-                        "Unhandled exception in deep dive future for %s", sid
-                    )
-
-        # Preserve the editor's preference order
-        order_map = {sid: i for i, sid in enumerate(deep_dive_sids)}
-        deep_dives.sort(key=lambda d: order_map.get(d.get("story_id"), 999))
 
     # Backward compatibility projections (overview, attention, watch)
     overview_text = resolved["executive_summary"].get("bottom_line") or ""
@@ -728,18 +512,15 @@ def generate_digest(
     watch_list = [s for s in resolved["stories"] if s.get("tier") != "critical"]
 
     logger.info(
-        "Generated pyramid edition: %d stories, %d topics, %d deep dives",
+        "Generated editorial edition: %d stories, %d topics",
         len(resolved["stories"]),
         len(resolved["topics"]),
-        len(deep_dives),
     )
 
     return {
         "executive_summary": resolved["executive_summary"],
         "topics": resolved["topics"],
         "stories": resolved["stories"],
-        "deep_dives": deep_dives,
-        "deep_dive_story_ids": resolved["deep_dive_story_ids"],
         # Backward compatibility fields
         "overview": overview_text,
         "attention": attention_list,

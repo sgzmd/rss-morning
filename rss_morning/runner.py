@@ -16,7 +16,7 @@ from .config import DigestConfig, parse_feeds_config
 from .digest import generate_digest
 from .emailing import send_email_report
 from .feeds import fetch_feed_entries, select_recent_entries
-from .models import AreaConfig, FeedConfig, FeedEntry
+from .models import AreaConfig, FeedConfig, FeedEntry, TechnologyFootprint
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,9 @@ class RunConfig:
     classify: bool = True
     classify_model: str = "jev-latest"
     classify_threshold: float = 0.50
+    relevance_instructions: Optional[str] = None
+    relevance_criteria_true: Optional[str] = None
+    relevance_criteria_false: Optional[str] = None
     email_to: Optional[str] = None
     email_from: Optional[str] = None
     email_subject: Optional[str] = None
@@ -45,6 +48,7 @@ class RunConfig:
     reasoning_effort: Optional[str] = "low"
     digest_config: Optional[DigestConfig] = None
     areas: Dict[str, AreaConfig] = field(default_factory=dict)
+    technologies: Optional[TechnologyFootprint] = None
 
 
 @dataclass
@@ -72,6 +76,13 @@ def _load_articles_from_file(path: str) -> List[dict]:
     for item in payload:
         if not isinstance(item, dict):
             raise RuntimeError("Article snapshot must contain objects only.")
+        text = (item.get("text") or "").strip()
+        if not text:
+            logger.info(
+                "Skipping article without text content from snapshot: %s",
+                item.get("url") or item.get("title"),
+            )
+            continue
         articles.append(dict(item))
 
     logger.info("Loaded %d articles from %s", len(articles), location)
@@ -160,6 +171,14 @@ def _classify_entries(
 
     logger.info("Classifying %d feed entries with Jev (System One)", len(entries))
     candidates = []
+    rel_crit = None
+    if config.relevance_criteria_true or config.relevance_criteria_false:
+        rel_crit = {}
+        if config.relevance_criteria_true:
+            rel_crit["true"] = config.relevance_criteria_true
+        if config.relevance_criteria_false:
+            rel_crit["false"] = config.relevance_criteria_false
+
     for entry in entries:
         metadata = {
             "title": entry.title,
@@ -167,7 +186,14 @@ def _classify_entries(
             "category": entry.category,
             "link": entry.link,
         }
-        classify_kwargs = {"areas": config.areas} if config.areas else {}
+        classify_kwargs: Dict[str, Any] = {}
+        if config.areas:
+            classify_kwargs["areas"] = config.areas
+        if config.relevance_instructions:
+            classify_kwargs["relevance_instructions"] = config.relevance_instructions
+        if rel_crit:
+            classify_kwargs["relevance_criteria"] = rel_crit
+
         decision = classify_entry(
             metadata,
             model=config.classify_model,
@@ -202,11 +228,11 @@ def _extract_candidate_articles(
     candidates: List[tuple[FeedEntry, Optional[ClassificationDecision]]],
     config: RunConfig,
 ) -> List[dict]:
-    """Extract article body text ONLY for selected candidates."""
+    """Extract article body text ONLY for selected candidates, excluding articles without content."""
     logger.info("Fetching article text for %d selected candidates", len(candidates))
     output = []
     extract_limit = (
-        config.digest_config.deep_dive_article_chars
+        config.digest_config.editor_article_chars
         if config.digest_config
         else config.max_article_length
     )
@@ -218,23 +244,26 @@ def _extract_candidate_articles(
         category = decision.primary_area if decision else entry.category
         try:
             content = fetch_article_content(entry.link)
+            extracted_text = (content.text or "").strip()
+            if not extracted_text:
+                logger.info(
+                    "Article text unavailable or empty; excluding article from digest: %s",
+                    entry.link,
+                )
+                return None
+
             payload = {
                 "url": entry.link,
                 "category": category,
                 "primary_area": category,
-                "relevance_probability": decision.relevance_probability
-                if decision
-                else None,
+                "relevance_probability": (
+                    decision.relevance_probability if decision else None
+                ),
                 "title": entry.title,
                 "summary": entry.summary or "",
                 "published": entry.published.isoformat() if entry.published else None,
+                "text": truncate_text(extracted_text, limit=extract_limit),
             }
-            if content.text:
-                payload["text"] = truncate_text(content.text, limit=extract_limit)
-            else:
-                logger.info(
-                    "Article text unavailable; including metadata only: %s", entry.link
-                )
             if content.image:
                 payload["image"] = content.image
 
@@ -307,6 +336,8 @@ def execute(config: RunConfig) -> RunResult:
         digest_kwargs["digest_config"] = config.digest_config
     if config.reasoning_effort:
         digest_kwargs["reasoning_effort"] = config.reasoning_effort
+    if config.technologies:
+        digest_kwargs["technologies"] = config.technologies
 
     edition_data = generate_digest(
         articles,

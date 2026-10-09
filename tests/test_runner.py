@@ -283,7 +283,13 @@ def test_execute_classification_skipped_when_disabled(monkeypatch):
 
 def test_execute_load_articles_short_circuits_fetch(monkeypatch, tmp_path):
     snapshot = tmp_path / "articles.json"
-    payload = [{"url": "https://loaded.example.com", "title": "Loaded"}]
+    payload = [
+        {
+            "url": "https://loaded.example.com",
+            "title": "Loaded",
+            "text": "Loaded text content",
+        }
+    ]
     snapshot.write_text(json.dumps(payload))
 
     def fail_collect(_):
@@ -394,7 +400,7 @@ def test_execute_limit_applies_per_feed(monkeypatch):
     monkeypatch.setattr(
         runner,
         "fetch_article_content",
-        lambda url, **kwargs: ArticleContent(text=None, image=None),
+        lambda url, **kwargs: ArticleContent(text=f"Body text for {url}", image=None),
     )
     monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: text)
     monkeypatch.setattr(runner, "send_email_report", lambda **kwargs: None)
@@ -428,6 +434,63 @@ def test_execute_limit_applies_per_feed(monkeypatch):
     }
     assert len(calls) == 2
     assert all(call["limit"] == 1 for call in calls)
+
+
+def test_execute_drops_articles_with_missing_content(monkeypatch):
+    feeds = [FeedConfig("Cat", "Feed", "feed-url")]
+    entries = [
+        FeedEntry(
+            link="https://example.com/has-text",
+            category="Cat",
+            title="Has Text",
+            published=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            summary="Summary 1",
+        ),
+        FeedEntry(
+            link="https://example.com/no-text-none",
+            category="Cat",
+            title="No Text None",
+            published=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            summary="Summary 2",
+        ),
+        FeedEntry(
+            link="https://example.com/no-text-empty",
+            category="Cat",
+            title="No Text Empty",
+            published=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            summary="Summary 3",
+        ),
+    ]
+
+    monkeypatch.setattr(runner, "parse_feeds_config", lambda path: feeds)
+    monkeypatch.setattr(runner, "fetch_feed_entries", lambda feed: entries)
+    monkeypatch.setattr(runner, "select_recent_entries", lambda e, limit, cutoff: e)
+
+    def fake_fetch_content(url, **kwargs):
+        if url == "https://example.com/has-text":
+            return ArticleContent(text="Valid readable article text", image=None)
+        elif url == "https://example.com/no-text-none":
+            return ArticleContent(text=None, image=None)
+        else:
+            return ArticleContent(text="   \n  ", image=None)
+
+    monkeypatch.setattr(runner, "fetch_article_content", fake_fetch_content)
+    monkeypatch.setattr(runner, "truncate_text", lambda text, **kwargs: text)
+
+    config = RunConfig(
+        feeds_file="feeds.xml",
+        limit=5,
+        max_age_hours=None,
+        summary=False,
+        classify=False,
+    )
+
+    result = execute(config)
+    payload = json.loads(result.output_text)
+
+    assert len(payload) == 1
+    assert payload[0]["url"] == "https://example.com/has-text"
+    assert payload[0]["text"] == "Valid readable article text"
 
 
 def test_execute_validates_max_age(monkeypatch):

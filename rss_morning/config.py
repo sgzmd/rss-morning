@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 
-from .models import AreaConfig, FeedConfig
+from .models import AreaConfig, FeedConfig, TechnologyFootprint
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,12 @@ DEFAULT_AREAS: Dict[str, AreaConfig] = {
             "mobile malware, device attestation, and client integrity."
         ),
         threshold=0.40,
+        technologies=(
+            "Android (AOSP, Keystore, Play Integrity)",
+            "iOS (Secure Enclave, App Attest, sandbox)",
+            "Mobile application runtime security & malware",
+        ),
+        priority="high",
     ),
     "security_ux": AreaConfig(
         key="security_ux",
@@ -33,6 +39,12 @@ DEFAULT_AREAS: Dict[str, AreaConfig] = {
             "MFA friction and adoption, and end-user identity protection."
         ),
         threshold=0.40,
+        technologies=(
+            "Passkeys (FIDO2/WebAuthn)",
+            "Consumer biometric authentication",
+            "MFA adoption & authentication UX",
+        ),
+        priority="high",
     ),
     "corporate_security": AreaConfig(
         key="corporate_security",
@@ -42,6 +54,7 @@ DEFAULT_AREAS: Dict[str, AreaConfig] = {
             "managed devices, browsers, workplace IT infrastructure, and insider threats."
         ),
         threshold=0.45,
+        priority="normal",
     ),
     "account_takeover": AreaConfig(
         key="account_takeover",
@@ -51,6 +64,12 @@ DEFAULT_AREAS: Dict[str, AreaConfig] = {
             "password spraying, brute force, and customer identity compromise."
         ),
         threshold=0.40,
+        technologies=(
+            "Credential stuffing defenses",
+            "Session hijacking & token theft",
+            "Consumer account protection",
+        ),
+        priority="high",
     ),
     "end_user_security": AreaConfig(
         key="end_user_security",
@@ -60,6 +79,12 @@ DEFAULT_AREAS: Dict[str, AreaConfig] = {
             "biometric login, MFA adoption, and end-user identity protection."
         ),
         threshold=0.40,
+        technologies=(
+            "Passkeys (FIDO2/WebAuthn)",
+            "Consumer biometric authenticators",
+            "FIDO Alliance standards",
+        ),
+        priority="high",
     ),
     "ai_security": AreaConfig(
         key="ai_security",
@@ -69,6 +94,7 @@ DEFAULT_AREAS: Dict[str, AreaConfig] = {
             "and security implications of LLMs and generative AI."
         ),
         threshold=0.50,
+        priority="normal",
     ),
     "other": AreaConfig(
         key="other",
@@ -78,6 +104,7 @@ DEFAULT_AREAS: Dict[str, AreaConfig] = {
             "infrastructure, or material not fitting any specific focus area above."
         ),
         threshold=0.75,
+        priority="low",
     ),
 }
 
@@ -87,6 +114,9 @@ class ClassificationConfig:
     enabled: bool = True
     model: str = "jev-latest"
     threshold: float = 0.50
+    relevance_instructions: Optional[str] = None
+    relevance_criteria_true: Optional[str] = None
+    relevance_criteria_false: Optional[str] = None
 
 
 @dataclass
@@ -104,14 +134,11 @@ class LoggingConfig:
 
 @dataclass
 class DigestConfig:
-    """Settings controlling the pyramid editorial digest."""
+    """Settings controlling the editorial digest."""
 
     exec_summary_points: int = 5
     max_topics: int = 6
-    deep_dives: int = 3
     editor_article_chars: int = 1500
-    deep_dive_article_chars: int = 10000
-    deep_dive_model: Optional[str] = None
 
 
 @dataclass
@@ -131,6 +158,7 @@ class AppConfig:
     llm_model: Optional[str] = None
     reasoning_effort: Optional[str] = "low"
     areas: Dict[str, AreaConfig] = field(default_factory=lambda: dict(DEFAULT_AREAS))
+    technologies: Optional[TechnologyFootprint] = None
 
 
 def parse_feeds_config(path: str) -> List[FeedConfig]:
@@ -244,11 +272,50 @@ def parse_app_config(path: str) -> AppConfig:
 
     # Classification (Jev)
     class_dict = data.get("classification") or {}
+    rel_dict = class_dict.get("relevance") or {}
+    rel_instructions = class_dict.get("relevance_instructions") or rel_dict.get(
+        "instructions"
+    )
+    rel_true = (
+        class_dict.get("relevance_criteria_true")
+        or rel_dict.get("criteria_true")
+        or rel_dict.get("true")
+    )
+    rel_false = (
+        class_dict.get("relevance_criteria_false")
+        or rel_dict.get("criteria_false")
+        or rel_dict.get("false")
+    )
     classification_config = ClassificationConfig(
         enabled=bool(class_dict.get("enabled", True)),
         model=str(class_dict.get("model", "jev-latest")),
         threshold=float(class_dict.get("threshold", 0.50)),
+        relevance_instructions=str(rel_instructions).strip()
+        if rel_instructions
+        else None,
+        relevance_criteria_true=str(rel_true).strip() if rel_true else None,
+        relevance_criteria_false=str(rel_false).strip() if rel_false else None,
     )
+
+    # Technologies footprint carveout
+    tech_dict = data.get("technologies") or {}
+    tech_footprint: Optional[TechnologyFootprint] = None
+    if tech_dict:
+        tech_desc = str(tech_dict.get("description", "")).strip()
+        raw_tech_items = (
+            tech_dict.get("prioritized")
+            or tech_dict.get("stack")
+            or tech_dict.get("technologies")
+            or []
+        )
+        tech_items = (
+            tuple(str(t) for t in raw_tech_items)
+            if isinstance(raw_tech_items, (list, tuple))
+            else ()
+        )
+        tech_footprint = TechnologyFootprint(
+            description=tech_desc, technologies=tech_items
+        )
 
     # Areas
     areas_raw = data.get("areas") or class_dict.get("areas")
@@ -259,8 +326,20 @@ def parse_app_config(path: str) -> AppConfig:
                 label = str(v.get("label") or k.replace("_", " ").title())
                 desc = str(v.get("description") or label)
                 th = float(v.get("threshold", classification_config.threshold))
+                raw_tech = v.get("technologies") or ()
+                techs = (
+                    tuple(str(t) for t in raw_tech)
+                    if isinstance(raw_tech, (list, tuple))
+                    else ()
+                )
+                prio = str(v.get("priority", "normal")).lower()
                 parsed_areas[k] = AreaConfig(
-                    key=k, label=label, description=desc, threshold=th
+                    key=k,
+                    label=label,
+                    description=desc,
+                    threshold=th,
+                    technologies=techs,
+                    priority=prio,
                 )
         if "other" not in parsed_areas:
             parsed_areas["other"] = DEFAULT_AREAS["other"]
@@ -322,11 +401,7 @@ def parse_app_config(path: str) -> AppConfig:
     digest_config = DigestConfig(
         exec_summary_points=int(digest_dict.get("exec_summary_points", 5)),
         max_topics=int(digest_dict.get("max_topics", 6)),
-        deep_dives=int(digest_dict.get("deep_dives", 3)),
         editor_article_chars=editor_chars,
-        deep_dive_article_chars=int(digest_dict.get("deep_dive_article_chars", 10000)),
-        deep_dive_model=digest_dict.get("deep_dive_model")
-        or llm_dict.get("deep_dive_model"),
     )
 
     return AppConfig(
@@ -345,4 +420,5 @@ def parse_app_config(path: str) -> AppConfig:
         llm_model=llm_model,
         reasoning_effort=reasoning_effort,
         areas=areas,
+        technologies=tech_footprint,
     )

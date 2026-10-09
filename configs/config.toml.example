@@ -30,6 +30,23 @@ enabled = true
 model = "jev-latest"
 threshold = 0.50
 
+[classification.relevance]
+# Configurable domain selection criteria for Jev classifier
+instructions = "Determine if this item discusses an actionable or notable security event, vulnerability, exploit, defensive technique, or identity/authentication development relevant to consumer digital services, mobile platforms, enterprise operations, or modern software systems."
+criteria_true = "Item covers security vulnerabilities, mobile security, passkeys/authentication, fraud/account takeover, threat actor campaigns, or enterprise defenses."
+criteria_false = "Item is generic consumer tech news, unverified rumors, marketing/product promotions with no security substance, or non-technical industry gossip."
+
+# Organization technology footprint: News affecting these technologies receives elevated priority
+[technologies]
+description = "Consumer digital platform serving mobile users, prioritizing passkey-based modern authentication, Android and iOS client security, and fraud/account-takeover defense."
+stack = [
+    "Android (Play Integrity, Keystore)",
+    "iOS (App Attest, Secure Enclave)",
+    "Passkeys (FIDO2, WebAuthn)",
+    "Consumer Biometrics & Modern MFA",
+    "Credential Stuffing and Account Takeover Defense",
+]
+
 [email]
 to = "user@example.com"
 from = "mailer@example.com"
@@ -49,40 +66,72 @@ reasoning_effort = "low"
 # Pyramid structure configuration
 exec_summary_points = 5
 max_topics = 6
-deep_dives = 3
 editor_article_chars = 1500
-deep_dive_article_chars = 10000
-# Optional dedicated model for Stage 2 technical deep dives (defaults to llm.model)
-# deep_dive_model = "google/gemini-3.8-flash"
 
-# Focus areas with semantic Jev criteria and individual thresholds
+# Focus areas with semantic Jev criteria, technology carveouts, and priority directives
 [areas.mobile_security]
 label = "Mobile Security"
+priority = "high"
 threshold = 0.40
 description = "Mobile application security, Android and iOS vulnerabilities, mobile malware, device attestation, and client integrity."
-
-[areas.corporate_security]
-label = "Corporate Security"
-threshold = 0.45
-description = "Enterprise networking, VPN, SD-WAN, firewalls, identity providers, managed devices, browsers, and workplace IT infrastructure."
-
-[areas.account_takeover]
-label = "Account Takeover"
-threshold = 0.40
-description = "Account takeover, credential stuffing, session hijacking, password spraying, brute force, and customer identity compromise."
+technologies = [
+    "Android Keystore",
+    "Play Integrity API",
+    "iOS Secure Enclave",
+    "App Attest",
+    "Mobile Banking Trojans",
+    "Side-loading security",
+]
 
 [areas.end_user_security]
 label = "End-User Security (Passkeys & Modern Auth)"
+priority = "high"
 threshold = 0.40
 description = "Passkeys, FIDO2, WebAuthn, modern authentication methods, biometric login, MFA adoption, and end-user identity protection."
+technologies = [
+    "Passkeys",
+    "FIDO2 / WebAuthn",
+    "Device-bound credentials",
+    "Biometric authenticators",
+    "MFA fatigue / bypass",
+]
+
+[areas.account_takeover]
+label = "Account Takeover"
+priority = "high"
+threshold = 0.40
+description = "Account takeover, credential stuffing, session hijacking, password spraying, brute force, and customer identity compromise."
+technologies = [
+    "Credential stuffing",
+    "Session token theft",
+    "Automated bot attacks",
+    "SIM swapping",
+]
+
+[areas.corporate_security]
+label = "Corporate Security"
+priority = "normal"
+threshold = 0.45
+description = "Enterprise networking, VPN, SD-WAN, firewalls, identity providers, managed devices, browsers, and workplace IT infrastructure."
+technologies = [
+    "Okta / Entra ID",
+    "Zero Trust Architecture",
+    "Enterprise VPN / SASE",
+]
 
 [areas.ai_security]
 label = "AI Security"
+priority = "normal"
 threshold = 0.50
 description = "AI model vulnerabilities, prompt injection, AI agent safety, and security implications of LLMs and generative AI."
+technologies = [
+    "LLM Prompt Injection",
+    "Model jailbreaking",
+    "Agent tool execution security",
+]
 
 [areas.other]
 label = "Everything Else & Notable CVEs"
+priority = "normal"
 threshold = 0.75
 description = "General security news, notable CVEs, software vulnerabilities, infrastructure, or material not fitting any specific focus area above."
-
