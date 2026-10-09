@@ -325,14 +325,23 @@ def test_build_email_html_responsive_mobile_optimizations():
     assert "padding: 20px 22px" not in html
     assert "border: 1px solid #e8eaed; border-radius: 6px;" not in html
 
-    # 5. Story card and Key Facts responsive classes
+    # 5. Story card streamlined border and padding (unboxed 4-sided borders)
     assert 'class="story-card"' in html
-    assert 'class="key-facts-box"' in html
+    assert "border: 1px solid #dadce0; border-left: 4px solid" not in html
+    assert "border-left: 3px solid" in html
 
-    # 6. CSS media queries for mobile viewports (<= 600px)
+    # 6. Key Facts unboxing (clean flush section without inner box border or double-padding)
+    assert 'class="key-facts-box"' in html
+    assert "border: 1px solid #eceff1;" not in html
+    assert 'class="key-facts-box" style="margin: 8px 0 10px 0; padding: 0;' in html
+
+    # 7. CSS media queries for mobile viewports (<= 600px) and gutter minimization
     assert "@media only screen and (max-width: 600px)" in html
     assert ".outer-cell" in html
     assert ".content-wrapper" in html
     assert ".story-card" in html
     assert ".key-facts-box" in html
     assert ".topic-section" in html
+    assert "padding: 0 !important;" in html
+    assert "padding: 10px 8px !important;" in html
+    assert "padding: 10px 4px 10px 10px !important;" in html

@@ -45,7 +45,7 @@
             }
 
             .content-wrapper {
-                padding: 12px 10px !important;
+                padding: 10px 8px !important;
                 border: none !important;
                 border-radius: 0 !important;
                 max-width: 100% !important;
@@ -53,8 +53,8 @@
             }
 
             .header-container {
-                padding-bottom: 14px !important;
-                margin-bottom: 18px !important;
+                padding-bottom: 12px !important;
+                margin-bottom: 16px !important;
             }
 
             .header-cell-left,
@@ -65,7 +65,7 @@
             }
 
             .header-cell-right {
-                padding-top: 6px !important;
+                padding-top: 4px !important;
             }
 
             .header-title {
@@ -73,28 +73,28 @@
             }
 
             .exec-summary {
-                padding: 14px 12px !important;
-                margin-bottom: 20px !important;
+                padding: 12px 10px !important;
+                margin-bottom: 18px !important;
                 border-radius: 4px !important;
             }
 
             .topic-section {
-                margin-bottom: 22px !important;
+                margin-bottom: 20px !important;
             }
 
             .story-card {
-                padding: 12px 10px !important;
+                padding: 10px 4px 10px 10px !important;
                 margin-bottom: 14px !important;
                 border-radius: 4px !important;
             }
 
             .key-facts-box {
-                padding: 8px 8px !important;
-                margin: 8px 0 10px 0 !important;
+                padding: 0 !important;
+                margin: 8px 0 8px 0 !important;
             }
 
             .notable-story-card {
-                padding: 10px 10px !important;
+                padding: 8px 4px 8px 8px !important;
                 margin-bottom: 10px !important;
             }
         }
@@ -105,9 +105,9 @@
 
     <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8f9fa;">
         <tr>
-            <td align="center" class="outer-cell" style="padding: 16px 8px;">
+            <td align="center" class="outer-cell" style="padding: 8px 0;">
 
-                <div class="content-wrapper" style="max-width: 680px; margin: 0 auto; width: 100%; background-color: #ffffff; padding: 24px 20px; box-sizing: border-box; text-align: left; border: 1px solid #e0e0e0; border-radius: 8px;">
+                <div class="content-wrapper" style="max-width: 680px; margin: 0 auto; width: 100%; background-color: #ffffff; padding: 20px 16px; box-sizing: border-box; text-align: left; border: 1px solid #e0e0e0; border-radius: 8px;">
 
                     <!-- Header -->
                     <div class="header-container" style="padding-bottom: 20px; border-bottom: 2px solid #202124; margin-bottom: 28px;">
@@ -135,7 +135,7 @@
                     <!-- ============================================================ -->
                     <!-- LEVEL 1: EXECUTIVE SUMMARY                                   -->
                     <!-- ============================================================ -->
-                    <div class="exec-summary" style="margin-bottom: 28px; background-color: #f8fafd; border: 1px solid #d2e3fc; border-left: 4px solid #1a73e8; padding: 18px 18px; border-radius: 6px; text-align: left;">
+                    <div class="exec-summary" style="margin-bottom: 24px; background-color: #f8fafd; border: 1px solid #d2e3fc; border-left: 4px solid #1a73e8; padding: 16px 14px; border-radius: 6px; text-align: left;">
                         <div style="margin-bottom: 10px; text-align: left;">
                             <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: #1a73e8; text-transform: uppercase;">
                                 Level 1 &bull; Executive Summary
@@ -217,7 +217,7 @@
                                 {% set tier_badge_color = "#5f6368" %}
                             {% endif %}
 
-                            <div id="story-{{ story.id }}" class="story-card" style="margin-bottom: 16px; padding: 14px 14px; background-color: {{ bg_color }}; border: 1px solid #dadce0; border-left: 4px solid {{ border_color }}; border-radius: 6px; text-align: left;">
+                            <div id="story-{{ story.id }}" class="story-card" style="margin-bottom: 16px; padding: 12px 8px 12px 12px; background-color: {{ bg_color }}; border-left: 3px solid {{ border_color }}; border-radius: 4px; text-align: left;">
                                 <!-- Badges -->
                                 <div style="margin-bottom: 8px; text-align: left; line-height: 1.4;">
                                     <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: {{ tier_badge_bg }}; color: {{ tier_badge_color }};">
@@ -246,14 +246,14 @@
                                 </p>
 
                                 {% if story.key_facts %}
-                                <div class="key-facts-box" style="margin: 8px 0 10px 0; background-color: #f8f9fa; padding: 8px 10px; border-radius: 4px; text-align: left; border: 1px solid #eceff1;">
-                                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #5f6368; margin-bottom: 4px; letter-spacing: 0.05em; text-align: left;">
+                                <div class="key-facts-box" style="margin: 8px 0 10px 0; padding: 0; text-align: left;">
+                                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #5f6368; margin-bottom: 5px; letter-spacing: 0.05em; text-align: left;">
                                         Key Facts
                                     </div>
                                     <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="text-align: left;">
                                         {% for fact in story.key_facts %}
                                         <tr>
-                                            <td style="width: 10px; vertical-align: top; font-size: 13px; color: #1a73e8; font-weight: bold; line-height: 1.45; text-align: left; padding-bottom: 3px; padding-right: 4px;">&bull;</td>
+                                            <td style="width: 8px; vertical-align: top; font-size: 13px; color: #1a73e8; font-weight: bold; line-height: 1.45; text-align: left; padding-bottom: 3px; padding-right: 5px;">&bull;</td>
                                             <td style="vertical-align: top; font-size: 13px; line-height: 1.45; color: #3c4043; text-align: left; padding-bottom: 3px;">{{ fact }}</td>
                                         </tr>
                                         {% endfor %}
@@ -300,7 +300,7 @@
                                 </h4>
                                 {% for story in sec.stories %}
                                 {% set card_tier = story.tier or "notable" %}
-                                <div id="story-{{ story.id }}" class="notable-story-card" style="margin-bottom: 12px; padding: 12px 14px; background-color: #fafafa; border: 1px solid #dadce0; border-left: 3px solid #dadce0; border-radius: 4px; text-align: left;">
+                                <div id="story-{{ story.id }}" class="notable-story-card" style="margin-bottom: 12px; padding: 10px 8px 10px 10px; background-color: #fafafa; border-left: 3px solid #dadce0; border-radius: 4px; text-align: left;">
                                     <div style="margin-bottom: 4px; text-align: left;">
                                         <span style="display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background-color: #f1f3f4; color: #5f6368;">
                                             {{ story.tier | upper }}
@@ -343,7 +343,7 @@
                     <div style="margin-bottom: 36px; text-align: left;">
                         <h2 style="font-size: 17px; font-weight: 700; color: #1a73e8; text-transform: uppercase; margin: 0 0 16px 0; border-bottom: 2px solid #1a73e8; padding-bottom: 6px; text-align: left;">{{ section.label }}</h2>
                         {% for item in section["items"] %}
-                        <div class="story-card" style="margin-bottom: 16px; padding: 14px 14px; border-left: 4px solid #d93025; background-color: #fff8f7; border-radius: 4px; text-align: left;">
+                        <div class="story-card" style="margin-bottom: 16px; padding: 12px 8px 12px 12px; border-left: 4px solid #d93025; background-color: #fff8f7; border-radius: 4px; text-align: left;">
                             {% if item.is_attention %}
                             <div style="margin-bottom: 4px; text-align: left;">
                                 <span style="font-size: 11px; font-weight: 700; color: #d93025; background-color: #fce8e6; padding: 2px 6px; border-radius: 3px; text-transform: uppercase;">Requires Attention</span>
@@ -367,7 +367,7 @@
                             Requires Attention
                         </h2>
                         {% for item in payload.get("attention") %}
-                        <div class="story-card" style="margin-bottom: 16px; padding: 14px 14px; background-color: #fff8f7; border: 1px solid #fce8e6; border-left: 4px solid #d93025; border-radius: 6px; text-align: left;">
+                        <div class="story-card" style="margin-bottom: 16px; padding: 12px 8px 12px 12px; background-color: #fff8f7; border-left: 4px solid #d93025; border-radius: 4px; text-align: left;">
                             <span style="font-size: 11px; font-weight: 700; color: #d93025; text-transform: uppercase;">{{ item.get("primary_area") }}</span>
                             <h3 style="font-size: 18px; font-weight: 700; margin: 6px 0 8px 0; color: #111111; text-align: left;">{{ item.get("title") }}</h3>
                             <p style="font-size: 15px; line-height: 1.5; color: #333333; margin: 0 0 10px 0; text-align: left;">{{ item.get("summary") | nl2br }}</p>
@@ -394,7 +394,7 @@
                             Watchlist & Emerging Items
                         </h2>
                         {% for item in payload.get("watch") %}
-                        <div class="story-card" style="margin-bottom: 14px; padding: 12px 14px; border-left: 3px solid #dadce0; background-color: #fafafa; border-radius: 4px; text-align: left;">
+                        <div class="story-card" style="margin-bottom: 14px; padding: 10px 8px 10px 10px; border-left: 3px solid #dadce0; background-color: #fafafa; border-radius: 4px; text-align: left;">
                             <span style="font-size: 11px; font-weight: 700; color: #5f6368; text-transform: uppercase;">{{ item.get("primary_area") }}</span>
                             <h4 style="font-size: 16px; font-weight: 600; margin: 4px 0 6px 0; color: #222222; text-align: left;">{{ item.get("title") }}</h4>
                             <p style="font-size: 14px; line-height: 1.5; color: #444444; margin: 0 0 8px 0; text-align: left;">{{ item.get("summary") | nl2br }}</p>
