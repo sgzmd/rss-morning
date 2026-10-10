@@ -202,6 +202,15 @@ def _classify_entries(
         if rel_crit:
             classify_kwargs["relevance_criteria"] = rel_crit
 
+        import inspect
+
+        sig = inspect.signature(classify_entry)
+        has_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if "profile" in sig.parameters or has_kwargs:
+            classify_kwargs["profile"] = config.profile
+
         decision = classify_entry(
             metadata,
             model=config.classify_model,
@@ -304,13 +313,33 @@ def _collect_entries(config: RunConfig) -> List[dict]:
     return _extract_candidate_articles(candidates, config)
 
 
-def _build_default_email_subject() -> str:
-    today_str = datetime.now(timezone.utc).strftime("%d %B %Y")
-    return f"Morning RSS Digest - {today_str}"
+def _build_default_email_subject(
+    tz_name: Optional[str] = None, title: Optional[str] = None
+) -> str:
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+
+            now = datetime.now(ZoneInfo(tz_name))
+        except Exception:
+            now = datetime.now(timezone.utc)
+    else:
+        now = datetime.now(timezone.utc)
+    today_str = now.strftime("%d %B %Y")
+    prefix = title or "Morning RSS Digest"
+    return f"{prefix} - {today_str}"
 
 
 def execute(config: RunConfig) -> RunResult:
     """Run the linear pipeline: collect -> dedupe -> Jev -> extract -> digest -> output."""
+    # Optional structured holdings context
+    holdings_context = None
+    if config.holdings_file:
+        from .holdings import format_holdings_context, load_holdings
+
+        holdings_data = load_holdings(config.holdings_file)
+        holdings_context = format_holdings_context(holdings_data)
+
     if config.load_articles_path:
         articles = _load_articles_from_file(config.load_articles_path)
     else:
@@ -321,18 +350,51 @@ def execute(config: RunConfig) -> RunResult:
     if config.save_articles_path:
         _save_articles_to_file(config.save_articles_path, articles)
 
+    date_str = None
+    if config.timezone:
+        try:
+            from zoneinfo import ZoneInfo
+
+            date_str = datetime.now(ZoneInfo(config.timezone)).strftime("%B %d, %Y")
+        except Exception:
+            pass
+
+    def _resolve_subject() -> str:
+        if config.email_subject:
+            return config.email_subject
+        import inspect
+
+        sig = inspect.signature(_build_default_email_subject)
+        if len(sig.parameters) == 0:
+            return _build_default_email_subject()
+        return _build_default_email_subject(config.timezone, config.title)
+
     if not config.summary:
         output_text = json.dumps(articles, indent=2, ensure_ascii=False)
+        if config.llm_dry_run:
+            logger.info("LLM dry run completed. Exiting without sending email.")
+            return RunResult(
+                output_text=output_text, email_payload=None, is_summary=False
+            )
+
         if config.email_to:
             email_kwargs = {"areas": config.areas} if config.areas else {}
-            send_email_report(
+            email_kwargs["profile"] = config.profile
+            email_kwargs["title"] = config.title
+            email_kwargs["subtitle"] = config.subtitle
+            email_kwargs["date_str"] = date_str
+            sent = send_email_report(
                 payload=articles,
                 is_summary=False,
                 to_address=config.email_to,
                 from_address=config.email_from,
-                subject=config.email_subject or _build_default_email_subject(),
+                subject=_resolve_subject(),
                 **email_kwargs,
             )
+            if sent is False:
+                raise RuntimeError(
+                    f"Email delivery failed for recipient: {config.email_to}"
+                )
         return RunResult(
             output_text=output_text, email_payload=articles, is_summary=False
         )
@@ -346,6 +408,12 @@ def execute(config: RunConfig) -> RunResult:
         digest_kwargs["reasoning_effort"] = config.reasoning_effort
     if config.technologies:
         digest_kwargs["technologies"] = config.technologies
+    if config.profile:
+        digest_kwargs["profile"] = config.profile
+    if config.grounding_rules:
+        digest_kwargs["grounding_rules"] = config.grounding_rules
+    if holdings_context:
+        digest_kwargs["holdings_context"] = holdings_context
 
     edition_data = generate_digest(
         articles,
@@ -362,14 +430,22 @@ def execute(config: RunConfig) -> RunResult:
 
     if config.email_to:
         email_kwargs = {"areas": config.areas} if config.areas else {}
-        send_email_report(
+        email_kwargs["profile"] = config.profile
+        email_kwargs["title"] = config.title
+        email_kwargs["subtitle"] = config.subtitle
+        email_kwargs["date_str"] = date_str
+        sent = send_email_report(
             payload=edition_data,
             is_summary=True,
             to_address=config.email_to,
             from_address=config.email_from,
-            subject=config.email_subject or _build_default_email_subject(),
+            subject=_resolve_subject(),
             **email_kwargs,
         )
+        if sent is False:
+            raise RuntimeError(
+                f"Email delivery failed for recipient: {config.email_to}"
+            )
 
     return RunResult(
         output_text=output_text, email_payload=edition_data, is_summary=True

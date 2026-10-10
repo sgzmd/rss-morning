@@ -44,6 +44,17 @@ RELEVANCE_QUESTION: Dict[str, Any] = {
     },
 }
 
+GENERIC_RELEVANCE_CRITERIA: Dict[str, str] = {
+    "true": (
+        "Discusses substantive news, developments, regulatory updates, or notable events "
+        "relevant to the configured briefing focus areas."
+    ),
+    "false": (
+        "Generic promotional marketing, personal advertisements, spam, rumors, "
+        "or off-topic material offering no substantive analytical value."
+    ),
+}
+
 
 class TypeSafeError(RuntimeError):
     """Raised when an evaluation call to TypeSafe System One fails."""
@@ -64,6 +75,7 @@ def build_jev_questions(
     areas: Optional[Mapping[str, AreaConfig | str]] = None,
     relevance_instructions: Optional[str] = None,
     relevance_criteria: Optional[Mapping[str, str]] = None,
+    profile: str = "security",
 ) -> Dict[str, Any]:
     """Construct centralized Jev question schema for relevance and primary area."""
     criteria: Dict[str, str] = {}
@@ -71,20 +83,28 @@ def build_jev_questions(
         for k, v in areas.items():
             desc = v.description if hasattr(v, "description") else str(v)
             criteria[k] = desc
-    else:
+    elif profile == "security":
         criteria = dict(DEFAULT_AREAS)
+    else:
+        criteria = {"other": "Substantive developments relevant to this briefing"}
 
     if "other" not in criteria:
         criteria["other"] = (
             "Does not fit any configured area above, or general non-matching material"
         )
 
-    rel_instructions = relevance_instructions or RELEVANCE_QUESTION["instructions"]
-    rel_criteria = (
-        dict(relevance_criteria)
-        if relevance_criteria
-        else dict(RELEVANCE_QUESTION["criteria"])
+    rel_instructions = relevance_instructions or (
+        RELEVANCE_QUESTION["instructions"]
+        if profile == "security"
+        else "Is this article plausibly relevant enough to the briefing that we should spend the effort to read the full article?"
     )
+
+    if relevance_criteria:
+        rel_criteria = dict(relevance_criteria)
+    elif profile == "security":
+        rel_criteria = dict(RELEVANCE_QUESTION["criteria"])
+    else:
+        rel_criteria = dict(GENERIC_RELEVANCE_CRITERIA)
 
     return {
         "is_relevant": {
@@ -109,6 +129,7 @@ def classify_entry(
     areas: Optional[Mapping[str, AreaConfig | str]] = None,
     relevance_instructions: Optional[str] = None,
     relevance_criteria: Optional[Mapping[str, str]] = None,
+    profile: str = "security",
     timeout: float = 15.0,
 ) -> ClassificationDecision:
     """Submit cheap feed metadata to TypeSafe Jev for relevance and area judgement."""
@@ -128,6 +149,7 @@ def classify_entry(
         areas=areas,
         relevance_instructions=relevance_instructions,
         relevance_criteria=relevance_criteria,
+        profile=profile,
     )
 
     headers = {
@@ -215,6 +237,7 @@ def classify_entries(
     areas: Optional[Mapping[str, AreaConfig | str]] = None,
     relevance_instructions: Optional[str] = None,
     relevance_criteria: Optional[Mapping[str, str]] = None,
+    profile: str = "security",
     timeout: float = 15.0,
 ) -> List[tuple[Mapping[str, Any], ClassificationDecision]]:
     """Classify a sequence of feed entries, returning pairs of (entry, decision)."""
@@ -228,6 +251,7 @@ def classify_entries(
             areas=areas,
             relevance_instructions=relevance_instructions,
             relevance_criteria=relevance_criteria,
+            profile=profile,
             timeout=timeout,
         )
         results.append((entry, decision))

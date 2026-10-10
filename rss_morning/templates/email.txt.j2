@@ -2,7 +2,7 @@
 {{ fallback }}
 {% elif is_summary and pyramid and (pyramid.bottom_line or pyramid.topics or pyramid.story_map) %}
 ================================================================================
-RSS INTELLIGENCE - THE SENTINEL DIGEST
+{{ (title or "RSS INTELLIGENCE") | upper }}{% if subtitle %} - {{ subtitle | upper }}{% elif profile == 'security' %} - THE SENTINEL DIGEST{% endif %}
 LEVEL 1: EXECUTIVE SUMMARY
 ================================================================================
 
@@ -27,7 +27,7 @@ LEVEL 2: KEY TOPICS & DEVELOPMENTS
 {{ topic.synthesis }}
 
 {% for story in topic.stories %}
-[{{ story.tier | upper }}{% if story.exploitation_status == 'confirmed_in_the_wild' %} | IN-THE-WILD EXPLOITED{% endif %}] {{ story.title }} ({{ story.id }})
+[{{ story.tier | upper }}{% if profile == 'security' and story.exploitation_status == 'confirmed_in_the_wild' %} | IN-THE-WILD EXPLOITED{% endif %}] {{ story.title }} ({{ story.id }})
 {{ story.summary }}
 {% if story.key_facts %}
 Key Facts:
