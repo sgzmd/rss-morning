@@ -11,8 +11,45 @@ from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 
 from .models import AreaConfig, FeedConfig, TechnologyFootprint
+from .tenant import (
+    get_tenants_base_dir,
+    validate_tenant_id,
+    validate_tenant_path_isolation,
+)
 
 logger = logging.getLogger(__name__)
+
+KNOWN_CONFIG_KEYS = {
+    "feeds",
+    "feeds_file",
+    "limit",
+    "max_age_hours",
+    "summary",
+    "concurrency",
+    "max_article_length",
+    "prompt_file",
+    "prompt",
+    "grounding_rules_file",
+    "grounding_rules",
+    "holdings_file",
+    "holdings",
+    "env_file",
+    "env",
+    "classification",
+    "technologies",
+    "email",
+    "logging",
+    "llm",
+    "digest",
+    "areas",
+    "extractor",
+    "tenant_id",
+    "profile",
+    "title",
+    "display_title",
+    "subtitle",
+    "timezone",
+}
 
 DEFAULT_AREAS: Dict[str, AreaConfig] = {
     "mobile_security": AreaConfig(
@@ -159,6 +196,15 @@ class AppConfig:
     reasoning_effort: Optional[str] = "low"
     areas: Dict[str, AreaConfig] = field(default_factory=lambda: dict(DEFAULT_AREAS))
     technologies: Optional[TechnologyFootprint] = None
+    tenant_id: Optional[str] = None
+    profile: str = "security"
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    timezone: Optional[str] = None
+    extractor: str = "trafilatura"
+    grounding_rules: Optional[str] = None
+    grounding_rules_file: Optional[str] = None
+    holdings_file: Optional[str] = None
 
 
 def parse_feeds_config(path: str) -> List[FeedConfig]:
@@ -207,12 +253,26 @@ def parse_feeds_config(path: str) -> List[FeedConfig]:
     return feeds
 
 
-def _resolve_path(base_path: Path, target_path: str) -> str:
+def _resolve_path(
+    base_path: Path,
+    target_path: str,
+    tenant_dir: Optional[Path] = None,
+    tenants_base_dir: Optional[Path | str] = None,
+) -> str:
     """Resolve a path relative to the base config file if it's not absolute."""
     target = Path(target_path)
     if target.is_absolute():
-        return str(target)
-    return str((base_path.parent / target).resolve())
+        resolved = target.resolve()
+    else:
+        resolved = (base_path.parent / target).resolve()
+
+    if tenant_dir is not None:
+        base = (
+            tenants_base_dir if tenants_base_dir is not None else get_tenants_base_dir()
+        )
+        validate_tenant_path_isolation(resolved, tenant_dir, tenants_base_dir=base)
+
+    return str(resolved)
 
 
 def load_dotenv(path: str | Path = ".env") -> Dict[str, str]:
@@ -240,7 +300,7 @@ def load_dotenv(path: str | Path = ".env") -> Dict[str, str]:
 parse_env_config = load_dotenv
 
 
-def parse_app_config(path: str) -> AppConfig:
+def parse_app_config(path: str | Path, tenant_id: Optional[str] = None) -> AppConfig:
     """Parse the main application configuration from a TOML file."""
     config_path = Path(path).resolve()
     if not config_path.exists():
@@ -254,14 +314,62 @@ def parse_app_config(path: str) -> AppConfig:
             f"Failed to parse TOML configuration from {path}: {exc}"
         ) from exc
 
+    # Check for unknown settings
+    for key in data.keys():
+        if key not in KNOWN_CONFIG_KEYS:
+            raise ValueError(
+                f"Unknown configuration setting '{key}' in {path}. "
+                f"Valid settings are: {', '.join(sorted(KNOWN_CONFIG_KEYS))}"
+            )
+
+    # Validate extractor setting explicitly
+    raw_extractor = data.get("extractor")
+    if raw_extractor is not None:
+        extractor = str(raw_extractor).strip().lower()
+        if extractor != "trafilatura":
+            raise ValueError(
+                f"Unsupported extractor '{extractor}'. 'trafilatura' is currently the only supported article extractor. "
+                "Please set extractor = 'trafilatura' or remove the setting."
+            )
+    else:
+        extractor = "trafilatura"
+
+    # Inferred tenant directory and path isolation
+    inferred_tenant_id = tenant_id or data.get("tenant_id")
+    if inferred_tenant_id:
+        inferred_tenant_id = validate_tenant_id(str(inferred_tenant_id))
+
+    tenant_dir: Optional[Path] = None
+    try:
+        tenants_base = get_tenants_base_dir()
+        config_path.relative_to(tenants_base)
+        tenant_dir = config_path.parent
+        if not inferred_tenant_id:
+            inferred_tenant_id = validate_tenant_id(tenant_dir.name)
+    except ValueError:
+        if inferred_tenant_id:
+            tenant_dir = config_path.parent
+
     feeds_raw = data.get("feeds") or data.get("feeds_file")
     if not feeds_raw:
         raise ValueError("Configuration missing required 'feeds' (path to OPML file)")
-    feeds_file = _resolve_path(config_path, str(feeds_raw).strip())
+    feeds_file = _resolve_path(
+        config_path,
+        str(feeds_raw).strip(),
+        tenant_dir=tenant_dir,
+        tenants_base_dir=tenants_base,
+    )
 
     env_file_raw = data.get("env_file") or data.get("env")
     env_file = (
-        _resolve_path(config_path, str(env_file_raw).strip()) if env_file_raw else None
+        _resolve_path(
+            config_path,
+            str(env_file_raw).strip(),
+            tenant_dir=tenant_dir,
+            tenants_base_dir=tenants_base,
+        )
+        if env_file_raw
+        else None
     )
 
     limit = int(data.get("limit", 10))
@@ -362,7 +470,14 @@ def parse_app_config(path: str) -> AppConfig:
         log_file_raw = None
     logging_config = LoggingConfig(
         level=str(log_dict.get("level", "INFO")),
-        file=_resolve_path(config_path, str(log_file_raw)) if log_file_raw else None,
+        file=_resolve_path(
+            config_path,
+            str(log_file_raw),
+            tenant_dir=tenant_dir,
+            tenants_base_dir=tenants_base,
+        )
+        if log_file_raw
+        else None,
     )
 
     # Prompt
@@ -372,13 +487,54 @@ def parse_app_config(path: str) -> AppConfig:
         prompt_file_raw = data["prompt"].get("file")
 
     if prompt_file_raw:
-        full_prompt_path = _resolve_path(config_path, str(prompt_file_raw))
+        full_prompt_path = _resolve_path(
+            config_path,
+            str(prompt_file_raw),
+            tenant_dir=tenant_dir,
+            tenants_base_dir=tenants_base,
+        )
         prompt_path_obj = Path(full_prompt_path)
         if not prompt_path_obj.exists():
             raise ValueError(f"Prompt file not found: {full_prompt_path}")
         prompt = prompt_path_obj.read_text(encoding="utf-8").strip()
     elif isinstance(data.get("prompt"), str):
         prompt = data["prompt"].strip()
+
+    # Grounding Rules
+    grounding_rules = None
+    grounding_rules_file_raw = data.get("grounding_rules_file")
+    if grounding_rules_file_raw:
+        full_gr_path = _resolve_path(
+            config_path,
+            str(grounding_rules_file_raw),
+            tenant_dir=tenant_dir,
+            tenants_base_dir=tenants_base,
+        )
+        gr_path_obj = Path(full_gr_path)
+        if not gr_path_obj.exists():
+            raise ValueError(f"Grounding rules file not found: {full_gr_path}")
+        grounding_rules = gr_path_obj.read_text(encoding="utf-8").strip()
+    elif isinstance(data.get("grounding_rules"), str):
+        grounding_rules = data["grounding_rules"].strip()
+
+    # Holdings file (optional structured context)
+    holdings_file_raw = data.get("holdings_file")
+    holdings_file = (
+        _resolve_path(
+            config_path,
+            str(holdings_file_raw),
+            tenant_dir=tenant_dir,
+            tenants_base_dir=tenants_base,
+        )
+        if holdings_file_raw
+        else None
+    )
+
+    # Tenant Profile, Title, Subtitle, Timezone
+    profile = str(data.get("profile", "security")).strip().lower()
+    title = data.get("title") or data.get("display_title")
+    subtitle = data.get("subtitle")
+    timezone_name = data.get("timezone")
 
     # LLM
     llm_dict = data.get("llm") or {}
@@ -421,4 +577,13 @@ def parse_app_config(path: str) -> AppConfig:
         reasoning_effort=reasoning_effort,
         areas=areas,
         technologies=tech_footprint,
+        tenant_id=inferred_tenant_id,
+        profile=profile,
+        title=title,
+        subtitle=subtitle,
+        timezone=timezone_name,
+        extractor=extractor,
+        grounding_rules=grounding_rules,
+        grounding_rules_file=holdings_file_raw,  # backward reference if needed
+        holdings_file=holdings_file,
     )

@@ -49,6 +49,14 @@ class RunConfig:
     digest_config: Optional[DigestConfig] = None
     areas: Dict[str, AreaConfig] = field(default_factory=dict)
     technologies: Optional[TechnologyFootprint] = None
+    tenant_id: Optional[str] = None
+    profile: str = "security"
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    timezone: Optional[str] = None
+    extractor: str = "trafilatura"
+    grounding_rules: Optional[str] = None
+    holdings_file: Optional[str] = None
 
 
 @dataclass

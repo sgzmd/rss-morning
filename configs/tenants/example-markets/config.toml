@@ -1,0 +1,181 @@
+# Global Markets & Family Office Intelligence — RSS digest configuration
+tenant_id = "example-markets"
+profile = "markets"
+title = "Morning Markets & Private Wealth Briefing"
+subtitle = "Global Markets & Family Office Intelligence"
+timezone = "UTC"
+
+feeds = "feeds.xml"
+limit = 80
+max_age_hours = 24.0
+max_article_length = 250
+summary = true
+extractor = "trafilatura"
+concurrency = 10
+prompt_file = "prompt.md"
+
+[classification]
+enabled = true
+model = "jev-latest"
+threshold = 0.50
+
+[classification.relevance]
+instructions = "Determine whether this item contains a credible, specific and investment-relevant change in global macroeconomics, markets, portfolio allocation, securities, structured products, cross-border wealth, financial institutions or investment regulation. Favor verified developments and usable analytical insights over generic commentary."
+criteria_true = "Material central-bank or macro announcements; FX/rates/credit shifts; equity, ETF and bond investment developments; earnings with meaningful portfolio implications; derivatives/structured-product market mechanics; wealth-tax, residency and reporting changes; private banking/credit risk; actionable cross-asset or geopolitical investment transmission."
+criteria_false = "Generic personal-finance tips; product advertisements; promotional bank/fund press releases without material facts; repetitive market-wrap articles with no new insight; unsupported forecasts or rumors; personality gossip; general politics without a concrete market, portfolio or regulatory transmission channel."
+
+# These entries are editorial watchlist topics, NOT actual client positions,
+# firm exposures, authorized products or investment recommendations.
+[technologies]
+description = "Global multi-asset advisory and international private-wealth research watchlist, with particular attention to GBP/USD/EUR exposure, investment income, diversified equity and bond portfolios, structured products and cross-border client requirements. Do not assume any individual portfolio holdings."
+stack = [
+    "Global Asset Allocation / Multi-Asset Portfolios",
+    "USD / GBP / EUR FX, Hedged and Unhedged Share Classes",
+    "US / Europe / Japan / Emerging Markets Equities and ETFs",
+    "Developed Markets / EM Local Currency / Investment Grade / High Yield Bonds",
+    "Gold and Inflation / Real Yield Exposures",
+    "Structured Notes / Autocallables / Phoenix / Dropback / VIX",
+    "UK / UAE / Singapore / Switzerland / Jersey / Lithuania Wealth Structuring",
+    "Hedge Funds / Private Markets / Private Credit / Co-Investments",
+]
+
+[email]
+to = "markets-briefing@example.com"
+from = "digest@example.com"
+subject = "Morning Markets & Private Wealth Briefing"
+
+[logging]
+level = "INFO"
+file = "logs/rss-morning.log"
+
+[llm]
+model = "google/gemini-3.8-flash"
+reasoning_effort = "low"
+
+[digest]
+exec_summary_points = 5
+max_topics = 6
+editor_article_chars = 1500
+
+[areas.macro_fx]
+label = "Macro, Central Banks & FX"
+priority = "high"
+threshold = 0.35
+description = "Rates, policy, inflation, employment, growth, sovereign yields, FX and regime shifts. Prioritize investment implications for USD, GBP, EUR, JPY, CNY, EM currencies, duration and gold."
+technologies = [
+    "Federal Reserve / Bank of England / ECB / Bank of Japan",
+    "Yield Curves / Real Yields / Duration",
+    "USD / GBP / EUR / JPY / CNY",
+    "Emerging Market FX / Dollar Diversification",
+    "Fiscal Policy / Inflation / Economic Data",
+]
+
+[areas.portfolio_allocation]
+label = "Portfolio Construction & Asset Allocation"
+priority = "high"
+threshold = 0.40
+description = "Strategic and tactical allocation, currency exposure, factors, diversification, income generation, equity/bond correlations and portfolio drawdown risks."
+technologies = [
+    "Multi-Asset Allocation",
+    "Hedged vs Unhedged Exposure",
+    "Income vs Capital Growth",
+    "Equity Concentration / Factor Rotation",
+    "Cash / Bonds / Gold / Equities",
+]
+
+[areas.equities_etfs]
+label = "Equities, ETFs & Sector Opportunities"
+priority = "high"
+threshold = 0.40
+description = "Index and ETF developments, meaningful earnings/valuation changes and equity themes across US, Europe, Japan, China and EM, with attention to healthcare, AI, semiconductors, robotics and infrastructure."
+technologies = [
+    "S&P 500 / MSCI World ex US / MSCI EM",
+    "Europe / Japan / China / Emerging Markets",
+    "UCITS ETFs / Accumulating / Distributing Share Classes",
+    "Healthcare / AI / Semiconductors / Robotics",
+    "Equity Valuations / Earnings Revisions",
+]
+
+[areas.fixed_income_credit]
+label = "Fixed Income, Credit & Cash Yield"
+priority = "high"
+threshold = 0.40
+description = "Government and corporate debt, IG/HY spreads, EM sovereign and local-currency debt, defaults, refinancing, yield measures and interest-rate risk."
+technologies = [
+    "Investment Grade / High Yield Credit",
+    "Emerging Market Local Currency Debt",
+    "Sovereign Bonds / Yield to Maturity / Duration",
+    "Credit Spreads / Defaults / Refinancing",
+    "Floating Rate / Callable Bonds",
+]
+
+[areas.structured_products]
+label = "Structured Products, Volatility & Derivatives"
+priority = "high"
+threshold = 0.35
+description = "Autocallables, Phoenix and memory-coupon notes, dropback structures, downside barriers, hedging costs, VIX, skew, correlation, issuer risk and secondary liquidity. No invented product quotations."
+technologies = [
+    "Autocallables / Phoenix / Memory Coupons",
+    "Dropback Certificates / Twin-Win Structures",
+    "Capital Barriers / Coupon Barriers / Autocall Observations",
+    "VIX / Volatility Skew / Correlation",
+    "Issuer Credit / Structured Note Liquidity",
+]
+
+[areas.private_wealth_tax]
+label = "Cross-Border Wealth, Tax & Regulation"
+priority = "high"
+threshold = 0.40
+description = "Material residence-dependent tax and regulatory updates for international wealth clients, including fund reporting, trust/VCC/insurance structures, personal investment-account regimes, sanctions and KYC. Distinguish proposals from enacted rules; never claim client-specific tax outcomes."
+technologies = [
+    "UK Tax / Offshore Fund Reporting Status",
+    "Singapore VCC / Trusts / Investment Structures",
+    "Lithuania Investment Account / EU Investor Tax",
+    "UAE / Switzerland / Jersey Cross-Border Wealth",
+    "Private Placement Life Insurance / Succession Planning",
+    "Sanctions / AML / KYC / Beneficial Ownership",
+]
+
+[areas.alternatives_private_markets]
+label = "Alternatives & Private Markets"
+priority = "normal"
+threshold = 0.50
+description = "Private equity, private credit, hedge funds, infrastructure and real assets, with particular emphasis on fees, valuations, liquidity, gating and Asian/Japanese opportunities."
+technologies = [
+    "Private Equity / Co-Investment",
+    "Private Credit / Direct Lending",
+    "Hedge Funds / Fund Liquidity",
+    "Infrastructure / Data Centres",
+    "Japan / Asia Private Markets",
+]
+
+[areas.private_banking]
+label = "Private Banks, Custody & Lending"
+priority = "normal"
+threshold = 0.50
+description = "Private banking platform developments, custodian and counterparty stability, client financing, Lombard lending/LTV, wealth-management industry regulation and service access."
+technologies = [
+    "Global Private Banks / Custody",
+    "Lombard Lending / LTV / Securities-Based Lending",
+    "Bank Creditworthiness / Capital Adequacy",
+    "Wealth Management Regulation",
+]
+
+[areas.geopolitics_commodities]
+label = "Geopolitics, Gold & Cross-Asset Risks"
+priority = "normal"
+threshold = 0.55
+description = "Geopolitical events with a demonstrable effect on markets, tariffs, energy, sanctions, supply chains, commodity prices, real yields or investor risk appetite."
+technologies = [
+    "Gold / Real Yields",
+    "Oil / Energy Prices",
+    "Trade Policy / Tariffs / Sanctions",
+    "Global Supply Chains / China-US Relations",
+    "Bitcoin ETFs / Listed Digital Assets",
+]
+
+[areas.other]
+label = "Other Material Investment Developments"
+priority = "normal"
+threshold = 0.75
+description = "Exceptional, well-evidenced market, corporate, financial or regulatory news outside the defined focus areas. Do not use this as a bucket for low-signal content."

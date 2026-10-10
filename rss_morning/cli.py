@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from .config import load_dotenv, parse_app_config
 from .runner import RunConfig, execute
+from .tenant import resolve_tenant_config_path
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +21,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Fetch recent articles from configured RSS feeds."
     )
-    parser.add_argument(
+    config_group = parser.add_mutually_exclusive_group()
+    config_group.add_argument(
         "--config",
-        default="configs/config.toml",
-        help="Path to the main configuration TOML file.",
+        default=None,
+        help="Path to the main configuration TOML file (legacy single-tenant mode).",
+    )
+    config_group.add_argument(
+        "--tenant",
+        default=None,
+        metavar="TENANT_ID",
+        help="Stable identifier of the tenant whose configuration to run (resolves configs/tenants/<tenant>/config.toml).",
     )
     parser.add_argument(
         "--log-level",
@@ -97,8 +105,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        # Resolve configuration path
+        if args.config is None and args.tenant is None:
+            config_path = "configs/config.toml"
+        elif args.tenant is not None:
+            config_path = str(resolve_tenant_config_path(args.tenant))
+        else:
+            config_path = args.config
+
         # Load main config
-        app_config = parse_app_config(args.config)
+        if args.tenant is not None:
+            app_config = parse_app_config(config_path, tenant_id=args.tenant)
+        else:
+            app_config = parse_app_config(config_path)
 
         # Load environment variables if an env file is configured or .env exists
         if app_config.env_file:
@@ -137,11 +156,23 @@ def main(argv: Optional[List[str]] = None) -> int:
             digest_config=app_config.digest,
             areas=app_config.areas,
             technologies=app_config.technologies,
+            tenant_id=app_config.tenant_id,
+            profile=app_config.profile,
+            title=app_config.title,
+            subtitle=app_config.subtitle,
+            timezone=app_config.timezone,
+            extractor=app_config.extractor,
+            grounding_rules=app_config.grounding_rules,
+            holdings_file=app_config.holdings_file,
         )
 
         config_dict = dataclasses.asdict(config)
         if config_dict.get("system_prompt"):
             config_dict["system_prompt"] = "***MASKED***"
+        if config_dict.get("grounding_rules"):
+            config_dict["grounding_rules"] = "***MASKED***"
+        if config_dict.get("holdings_file"):
+            config_dict["holdings_file"] = "***CONFIGURED***"
 
         logger.info("Active Configuration:\n%s", pprint.pformat(config_dict))
 

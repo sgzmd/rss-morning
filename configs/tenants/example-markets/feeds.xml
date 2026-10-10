@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>Global Markets &amp; Central Banks Feeds</title>
+  </head>
+  <body>
+    <outline text="Central Banks &amp; Macro" title="Central Banks &amp; Macro">
+      <outline type="rss" text="Federal Reserve Press Releases" title="Federal Reserve Press Releases" xmlUrl="https://www.federalreserve.gov/feeds/press_all.xml" />
+      <outline type="rss" text="Bank of England News" title="Bank of England News" xmlUrl="https://www.bankofengland.co.uk/rss/news" />
+      <outline type="rss" text="European Central Bank Press" title="European Central Bank Press" xmlUrl="https://www.ecb.europa.eu/rss/press.html" />
+      <outline type="rss" text="Bank for International Settlements" title="Bank for International Settlements" xmlUrl="https://www.bis.org/doclist/all.rss" />
+    </outline>
+    <outline text="Markets &amp; Regulation" title="Markets &amp; Regulation">
+      <outline type="rss" text="SEC Press Releases" title="SEC Press Releases" xmlUrl="https://www.sec.gov/news/pressreleases.rss" />
+      <outline type="rss" text="CFTC Press Releases" title="CFTC Press Releases" xmlUrl="https://www.cftc.gov/PressRoom/PressReleases/rss" />
+    </outline>
+  </body>
+</opml>
