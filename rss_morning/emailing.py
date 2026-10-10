@@ -24,27 +24,31 @@ def send_email_report(
     from_address: Optional[str] = None,
     subject: Optional[str] = None,
     areas: Optional[Mapping[str, AreaConfig]] = None,
-) -> None:
-    """Send the prepared report via Resend."""
+    profile: str = "security",
+    title: Optional[str] = None,
+    subtitle: Optional[str] = None,
+    date_str: Optional[str] = None,
+) -> bool:
+    """Send the prepared report via Resend. Returns True if sent, False otherwise."""
     if resend is None:
         logger.error(
             "resend package is required for email functionality, but it's not installed."
         )
-        return
+        return False
 
     api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
         logger.error(
             "RESEND_API_KEY environment variable is not set; skipping email delivery."
         )
-        return
+        return False
 
     sender = from_address or os.environ.get("RESEND_FROM_EMAIL")
     if not sender:
         logger.error(
             "Sender email is not configured. Set --email-from or RESEND_FROM_EMAIL."
         )
-        return
+        return False
 
     fallback_text: Optional[str]
     if isinstance(payload, str):
@@ -55,15 +59,29 @@ def send_email_report(
         fallback_text = str(payload)
 
     html_content = build_email_html(
-        payload, is_summary, fallback=fallback_text, areas=areas
+        payload,
+        is_summary,
+        fallback=fallback_text,
+        areas=areas,
+        profile=profile,
+        title=title,
+        subtitle=subtitle,
+        date_str=date_str,
     )
     if not html_content:
         logger.warning("Email content is empty; skipping email delivery.")
-        return
+        return False
 
     email_subject = subject or "RSS Morning Briefing"
     text_content = build_email_text(
-        payload, is_summary, fallback=fallback_text, areas=areas
+        payload,
+        is_summary,
+        fallback=fallback_text,
+        areas=areas,
+        profile=profile,
+        title=title,
+        subtitle=subtitle,
+        date_str=date_str,
     )
 
     resend.api_key = api_key
@@ -82,5 +100,7 @@ def send_email_report(
             to_address,
             getattr(response, "id", "unknown"),
         )
+        return True
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to send email via Resend: %s", exc)
+        return False

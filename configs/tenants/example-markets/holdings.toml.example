@@ -1,0 +1,27 @@
+# Example portfolio holdings context (read-only reference context)
+# Only an explicit holdings file may support a claim that the tenant holds an asset.
+as_of = "2026-10-01"
+
+[[holdings]]
+asset = "US 10-Year Treasury Note"
+ticker = "IEF"
+asset_class = "Fixed Income"
+currency = "USD"
+weight_pct = 15.0
+notes = "Core duration exposure"
+
+[[holdings]]
+asset = "Global Developed Equity UCITS ETF"
+ticker = "SWDA"
+asset_class = "Equities"
+currency = "GBP"
+weight_pct = 35.0
+notes = "Unhedged global equity"
+
+[[holdings]]
+asset = "Physical Gold ETC"
+ticker = "SGLN"
+asset_class = "Commodities"
+currency = "USD"
+weight_pct = 10.0
+notes = "Real yield and geopolitical hedge"

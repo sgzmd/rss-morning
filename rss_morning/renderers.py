@@ -159,11 +159,15 @@ def build_email_html(
     is_summary: bool,
     fallback: str | None = None,
     areas: Optional[Mapping[str, AreaConfig]] = None,
+    profile: str = "security",
+    title: Optional[str] = None,
+    subtitle: Optional[str] = None,
+    date_str: Optional[str] = None,
 ) -> str:
     """Render the HTML email body using the Jinja2 template."""
     env = get_environment()
     template = env.get_template("email.html.j2")
-    today = datetime.date.today().strftime("%B %d, %Y")
+    today = date_str or datetime.date.today().strftime("%B %d, %Y")
     pyramid = prepare_pyramid_view_model(payload, areas) if is_summary else {}
     sections = prepare_sections_by_area(payload, areas) if is_summary else []
     return template.render(
@@ -173,6 +177,9 @@ def build_email_html(
         date=today,
         sections=sections,
         pyramid=pyramid,
+        profile=profile,
+        title=title,
+        subtitle=subtitle,
     )
 
 
@@ -181,16 +188,25 @@ def build_email_text(
     is_summary: bool,
     fallback: str | None = None,
     areas: Optional[Mapping[str, AreaConfig]] = None,
+    profile: str = "security",
+    title: Optional[str] = None,
+    subtitle: Optional[str] = None,
+    date_str: Optional[str] = None,
 ) -> str:
     """Render the plain-text email body using the Jinja2 template."""
     env = get_environment()
     template = env.get_template("email.txt.j2")
+    today = date_str or datetime.date.today().strftime("%B %d, %Y")
     pyramid = prepare_pyramid_view_model(payload, areas) if is_summary else {}
     sections = prepare_sections_by_area(payload, areas) if is_summary else []
     return template.render(
         payload=payload,
         is_summary=is_summary,
         fallback=fallback,
+        date=today,
         sections=sections,
         pyramid=pyramid,
+        profile=profile,
+        title=title,
+        subtitle=subtitle,
     )

@@ -7,7 +7,7 @@
     <meta name="x-apple-disable-message-reformatting" />
     <meta name="color-scheme" content="light dark" />
     <meta name="supported-color-schemes" content="light dark" />
-    <title>The Sentinel - Security Brief Email</title>
+    <title>{% if title %}{{ title }}{% elif profile == 'security' %}The Sentinel - Security Brief Email{% else %}Morning Brief Email{% endif %}</title>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
         rel="stylesheet" />
@@ -115,10 +115,10 @@
                             <tr>
                                 <td align="left" class="header-cell-left" style="vertical-align: bottom;">
                                     <h1 class="header-title" style="font-size: 24px; font-weight: 700; letter-spacing: -0.025em; color: #202124; margin: 0; line-height: 1.2;">
-                                        RSS Intelligence
+                                        {{ title or "RSS Intelligence" }}
                                     </h1>
                                     <p style="font-size: 11px; font-weight: 700; color: #5f6368; margin: 4px 0 0 0; letter-spacing: 0.08em; text-transform: uppercase;">
-                                        The Sentinel Digest &bull; Executive Morning Briefing
+                                        {% if subtitle %}{{ subtitle }}{% elif profile == 'security' %}The Sentinel Digest &bull; Executive Morning Briefing{% else %}Executive Morning Briefing{% endif %}
                                     </p>
                                 </td>
                                 <td align="right" class="header-cell-right" style="vertical-align: bottom;">
@@ -223,6 +223,7 @@
                                     <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: {{ tier_badge_bg }}; color: {{ tier_badge_color }};">
                                         {{ story.tier | upper }}
                                     </span>
+                                    {% if profile == "security" %}
                                     {% if story.exploitation_status == "confirmed_in_the_wild" %}
                                     <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: #d93025; color: #ffffff;">
                                         In-The-Wild Exploited
@@ -231,6 +232,7 @@
                                     <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: #fef7e0; color: #b06000; border: 1px solid #f9ab00;">
                                         Public PoC
                                     </span>
+                                    {% endif %}
                                     {% endif %}
                                     <span style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-right: 6px; background-color: #e8f0fe; color: #1a73e8;">
                                         {{ story.primary_area | replace("_", " ") }}

@@ -1,0 +1,30 @@
+# ==============================================================================
+# RSS Morning Multi-Tenant Crontab Configuration
+#
+# HOST CRON TIMEZONE: UTC (Coordinated Universal Time)
+# IMPORTANT: System cron executes in the host server's local time (UTC on our servers).
+# Standard cron does NOT support per-entry CRON_TZ on all platforms, so all trigger
+# times below are specified in host UTC time. Tenant timezones specified in TOML
+# (e.g. timezone = "America/New_York") govern subject lines and email dates,
+# but do NOT schedule cron.
+#
+# DESIGN INVARIANTS:
+# 1. Independent entries: each tenant has its own cron line with its own schedule.
+# 2. Per-tenant overlap protection: flock ensures a slow run of one tenant cannot
+#    spawn concurrent runs of that same tenant.
+# 3. Process isolation: each tenant executes in a dedicated process; environment
+#    variables and API keys never cross between tenants.
+# 4. Observability: non-zero exit codes (such as email delivery failures) are captured
+#    and logged to dedicated per-tenant log files.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Tenant: example-security (Preserving existing production schedule: 20:00 UTC)
+# ------------------------------------------------------------------------------
+0 20 * * * /usr/bin/flock -n /tmp/rss_locks_example_security.lock /home/sgzmd/code/docker-configs/rss-new/scripts/run-tenant-cron.sh example-security >> /home/sgzmd/code/docker-configs/rss-new/logs/security_cron.log 2>&1
+
+# ------------------------------------------------------------------------------
+# Tenant: example-markets (Demonstration entry: 11:00 UTC / 07:00 EDT Mon-Fri)
+# NOTE: Kept commented out until production feeds, credentials, and send times are confirmed.
+# ------------------------------------------------------------------------------
+# 0 11 * * 1-5 /usr/bin/flock -n /tmp/rss_locks_example_markets.lock /home/sgzmd/code/docker-configs/rss-new/scripts/run-tenant-cron.sh example-markets >> /home/sgzmd/code/docker-configs/rss-new/logs/markets_cron.log 2>&1

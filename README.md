@@ -79,6 +79,10 @@ No direct vendor SDKs (Gemini, OpenAI, Anthropic) are used. All generative model
    # Run with default configuration
    python main.py
 
+   # Run for a specific tenant
+   python main.py --tenant example-security
+   python main.py --tenant example-markets
+
    # Dry run LLM (formats prompt and schema without calling the API)
    python main.py --llm-dry-run
 
@@ -86,6 +90,8 @@ No direct vendor SDKs (Gemini, OpenAI, Anthropic) are used. All generative model
    python main.py --save-articles snapshot.json
    python main.py --load-articles snapshot.json --llm-dry-run
    ```
+
+   For multi-tenant architecture and directory conventions, see [docs/tenants.md](docs/tenants.md).
 
 ## Configuration (`configs/config.toml`)
 

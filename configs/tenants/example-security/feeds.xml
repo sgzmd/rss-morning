@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>Security Feed Subscriptions</title>
+  </head>
+  <body>
+    <outline text="Security Research" title="Security Research">
+      <outline type="rss" text="Google Project Zero" title="Google Project Zero" xmlUrl="https://googleprojectzero.blogspot.com/feeds/posts/default" />
+      <outline type="rss" text="CISA Alerts" title="CISA Alerts" xmlUrl="https://www.cisa.gov/cybersecurity-advisories/all.xml" />
+    </outline>
+  </body>
+</opml>

@@ -68,6 +68,10 @@ dry-run:
 	@echo "==> Executing remote dry-run container on $(REMOTE_HOST)..."
 	ssh $(REMOTE_HOST) "docker compose -f $(REMOTE_DIR)/docker-compose.yml --project-directory $(REMOTE_DIR) run --rm rss-morning --config /app/configs/config.toml --llm-dry-run"
 
+dry-run-tenant:
+	@echo "==> Executing remote dry-run container for tenant '$(TENANT)' on $(REMOTE_HOST)..."
+	ssh $(REMOTE_HOST) "docker compose -f $(REMOTE_DIR)/docker-compose.yml --project-directory $(REMOTE_DIR) run --rm rss-morning --tenant $(TENANT) --llm-dry-run"
+
 # ------------------------------------------------------------------------------
 # Local unit tests
 # ------------------------------------------------------------------------------
