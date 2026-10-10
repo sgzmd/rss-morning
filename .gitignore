@@ -39,6 +39,7 @@ holdings.json
 *.db
 .*
 !.env.example
+!.github/
 *.opml 
 configs/queries.json
 gemini-response.json
